@@ -60,6 +60,15 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     logger.info(s"[Flare] Executor plugin initialized (granularity=${config.granularity}, " +
       s"sampling=${config.samplingRatio}, maxSpans=${config.maxSpansPerTrace}, " +
       s"taskTracing=${config.tracesTasks})")
+
+    // Stage name is not available on the executor in Phase 1 (ExecutorPlugin has no access to
+    // stage metadata — only stageId from TaskContext). Warn if someone configures the pattern
+    // filter so they don't silently get no matches.
+    if (config.taskStagePattern.isDefined) {
+      logger.warn("[Flare] FLARE_TASK_STAGE_PATTERN is configured but stage names are not " +
+        "available on executor in Phase 1. The pattern filter will have no effect — use " +
+        "FLARE_TASK_STAGES (stage IDs) instead, or wait for Phase 2 ByteBuddy instrumentation.")
+    }
   }
 
   override def onTaskStart(): Unit = {
@@ -74,7 +83,9 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     // slowTaskMs is deferred to endTask since duration is not known at start.
     if (!config.shouldTraceTask(
       attemptNumber = taskContext.attemptNumber(),
-      speculative   = false, // TaskContext does not expose speculative flag
+      speculative   = false, // TaskContext does not expose speculative flag directly.
+                             // Speculative tasks have attemptNumber > 0, so the retry filter
+                             // handles them. True speculative detection needs Phase 2 ByteBuddy.
       stageId       = taskContext.stageId(),
       stageName     = "",    // stage name not available on executor until Phase 2
     )) {
@@ -85,6 +96,10 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     val parentContext = LocalPropertyPropagator.extract(taskContext)
 
     // Guard 2: sampling — honour the sampling decision already made by the driver.
+    // The driver's TracerProvider applies head-based sampling when creating the application span.
+    // That decision propagates via traceparent flags. If the parent is valid but not sampled,
+    // we must not create child spans — otherwise the executor generates orphan spans that the
+    // backend can't stitch into a trace.
     val parentSpanContext = io.opentelemetry.api.trace.Span.fromContext(parentContext).getSpanContext
     if (parentSpanContext.isValid && !parentSpanContext.isSampled) {
       logger.debug(s"[Flare] Task not sampled (inherited from driver), partition=${taskContext.partitionId()}")
@@ -143,10 +158,17 @@ class FlareExecutorPlugin extends ExecutorPlugin {
         val durationMs = if (startNanos > 0) (System.nanoTime() - startNanos) / 1000000L else -1L
 
         // Slow task filter — drop span if task was faster than threshold.
-        // Close scope but do NOT end span — unended spans are not exported by BatchSpanProcessor.
+        // We cannot avoid starting the span (duration unknown at start), so we abandon it here.
+        // Calling span.end() would export a span we want to suppress. Instead we close the scope
+        // and leave the span unended — BatchSpanProcessor only exports ended spans.
+        // Tradeoff: the SDK's internal SdkSpan object remains allocated until GC reclaims it.
+        // On jobs with many fast tasks (e.g. thousands below threshold) this is transient memory
+        // pressure proportional to concurrent executor threads, not total tasks — each ThreadLocal
+        // is overwritten on the next task. Acceptable for the filtering benefit.
         if (config.slowTaskMs > 0 && durationMs >= 0 && durationMs < config.slowTaskMs) {
           MdcEnricher.remove()
           scope.close()
+          spanCount.decrementAndGet() // reclaim slot — this span won't be exported
           taskState.remove()
           taskStartNanos.remove()
           return
