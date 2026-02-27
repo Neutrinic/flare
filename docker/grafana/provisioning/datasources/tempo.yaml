@@ -13,7 +13,7 @@ datasources:
       tracesToLogsV2:
         datasourceUid: loki
         filterByTraceID: true
-        filterBySpanID: false
+        filterBySpanID: true
       tracesToMetrics:
         datasourceUid: ''
       nodeGraph:
@@ -28,6 +28,12 @@ datasources:
     url: http://loki:3100
     editable: false
     jsonData:
+      # Derived field creates clickable Tempo links in log lines that contain
+      # "trace_id=<hex>" in the body text. Most Spark logs won't match — the
+      # trace_id arrives as OTLP structured metadata instead. This fires only
+      # for user app code that explicitly logs the trace ID as a key=value pair.
+      # The primary logs→traces path is Grafana's built-in structured metadata
+      # detection; the primary traces→logs path is tracesToLogsV2 above.
       derivedFields:
         - datasourceUid: tempo
           matcherRegex: 'trace_id=(\w+)'
