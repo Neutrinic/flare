@@ -26,6 +26,11 @@ class FlareConfigTest extends FunSuite {
 
   // ── shouldTraceTask tests ──────────────────────────────────────────────────
 
+  test("shouldTraceTask returns false when enabled is false regardless of granularity") {
+    val config = baseConfig().copy(enabled = false)
+    assert(!config.shouldTraceTask(attemptNumber = 0, speculative = false))
+  }
+
   test("shouldTraceTask passes when no filters configured") {
     val config = baseConfig()
     assert(config.shouldTraceTask(attemptNumber = 0, speculative = false))
@@ -176,6 +181,13 @@ class FlareConfigTest extends FunSuite {
     interceptMessage[IllegalArgumentException]("Flare config error: FLARE_SAMPLING_RATIO 'abc' is not a number") {
       FlareConfig.load()
     }
+  }
+
+  test("load() FLARE_ENABLED=false disables everything") {
+    sys.props("FLARE_ENABLED") = "false"
+    val config = FlareConfig.load()
+    assert(!config.enabled)
+    assert(!config.shouldTraceTask(attemptNumber = 0, speculative = false))
   }
 
   test("load() defaults are sensible") {
