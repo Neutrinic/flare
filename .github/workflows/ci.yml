@@ -28,6 +28,3 @@ jobs:
 
       - name: Assembly
         run: sbt assembly
-
-      - name: Cross-compile (Scala 2.12)
-        run: sbt ++2.12.18 compile
