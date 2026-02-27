@@ -23,6 +23,7 @@ metrics_generator:
   processor:
     service_graphs:
     span_metrics:
+    local_blocks:
   storage:
     path: /var/tempo/generator/wal
     remote_write: []
@@ -33,6 +34,7 @@ overrides:
       processors:
         - service-graphs
         - span-metrics
+        - local-blocks
 
 storage:
   trace:
