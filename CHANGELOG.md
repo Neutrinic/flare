@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **ByteBuddy SparkContext auto-registration** — `SparkContextInstrumentationModule` hooks
+  `SparkContext.<init>` constructor exit via ByteBuddy advice to auto-register
+  `TracingSparkListener` and create the application span without `spark.plugins` config.
+  True zero-config when using the OTEL agent extension ([#14])
+- **FlareDriverState** — shared state holder with `@volatile` + `synchronized` guard for
+  dedup between SparkPlugin (Phase 1) and ByteBuddy (Phase 2) paths. First path to
+  initialize wins; the other is a no-op
+- **InstrumentationModule SPI** — `META-INF/services/` registration for auto-discovery by
+  the OTEL Java agent. Module, TypeInstrumentation, and Advice written in Java for agent
+  classloader compatibility (Scala runtime not available in extension classloader)
+- **FlareDriverState tests** — 8 tests covering initialization, dedup, shutdown idempotency,
+  re-initialization, and concurrent initialization race safety
+
+### Changed
+- **Dockerfile stable JAR names** — `COPY flare-spark.jar` and `COPY flare-examples.jar`
+  instead of `flare-spark-assembly-${FLARE_VERSION}.jar`; removed `FLARE_VERSION` build arg
+
 ## [0.2.0] - 2026-02-27
 
 ### Added
@@ -74,3 +92,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#7]: https://github.com/Neutrinic/flare/issues/7
 [#8]: https://github.com/Neutrinic/flare/issues/8
 [#9]: https://github.com/Neutrinic/flare/issues/9
+[#14]: https://github.com/Neutrinic/flare/issues/14

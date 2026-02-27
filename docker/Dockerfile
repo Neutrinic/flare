@@ -5,7 +5,6 @@ ARG SPARK_VERSION=4.0.0
 ARG SCALA_VERSION=2.13
 ARG JDK_VERSION=21
 ARG OTEL_AGENT_VERSION=2.16.0
-ARG FLARE_VERSION=0.1.0-SNAPSHOT
 
 # ── System dependencies ────────────────────────────────────────────────────────
 # No Python, no Jupyter, no Almond — Flare is JVM-only
@@ -50,8 +49,8 @@ RUN curl -L \
 # ── Flare extension JAR ────────────────────────────────────────────────────────
 # Stage the assembly JAR into docker/ before building:
 #   sbt assembly
-#   cp target/scala-2.13/flare-spark-assembly-0.1.0-SNAPSHOT.jar docker/
-COPY flare-spark-assembly-${FLARE_VERSION}.jar /opt/flare/flare-spark.jar
+#   cp target/scala-2.13/flare-spark.jar docker/
+COPY flare-spark.jar /opt/flare/flare-spark.jar
 
 # ── Spark config ───────────────────────────────────────────────────────────────
 # spark-defaults.conf pre-wires both driver and executor extraJavaOptions.
@@ -60,8 +59,8 @@ COPY spark-defaults.conf ${SPARK_HOME}/conf/spark-defaults.conf
 
 # ── Examples JAR (optional, built separately) ──────────────────────────────────
 # Stage into docker/ before building:
-#   cp examples/target/scala-2.13/flare-examples-assembly-*.jar docker/
-COPY flare-examples-assembly*.jar /opt/flare/flare-examples.jar
+#   cp examples/target/scala-2.13/flare-examples.jar docker/
+COPY flare-examples.jar /opt/flare/flare-examples.jar
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 COPY entrypoint.sh /entrypoint.sh

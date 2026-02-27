@@ -34,7 +34,7 @@ lazy val root = (project in file("."))
     buildInfoPackage := "io.flare.spark",
     buildInfoObject  := "BuildInfo",
 
-    libraryDependencies ++= otelBundled ++ otelProvided ++ byteBuddyCompileOnly ++ Seq(
+    libraryDependencies ++= otelBundled ++ otelProvided ++ otelExtensionApi ++ byteBuddyCompileOnly ++ Seq(
       "org.apache.spark" %% "spark-core" % sparkBuildVersion % "provided",
       "org.apache.spark" %% "spark-sql"  % sparkBuildVersion % "provided",
       "org.slf4j"                % "slf4j-api"  % slf4jVersion % "provided",

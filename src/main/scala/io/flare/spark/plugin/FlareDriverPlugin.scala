@@ -40,6 +40,12 @@ class FlareDriverPlugin extends DriverPlugin {
   private var listener: Option[TracingSparkListener] = None
 
   override def init(sc: SparkContext, pluginContext: PluginContext): ju.Map[String, String] = {
+    // Dedup guard: if ByteBuddy advice already initialized (Phase 2), skip plugin init.
+    if (FlareDriverState.initialized) {
+      logger.info("[Flare] Already initialized by ByteBuddy advice, skipping plugin init")
+      return ju.Collections.emptyMap()
+    }
+
     val config = try FlareConfig.load() catch {
       case e: IllegalArgumentException =>
         logger.error(s"[Flare] Configuration error — plugin disabled: ${e.getMessage}")
@@ -79,6 +85,9 @@ class FlareDriverPlugin extends DriverPlugin {
     sc.addSparkListener(tracingListener)
     listener = Some(tracingListener)
 
+    // 4. Register in shared state so ByteBuddy advice (if loaded later) skips init
+    FlareDriverState.initialize(appSpan, tracingListener)
+
     logger.info(s"[Flare] Driver plugin initialized — " +
       s"traceId=${appSpan.getSpanContext.getTraceId}, " +
       s"granularity=${config.granularity}, " +
@@ -88,15 +97,14 @@ class FlareDriverPlugin extends DriverPlugin {
   }
 
   override def shutdown(): Unit = {
-    // Delegate to the listener which ends all open spans (stages, jobs, app).
-    // The listener's shutdown() calls span.end() on the application span.
-    // Span.end() is idempotent, but setStatus after end() is a no-op — so we
-    // must NOT unconditionally set OK here, as that would silently mask an
-    // ERROR status set by the listener's onApplicationEnd or shutdown path.
-    listener.foreach(_.shutdown())
+    // Delegate to FlareDriverState which coordinates with both SparkPlugin and
+    // ByteBuddy paths. FlareDriverState.shutdown() calls listener.shutdown()
+    // which ends all open spans (stages, jobs, app).
+    FlareDriverState.shutdown()
 
     // Only end the application span directly if the listener was never registered
-    // (e.g., init failed partway through before addSparkListener).
+    // (e.g., init failed partway through before addSparkListener, or FlareDriverState
+    // was never initialized because config was invalid/disabled).
     if (listener.isEmpty) {
       applicationSpan.foreach { span =>
         span.setStatus(StatusCode.OK)
