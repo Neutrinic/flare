@@ -1,0 +1,142 @@
+services:
+
+  # ── Spark cluster ─────────────────────────────────────────────────────────────
+  # JARs and config are bind-mounted from the build tree — just run `sbt assembly`
+  # and restart, no Docker rebuild needed.
+
+  spark-master:
+    image: ghcr.io/neutrinic/flare-spark:latest
+    build: .
+    hostname: spark-master
+    environment:
+      - SPARK_ROLE=master
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317
+      - OTEL_RESOURCE_ATTRIBUTES=cluster.name=flare-dev,environment=development
+      - FLARE_TRACE_GRANULARITY=all
+      - FLARE_SAMPLING_RATIO=1.0
+    ports:
+      - "8080:8080"   # Spark Master UI
+      - "7077:7077"   # Spark Master port
+      - "4040:4040"   # Driver Application UI
+    volumes:
+      - spark-events:/opt/spark/spark-events
+      - spark-logs:/opt/spark/logs
+      - ../target/scala-2.13/flare-spark-assembly-0.1.0-SNAPSHOT.jar:/opt/flare/flare-spark.jar:ro
+      - ../examples/target/scala-2.13/flare-examples-assembly-0.1.0-SNAPSHOT.jar:/opt/flare/flare-examples.jar:ro
+      - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    networks: [flare-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  spark-worker-1:
+    image: ghcr.io/neutrinic/flare-spark:latest
+    build: .
+    hostname: spark-worker-1
+    environment:
+      - SPARK_ROLE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317
+      - OTEL_RESOURCE_ATTRIBUTES=cluster.name=flare-dev,environment=development
+      - FLARE_TRACE_GRANULARITY=all
+      - FLARE_SAMPLING_RATIO=1.0
+    ports:
+      - "8081:8081"   # Worker UI
+    volumes:
+      - ../target/scala-2.13/flare-spark-assembly-0.1.0-SNAPSHOT.jar:/opt/flare/flare-spark.jar:ro
+      - ../examples/target/scala-2.13/flare-examples-assembly-0.1.0-SNAPSHOT.jar:/opt/flare/flare-examples.jar:ro
+      - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    depends_on:
+      spark-master: { condition: service_healthy }
+    networks: [flare-net]
+
+  spark-worker-2:
+    image: ghcr.io/neutrinic/flare-spark:latest
+    build: .
+    hostname: spark-worker-2
+    environment:
+      - SPARK_ROLE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317
+      - OTEL_RESOURCE_ATTRIBUTES=cluster.name=flare-dev,environment=development
+      - FLARE_TRACE_GRANULARITY=all
+      - FLARE_SAMPLING_RATIO=1.0
+    ports:
+      - "8082:8081"
+    volumes:
+      - ../target/scala-2.13/flare-spark-assembly-0.1.0-SNAPSHOT.jar:/opt/flare/flare-spark.jar:ro
+      - ../examples/target/scala-2.13/flare-examples-assembly-0.1.0-SNAPSHOT.jar:/opt/flare/flare-examples.jar:ro
+      - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    depends_on:
+      spark-master: { condition: service_healthy }
+    networks: [flare-net]
+
+  spark-history:
+    image: ghcr.io/neutrinic/flare-spark:latest
+    build: .
+    hostname: spark-history
+    environment:
+      - SPARK_ROLE=history
+    ports:
+      - "18080:18080"
+    volumes:
+      - spark-events:/opt/spark/spark-events:ro
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    depends_on: [spark-master]
+    networks: [flare-net]
+
+  # ── Observability stack ───────────────────────────────────────────────────────
+
+  alloy:
+    image: grafana/alloy:latest
+    hostname: alloy
+    ports:
+      - "4317:4317"   # OTLP gRPC (Spark → Alloy)
+      - "4318:4318"   # OTLP HTTP
+      - "12345:12345" # Alloy UI
+    volumes:
+      - ./alloy-config.alloy:/etc/alloy/config.alloy:ro
+    command: run /etc/alloy/config.alloy
+    networks: [flare-net]
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    hostname: tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "9095:9095"   # Tempo gRPC
+    volumes:
+      - ./tempo-config.yaml:/etc/tempo/config.yaml:ro
+      - tempo-data:/var/tempo
+    command: -config.file=/etc/tempo/config.yaml
+    networks: [flare-net]
+
+  grafana:
+    image: grafana/grafana:latest
+    hostname: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [tempo]
+    networks: [flare-net]
+
+networks:
+  flare-net:
+    driver: bridge
+
+volumes:
+  spark-events:
+  spark-logs:
+  tempo-data:
+  grafana-data:
