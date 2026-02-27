@@ -1,6 +1,7 @@
 import Dependencies._
 
 ThisBuild / organization := "io.github.neutrinic"
+ThisBuild / version      := "0.2.0-SNAPSHOT"
 ThisBuild / scalaVersion := scala213
 ThisBuild / crossScalaVersions := Seq(scala212, scala213)
 ThisBuild / versionScheme := Some("semver-spec")
@@ -23,9 +24,16 @@ ThisBuild / scalacOptions ++= (CrossVersion.partialVersion(scalaVersion.value) m
 val sparkBuildVersion = sys.props.getOrElse("sparkVersion", spark35)
 
 lazy val root = (project in file("."))
+  .enablePlugins(BuildInfoPlugin)
   .aggregate(examples)
   .settings(
     name := "flare-spark",
+
+    // sbt-buildinfo — generates io.flare.spark.BuildInfo with version at compile time
+    buildInfoKeys    := Seq[BuildInfoKey](name, version),
+    buildInfoPackage := "io.flare.spark",
+    buildInfoObject  := "BuildInfo",
+
     libraryDependencies ++= otelBundled ++ otelProvided ++ byteBuddyCompileOnly ++ Seq(
       "org.apache.spark" %% "spark-core" % sparkBuildVersion % "provided",
       "org.apache.spark" %% "spark-sql"  % sparkBuildVersion % "provided",
@@ -41,7 +49,8 @@ lazy val root = (project in file("."))
 
     // Bundle OTEL API + context (needed on Spark's app classloader for SparkPlugin).
     // Everything else (Spark, SLF4J, ByteBuddy, OTEL SDK) is provided.
-    assembly / assemblyOption := (assembly / assemblyOption).value
+    assembly / assemblyJarName := "flare-spark.jar",
+    assembly / assemblyOption  := (assembly / assemblyOption).value
       .withIncludeScala(false),
 
     Test / fork := true,
@@ -60,6 +69,7 @@ lazy val examples = (project in file("examples"))
       "org.apache.spark" %% "spark-sql"  % sparkBuildVersion % "provided",
     ),
 
+    assembly / assemblyJarName := "flare-examples.jar",
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", _*) => MergeStrategy.discard
       case _                        => MergeStrategy.first
