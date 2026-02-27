@@ -62,18 +62,23 @@ object SparkContextAdviceHelper {
       val spanContext = Context.current().`with`(appSpan)
       LocalPropertyPropagator.inject(spanContext, sc)
 
-      // 3. Register TracingSparkListener
+      // 3. Create listener (but do NOT register with SparkContext yet)
       val tracingListener = new TracingSparkListener(tracer, config)
       tracingListener.setApplicationSpan(appSpan)
-      sc.addSparkListener(tracingListener)
 
-      // 4. Register in shared state (returns false if SparkPlugin raced us)
+      // 4. Atomically register in shared state — must happen BEFORE addSparkListener.
+      //    If we added the listener first and then lost the race, the duplicate listener
+      //    would remain registered on the SparkContext (no removeSparkListener API) and
+      //    produce duplicate job/stage spans for the lifetime of the application.
       if (!FlareDriverState.initialize(appSpan, tracingListener)) {
-        // Another path won the race — clean up our span and listener
+        // Another path won the race — clean up our span; listener was never registered
         appSpan.end()
         logger.info("[Flare] ByteBuddy advice: lost init race to SparkPlugin, cleaned up")
         return
       }
+
+      // 5. Won the race — safe to register the listener now
+      sc.addSparkListener(tracingListener)
 
       logger.info(
         s"[Flare] ByteBuddy advice initialized — " +

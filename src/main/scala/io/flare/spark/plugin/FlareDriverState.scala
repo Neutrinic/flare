@@ -25,22 +25,25 @@ object FlareDriverState {
 
   private val logger = Logger.getLogger(classOf[FlareDriverState.type].getName)
 
-  @volatile var initialized: Boolean = false
+  @volatile private var _initialized: Boolean = false
   @volatile private[plugin] var applicationSpan: Option[Span] = None
   @volatile private var listener: Option[TracingSparkListener] = None
+
+  /** Read-only access to initialization state. */
+  def initialized: Boolean = _initialized
 
   /**
    * Attempt to initialize. Returns true if this call performed the initialization,
    * false if it was already done by another path.
    */
   def initialize(span: Span, tracingListener: TracingSparkListener): Boolean = synchronized {
-    if (initialized) {
+    if (_initialized) {
       logger.info("[Flare] Already initialized, skipping duplicate init")
       false
     } else {
       applicationSpan = Some(span)
       listener = Some(tracingListener)
-      initialized = true
+      _initialized = true
       logger.info("[Flare] Driver state initialized")
       true
     }
@@ -52,11 +55,11 @@ object FlareDriverState {
    * and a JVM shutdown hook.
    */
   def shutdown(): Unit = synchronized {
-    if (!initialized) return
+    if (!_initialized) return
     listener.foreach(_.shutdown())
     applicationSpan = None
     listener = None
-    initialized = false
+    _initialized = false
     logger.info("[Flare] Driver state shut down")
   }
 
@@ -64,6 +67,6 @@ object FlareDriverState {
   private[plugin] def reset(): Unit = synchronized {
     applicationSpan = None
     listener = None
-    initialized = false
+    _initialized = false
   }
 }

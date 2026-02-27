@@ -45,11 +45,18 @@ public class SparkContextInstrumentationModule
      * classloader. The agent calls this method to decide which extension classes
      * to copy over.
      *
-     * <p>This includes ALL Scala classes in {@code io.flare.spark.*} since they
-     * depend on the Scala runtime which is only available on the app classloader.
+     * <p>Only production packages are listed — avoids injecting test helpers or
+     * examples that happen to share the {@code io.flare.spark} prefix.
      */
     @Override
     public boolean isHelperClass(String className) {
-        return className.startsWith("io.flare.spark.");
+        return className.startsWith("io.flare.spark.plugin.")
+            || className.startsWith("io.flare.spark.listener.")
+            || className.startsWith("io.flare.spark.instrumentation.")
+            || className.startsWith("io.flare.spark.config.")
+            || className.startsWith("io.flare.spark.propagation.")
+            || className.startsWith("io.flare.spark.attributes.")
+            || className.startsWith("io.flare.spark.SpanCompat")
+            || className.startsWith("io.flare.spark.BuildInfo");
     }
 }
