@@ -32,6 +32,12 @@ object Dependencies {
     "io.opentelemetry" % "opentelemetry-sdk-extension-autoconfigure-spi" % otelVersion % "provided",
   )
 
+  // OTEL Java agent extension API — provides InstrumentationModule, TypeInstrumentation.
+  // Versioned with the agent (not SDK) and published with -alpha suffix.
+  val otelExtensionApi = Seq(
+    "io.opentelemetry.javaagent" % "opentelemetry-javaagent-extension-api" % (otelAgentVersion + "-alpha") % "provided",
+  )
+
   // Provided by the OTEL agent at runtime
   val byteBuddyCompileOnly = Seq(
     "net.bytebuddy" % "byte-buddy"       % byteBuddyVersion % "provided",
