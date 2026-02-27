@@ -20,18 +20,13 @@ import java.util.concurrent.atomic.AtomicLong
  * Executor-side plugin that restores OTEL context from Spark local properties
  * and creates real executor-side task spans with the correct parent.
  *
- * Respects FLARE_TRACE_GRANULARITY — task spans are only created when granularity
- * is `tasks` or `all`. With `jobs` or `stages`, onTaskStart is a no-op.
- *
- * Respects FLARE_SAMPLING_RATIO — samples consistently per trace by checking
- * the sampling bit already set in the incoming W3C traceparent. If the driver
- * sampled the trace, the executor follows. No independent sampling decision here.
- *
- * Respects FLARE_MAX_SPANS_PER_TRACE — once the per-executor span counter
- * exceeds the limit, new task spans are suppressed and a warning is logged once.
- *
- * Uses ThreadLocal because executor threads are pooled and run tasks serially
- * per thread, but multiple threads may run tasks concurrently on one executor.
+ * v0.2 additions:
+ * - Stage-level task filtering via FLARE_TASK_STAGES / FLARE_TASK_STAGE_PATTERN
+ * - Slow task filter via FLARE_SLOW_TASK_MS (drop spans for fast tasks)
+ * - Retry-only filter via FLARE_RETRY_TASKS_ONLY
+ * - Task span metrics: shuffle bytes, peak memory, SQL execution ID
+ * - Log MDC enrichment: trace_id/span_id injected into Log4j 2 ThreadContext
+ * - Shutdown flush: force-flush TracerProvider on executor shutdown (K8s SIGTERM)
  */
 class FlareExecutorPlugin extends ExecutorPlugin {
 
@@ -42,8 +37,6 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   private var config: FlareConfig = _
 
   // Counts spans created on this executor JVM across all tasks.
-  // Reset is not possible mid-job, so this is a conservative circuit breaker
-  // that prevents unbounded span growth on large jobs.
   private val spanCount = new AtomicLong(0L)
 
   // Set to true once the maxSpansPerTrace warning has been logged, to avoid log spam
@@ -53,11 +46,13 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   // None means this task was not sampled or granularity suppressed it.
   private val taskState = new ThreadLocal[Option[(Span, Scope)]]()
 
+  // Nanosecond timestamp at task start — used for duration_ms attribute and slow task filter.
+  private val taskStartNanos = new ThreadLocal[Long]()
+
   override def init(ctx: PluginContext, extraConf: ju.Map[String, String]): Unit = {
     config = try FlareConfig.load() catch {
       case e: IllegalArgumentException =>
         logger.error(s"[Flare] Configuration error — executor task spans disabled: ${e.getMessage}")
-        // Fall back to a disabled config so onTaskStart is a no-op
         FlareConfig(enabled = false, granularity = TraceGranularity.Stages,
           samplingRatio = 0.0, maxSpansPerTrace = 0, slowTaskMs = 0L,
           retryTasksOnly = false, taskStageIds = Set.empty, taskStagePattern = None)
@@ -68,12 +63,6 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   }
 
   override def onTaskStart(): Unit = {
-    // Guard 1: granularity — tasks must be enabled
-    if (!config.tracesTasks) {
-      taskState.set(None)
-      return
-    }
-
     val taskContext = TaskContext.get()
     if (taskContext == null) {
       logger.warn("[Flare] onTaskStart called with null TaskContext")
@@ -81,12 +70,21 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       return
     }
 
+    // Guard 1: granularity + stage/retry filters (replaces simple tracesTasks check).
+    // slowTaskMs is deferred to endTask since duration is not known at start.
+    if (!config.shouldTraceTask(
+      attemptNumber = taskContext.attemptNumber(),
+      speculative   = false, // TaskContext does not expose speculative flag
+      stageId       = taskContext.stageId(),
+      stageName     = "",    // stage name not available on executor until Phase 2
+    )) {
+      taskState.set(None)
+      return
+    }
+
     val parentContext = LocalPropertyPropagator.extract(taskContext)
 
     // Guard 2: sampling — honour the sampling decision already made by the driver.
-    // The W3C traceparent flags byte encodes the sampling bit. If the driver did not
-    // sample this trace (flags = 00), don't create an executor span either.
-    // This keeps sampling consistent across the driver→executor boundary.
     val parentSpanContext = io.opentelemetry.api.trace.Span.fromContext(parentContext).getSpanContext
     if (parentSpanContext.isValid && !parentSpanContext.isSampled) {
       logger.debug(s"[Flare] Task not sampled (inherited from driver), partition=${taskContext.partitionId()}")
@@ -94,8 +92,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       return
     }
 
-    // Guard 3: maxSpansPerTrace circuit breaker — check BEFORE incrementing so
-    // suppressed tasks don't consume counter slots.
+    // Guard 3: maxSpansPerTrace circuit breaker — check BEFORE incrementing.
     if (spanCount.get() >= config.maxSpansPerTrace) {
       if (!maxSpansWarned) {
         logger.warn(s"[Flare] Executor span limit reached (${config.maxSpansPerTrace}). " +
@@ -116,11 +113,6 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       .setLong(Task.PartitionId, taskContext.partitionId().toLong)
       .setLong(Task.AttemptId, taskContext.attemptNumber().toLong)
 
-    // Task.Speculative: attemptNumber > 0 means retry, not necessarily speculative.
-    // Spark's public TaskContext API does not expose a speculative flag directly.
-    // We record the attempt number and leave the speculative attribute unset
-    // rather than conflating retries with speculation.
-
     // tracesTaskDetails = granularity ALL — add stageId
     if (config.tracesTaskDetails) {
       spanBuilder.setLong(Stage.Id, taskContext.stageId().toLong)
@@ -129,6 +121,10 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     val span  = spanBuilder.startSpan()
     val scope = span.makeCurrent()
     taskState.set(Some((span, scope)))
+    taskStartNanos.set(System.nanoTime())
+
+    // MDC enrichment — inject trace_id/span_id into Log4j 2 ThreadContext for log correlation
+    MdcEnricher.put(span.getSpanContext.getTraceId, span.getSpanContext.getSpanId)
 
     logger.debug(s"[Flare] Task span started, partition=${taskContext.partitionId()}, " +
       s"traceId=${span.getSpanContext.getTraceId}, spanCount=$currentCount")
@@ -142,6 +138,21 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   private def endTask(success: Boolean, reason: Option[String]): Unit = {
     Option(taskState.get()).flatten.foreach { case (span, scope) =>
       try {
+        // Compute duration for slow task filter and duration attribute
+        val startNanos = taskStartNanos.get()
+        val durationMs = if (startNanos > 0) (System.nanoTime() - startNanos) / 1000000L else -1L
+
+        // Slow task filter — drop span if task was faster than threshold.
+        // Close scope but do NOT end span — unended spans are not exported by BatchSpanProcessor.
+        if (config.slowTaskMs > 0 && durationMs >= 0 && durationMs < config.slowTaskMs) {
+          MdcEnricher.remove()
+          scope.close()
+          taskState.remove()
+          taskStartNanos.remove()
+          return
+        }
+
+        // Set status
         if (success) {
           span.setStatus(StatusCode.OK)
           span.setAttribute(Task.Result, "SUCCESS")
@@ -150,15 +161,96 @@ class FlareExecutorPlugin extends ExecutorPlugin {
           span.setAttribute(Task.Result, "FAILED")
           reason.foreach(r => span.setAttribute(Error.Message, r))
         }
+
+        // Record task duration
+        if (durationMs >= 0) {
+          span.setLong(Task.DurationMs, durationMs)
+        }
+
+        // Record task metrics from TaskMetrics (only fully populated at task end)
+        val taskContext = TaskContext.get()
+        if (taskContext != null) {
+          try {
+            val m = taskContext.taskMetrics()
+            span.setLong(Task.ShuffleReadBytes, m.shuffleReadMetrics.totalBytesRead)
+            span.setLong(Task.ShuffleWriteBytes, m.shuffleWriteMetrics.bytesWritten)
+            span.setLong(Task.PeakMemory, m.peakExecutionMemory)
+            span.setLong(Task.InputBytes, m.inputMetrics.bytesRead)
+            span.setLong(Task.OutputBytes, m.outputMetrics.bytesWritten)
+          } catch {
+            case _: Exception => // TaskMetrics may throw in barrier mode — skip gracefully
+          }
+
+          // SQL execution ID from local properties
+          Option(taskContext.getLocalProperty("spark.sql.execution.id"))
+            .flatMap(_.toLongOption)
+            .foreach(id => span.setLong(Task.SqlExecutionId, id))
+        }
       } finally {
+        MdcEnricher.remove()
         scope.close()
         span.end()
         taskState.remove()
+        taskStartNanos.remove()
       }
     }
   }
 
   override def shutdown(): Unit = {
     logger.info(s"[Flare] Executor plugin shutdown (total spans created: ${spanCount.get()})")
+
+    // End any in-flight task span on this thread (e.g. K8s SIGTERM during task execution)
+    Option(taskState.get()).flatten.foreach { case (span, scope) =>
+      MdcEnricher.remove()
+      span.setStatus(StatusCode.ERROR, "Executor shutdown before task completed")
+      span.setAttribute(Task.Result, "SHUTDOWN")
+      scope.close()
+      span.end()
+      taskState.remove()
+    }
+
+    // Force-flush TracerProvider to push buffered spans before JVM exits.
+    // The SDK classes live in the agent classloader — catch NoClassDefFoundError
+    // if they're not visible from the app classloader.
+    try {
+      GlobalOpenTelemetry.get() match {
+        case sdk: io.opentelemetry.sdk.OpenTelemetrySdk =>
+          sdk.getSdkTracerProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
+          logger.info("[Flare] Forced flush of TracerProvider completed")
+        case _ => ()
+      }
+    } catch {
+      case _: NoClassDefFoundError =>
+        logger.debug("[Flare] SDK classes not accessible, relying on agent shutdown hook")
+      case e: Exception =>
+        logger.warn(s"[Flare] Error during shutdown flush: ${e.getMessage}")
+    }
   }
+}
+
+/**
+ * MDC enrichment for Log4j 2 ThreadContext.
+ * Injects trace_id and span_id so executor log lines can be correlated with traces in Grafana.
+ * Falls back to no-op if Log4j 2 is not on the classpath.
+ */
+private[plugin] object MdcEnricher {
+
+  private val log4j2Available: Boolean = try {
+    Class.forName("org.apache.logging.log4j.ThreadContext")
+    true
+  } catch {
+    case _: ClassNotFoundException => false
+  }
+
+  def put(traceId: String, spanId: String): Unit =
+    if (log4j2Available) {
+      org.apache.logging.log4j.ThreadContext.put("trace_id", traceId)
+      org.apache.logging.log4j.ThreadContext.put("span_id", spanId)
+    }
+
+  def remove(): Unit =
+    if (log4j2Available) {
+      org.apache.logging.log4j.ThreadContext.remove("trace_id")
+      org.apache.logging.log4j.ThreadContext.remove("span_id")
+    }
 }

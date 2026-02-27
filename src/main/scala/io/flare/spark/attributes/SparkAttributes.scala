@@ -43,6 +43,14 @@ object SparkAttributes {
     val Speculative = AttributeKey.booleanKey("spark.task.speculative")
     val Result      = AttributeKey.stringKey("spark.task.result")
     val Locality    = AttributeKey.stringKey("spark.task.locality")
+    // v0.2 — task-level metrics (recorded at task end from TaskMetrics)
+    val ShuffleReadBytes  = AttributeKey.longKey("spark.task.shuffle.read_bytes")
+    val ShuffleWriteBytes = AttributeKey.longKey("spark.task.shuffle.write_bytes")
+    val PeakMemory        = AttributeKey.longKey("spark.task.peak_memory_bytes")
+    val InputBytes        = AttributeKey.longKey("spark.task.input.bytes")
+    val OutputBytes       = AttributeKey.longKey("spark.task.output.bytes")
+    val DurationMs        = AttributeKey.longKey("spark.task.duration_ms")
+    val SqlExecutionId    = AttributeKey.longKey("spark.task.sql.execution_id")
   }
 
   // OTEL semantic conventions
