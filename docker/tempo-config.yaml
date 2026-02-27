@@ -16,6 +16,24 @@ distributor:
 ingester:
   max_block_duration: 5m
 
+metrics_generator:
+  ring:
+    kvstore:
+      store: inmemory
+  processor:
+    service_graphs:
+    span_metrics:
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write: []
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors:
+        - service-graphs
+        - span-metrics
+
 storage:
   trace:
     backend: local
