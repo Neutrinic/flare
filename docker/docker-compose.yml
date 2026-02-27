@@ -104,6 +104,17 @@ services:
     command: run /etc/alloy/config.alloy
     networks: [flare-net]
 
+  loki:
+    image: grafana/loki:3.4.2
+    hostname: loki
+    ports:
+      - "3100:3100"   # Loki HTTP
+    volumes:
+      - ./loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/config.yaml
+    networks: [flare-net]
+
   tempo:
     image: grafana/tempo:2.6.1
     hostname: tempo
@@ -128,7 +139,7 @@ services:
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
-    depends_on: [tempo]
+    depends_on: [tempo, loki]
     networks: [flare-net]
 
 networks:
@@ -138,5 +149,6 @@ networks:
 volumes:
   spark-events:
   spark-logs:
+  loki-data:
   tempo-data:
   grafana-data:

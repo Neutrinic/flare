@@ -1,4 +1,4 @@
-// Grafana Alloy configuration — OTLP receiver forwarding traces to Tempo
+// Grafana Alloy configuration — OTLP receiver forwarding traces to Tempo, logs to Loki
 
 otelcol.receiver.otlp "default" {
   grpc {
@@ -10,12 +10,24 @@ otelcol.receiver.otlp "default" {
 
   output {
     traces = [otelcol.exporter.otlp.tempo.input]
+    logs   = [otelcol.exporter.otlphttp.loki.input]
   }
 }
 
 otelcol.exporter.otlp "tempo" {
   client {
     endpoint = "tempo:4317"
+
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// OTLP logs → Loki via OTLP HTTP (Loki 3.x supports native OTLP ingestion)
+otelcol.exporter.otlphttp "loki" {
+  client {
+    endpoint = "http://loki:3100/otlp"
 
     tls {
       insecure = true

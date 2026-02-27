@@ -11,10 +11,25 @@ datasources:
     jsonData:
       httpMethod: GET
       tracesToLogsV2:
-        datasourceUid: ''
+        datasourceUid: loki
+        filterByTraceID: true
+        filterBySpanID: false
       tracesToMetrics:
         datasourceUid: ''
       nodeGraph:
         enabled: true
       serviceMap:
         datasourceUid: ''
+
+  - name: Loki
+    type: loki
+    access: proxy
+    uid: loki
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: 'trace_id=(\w+)'
+          name: TraceID
+          url: '${__value.raw}'
