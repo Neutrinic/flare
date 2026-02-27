@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ByteBuddy TaskRunner context restoration** — `TaskRunnerInstrumentationModule` hooks
+  `Executor$TaskRunner.run()` to extract `traceparent` from `TaskDescription.properties`
+  and make the parent OTEL context current for the entire task execution. Downstream
+  OTEL-instrumented libraries (JDBC, HTTP, gRPC) inside tasks now inherit the correct
+  parent context. Context-only — no span creation, `FlareExecutorPlugin` manages span
+  lifecycle as before ([#15])
+- **`LocalPropertyPropagator.extractFromProperties`** — overloaded extraction method taking
+  `java.util.Properties` directly for use in TaskRunner advice where `TaskContext` is null
 - **ByteBuddy SparkContext auto-registration** — `SparkContextInstrumentationModule` hooks
   `SparkContext.<init>` constructor exit via ByteBuddy advice to auto-register
   `TracingSparkListener` and create the application span without `spark.plugins` config.
@@ -93,3 +101,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#8]: https://github.com/Neutrinic/flare/issues/8
 [#9]: https://github.com/Neutrinic/flare/issues/9
 [#14]: https://github.com/Neutrinic/flare/issues/14
+[#15]: https://github.com/Neutrinic/flare/issues/15

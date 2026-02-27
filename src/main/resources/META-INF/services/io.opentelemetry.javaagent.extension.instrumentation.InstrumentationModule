@@ -1,1 +1,2 @@
 io.flare.spark.instrumentation.SparkContextInstrumentationModule
+io.flare.spark.instrumentation.TaskRunnerInstrumentationModule
