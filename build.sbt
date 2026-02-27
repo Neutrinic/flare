@@ -37,7 +37,9 @@ lazy val root = (project in file("."))
     libraryDependencies ++= otelBundled ++ otelProvided ++ byteBuddyCompileOnly ++ Seq(
       "org.apache.spark" %% "spark-core" % sparkBuildVersion % "provided",
       "org.apache.spark" %% "spark-sql"  % sparkBuildVersion % "provided",
-      "org.slf4j"         % "slf4j-api"  % slf4jVersion      % "provided",
+      "org.slf4j"                % "slf4j-api"  % slf4jVersion % "provided",
+      // log4j-api is provided transitively by spark-core — no explicit dep needed.
+      // MdcEnricher references ThreadContext at compile time; Spark's log4j-api satisfies it.
     ) ++ testDeps(sparkBuildVersion),
 
     // SPI files — do not let assembly deduplicate these

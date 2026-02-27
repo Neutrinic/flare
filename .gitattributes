@@ -1,0 +1,2 @@
+# Force LF for shell scripts — CRLF breaks bind-mounted entrypoints in Docker
+*.sh text eol=lf
