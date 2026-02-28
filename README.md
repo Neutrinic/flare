@@ -3,31 +3,34 @@
 OpenTelemetry distributed tracing for Apache Spark — driver-to-executor context propagation.
 
 ```
-spark.application  (driver, root)
-├── spark.job.0    (driver)
-│   └── spark.stage.0  (driver)
-├── spark.job.1    (driver)
-│   └── spark.stage.2  (driver)
-├── spark.task.executor  (executor-1, partition 0)  ← Flare
-├── spark.task.executor  (executor-1, partition 1)  ← Flare
-├── spark.task.executor  (executor-2, partition 2)  ← Flare
-└── spark.task.executor  (executor-2, partition 3)  ← Flare
+spark.application                                    (driver)
+├── spark.sql.0                                      (driver)
+│   ├── spark.job.0                                  (driver)
+│   │   └── spark.stage.0                            (driver)
+│   │       ├── spark.task.executor  (executor-1)    ← Flare
+│   │       └── spark.task.executor  (executor-2)    ← Flare
+│   └── spark.job.1                                  (driver)
+│       └── spark.stage.2                            (driver)
+│           ├── spark.task.executor  (executor-1)    ← Flare
+│           └── spark.task.executor  (executor-2)    ← Flare
+└── spark.sql.1                                      (driver)
+    └── spark.job.2                                  (driver)
+        └── spark.stage.4                            (driver)
+            ├── spark.task.executor  (executor-1)    ← Flare
+            └── spark.task.executor  (executor-2)    ← Flare
 ```
-
-> **Phase 1 note:** Task spans are children of the application span, not of their specific
-> job or stage. The traceparent is injected once at SparkContext init, pointing to the
-> application span. Phase 2 will inject per-job traceparent via ByteBuddy for full
-> hierarchical nesting.
 
 ## Overview
 
 Most Spark observability stops at the driver. You get a stage span with an aggregate duration but cannot see which executor ran slow, which partition was skewed, or whether a retry happened on a specific node.
 
-Flare injects a W3C `traceparent` into Spark's `LocalProperty` mechanism at SparkContext init. Local properties serialize into `TaskDescription` and travel to the executor JVM. `ExecutorPlugin.onTaskStart()` extracts the context and creates a real executor-side span with accurate wall-clock timing and the driver trace as parent.
+Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stage W3C `traceparent` into task properties before tasks are created. On the executor, the traceparent is extracted and restored as OTEL context, creating task spans with accurate wall-clock timing nested under their specific stage span. The full hierarchy — `app → sql → job → stage → task` — spans two JVM services with zero orphan spans.
 
 ## Features
 
+- **Full span hierarchy** — `app → sql → job → stage → task` across driver and executor JVMs
 - **Executor task spans** — real spans on the executor thread, not driver-side approximations
+- **Per-stage context** — each task inherits its specific stage span as parent, including AQE sub-jobs
 - **W3C trace continuity** — `traceparent` propagated via Spark's local property channel
 - **Zero code changes** — two JARs, two `--conf` lines on `spark-submit`
 - **OTEL native** — OTLP export to any backend (Grafana Tempo, Jaeger, Honeycomb, Datadog)
@@ -109,20 +112,30 @@ Open Grafana at `http://localhost:3000` — navigate to Explore, select Tempo, a
 ## Architecture
 
 ```
-FlareSparkPlugin
-├── FlareDriverPlugin          # creates application span, injects traceparent,
-│   └── TracingSparkListener   # registers listener for job/stage/SQL spans
-└── FlareExecutorPlugin        # extracts traceparent on executor, creates task spans
+ByteBuddy (OTEL agent extension)
+├── SparkContextInstrumentation        # auto-registers listener + executor plugin
+├── SubmitMissingTasksInstrumentation  # hooks DAGScheduler.submitMissingTasks
+│   └── SubmitMissingTasksAdviceHelper # creates job/stage spans, injects traceparent
+├── TaskRunnerInstrumentation          # hooks Executor$TaskRunner.run()
+│   └── TaskRunnerAdviceHelper         # extracts traceparent, restores OTEL context
+└── TracingSparkListener               # adopts pre-created spans, manages lifecycle
+
+FlareSparkPlugin (backward compat)
+├── FlareDriverPlugin                  # fallback when ByteBuddy is not active
+└── FlareExecutorPlugin                # creates task spans on executor
 ```
 
 Context propagation path:
 
 ```
-Driver: SparkContext.setLocalProperty("traceparent", "00-{traceId}-{spanId}-01")
-  → serialized into TaskDescription.properties
+Driver: DAGScheduler.submitMissingTasks(stage, jobId)
+  → ByteBuddy advice creates stage span
+  → injects traceparent into ActiveJob.properties
+  → properties serialized into TaskDescription
   → sent to executor JVM
-Executor: TaskContext.getLocalProperty("traceparent")
-  → W3C extract → parent context → span with accurate executor-side timing
+Executor: TaskRunner.run() / ExecutorPlugin.onTaskStart()
+  → extracts traceparent from task properties
+  → restores OTEL context → task span with executor-side timing
 ```
 
 ## Stack
