@@ -1,6 +1,8 @@
 # Flare
 
-OpenTelemetry distributed tracing for Apache Spark — driver-to-executor context propagation.
+Full-stack OpenTelemetry observability for Apache Spark — traces, metrics, and logs correlated across driver and executor JVMs.
+
+![Dashboard](screenshots/dashboard.png)
 
 ```
 spark.application                          (flare-driver)
@@ -28,14 +30,34 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 
 ## Features
 
+**Traces**
 - **Full span hierarchy** — `app → sql → job → stage → task` across driver and executor JVMs
 - **Executor task spans** — real spans on the executor thread, not driver-side approximations
 - **Per-stage context** — each task inherits its specific stage span as parent, including AQE sub-jobs
 - **W3C trace continuity** — `traceparent` propagated via Spark's local property channel
-- **Zero code changes** — two JARs, two `--conf` lines on `spark-submit`
-- **OTEL native** — OTLP export to any backend (Grafana Tempo, Jaeger, Honeycomb, Datadog)
 - **Granularity control** — jobs, stages, tasks, or all; plus slow-task and retry-only filters
 - **Sampling** — consistent across the JVM boundary via W3C traceparent flags
+
+![Traces](screenshots/traces.png)
+
+**Metrics**
+- **Task duration histograms** — with exemplar links back to the originating trace
+- **Shuffle I/O counters** — read/write bytes per task and per stage
+- **Stage aggregates** — executor run time, input/output bytes, shuffle totals
+- **Records throughput** — histogram of records processed per second
+
+![Metrics](screenshots/metrics.png)
+
+**Logs**
+- **Trace-correlated logs** — driver and executor logs linked to spans via OTLP
+- **MDC enrichment** — trace ID and span ID injected into log context during task execution
+
+![Logs](screenshots/logs.png)
+
+**General**
+- **Zero code changes** — two JARs, two `--conf` lines on `spark-submit`
+- **OTEL native** — OTLP export to any backend (Grafana, Jaeger, Honeycomb, Datadog)
+- **Provisioned Grafana dashboard** — task duration heatmaps, shuffle skew detection, executor comparison, logs, and trace links out of the box
 
 ## Installation
 
@@ -86,7 +108,7 @@ sbt assembly  # fat JAR at target/scala-2.13/flare-spark-assembly-*.jar
 
 ## Docker
 
-A Spark cluster with Grafana Tempo and Grafana is provided for local development:
+A full observability stack is provided for local development — Spark cluster, Alloy (OTLP collector), Tempo (traces), Mimir (metrics), Loki (logs), and Grafana with a pre-built dashboard:
 
 ```bash
 sbt assembly
@@ -96,7 +118,7 @@ cd docker
 docker compose up -d
 ```
 
-This starts a Spark master, two workers, a history server, Alloy (OTLP collector), Tempo, and Grafana. Assembly JARs are bind-mounted from the build tree — just re-run `sbt assembly` and restart the job, no Docker rebuild needed.
+Assembly JARs are bind-mounted from the build tree — just re-run `sbt assembly` and restart the job, no Docker rebuild needed.
 
 Run the skewed partition example:
 
@@ -108,7 +130,10 @@ docker compose exec spark-master \
   /opt/flare/flare-examples.jar
 ```
 
-Open Grafana at `http://localhost:3000` — navigate to Explore, select Tempo, and search for recent traces.
+Open Grafana at `http://localhost:3000`:
+- **Dashboards > Flare — Spark Observability** — task duration heatmap, shuffle skew, executor comparison, stage summary, logs, and trace links
+- **Explore > Tempo** — search traces by service name, drill into span details with linked metrics and logs
+- **Explore > Mimir** — query spark_task_* and spark_stage_* metrics directly
 
 ## Architecture
 
