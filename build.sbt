@@ -18,6 +18,23 @@ ThisBuild / scalacOptions ++= Seq(
 // because `++2.12.18` changes ThisBuild/scalaVersion which would leak -Ypartial-unification
 // to the examples sub-project (which stays on 2.13 and rejects that flag).
 
+// ── OWASP dependency check ────────────────────────────────────────────────
+import net.nmoncho.sbt.dependencycheck.settings._
+dependencyCheckFailBuildOnCVSS := 7  // fail on high + critical
+dependencyCheckSuppressions := SuppressionSettings(
+  files = SuppressionFilesSettings.files()(file("dependency-check-suppression.xml"))
+)
+dependencyCheckOutputDirectory := target.value / "dependency-check"
+dependencyCheckFormats := {
+  import org.owasp.dependencycheck.reporting.ReportGenerator.Format
+  Seq(Format.HTML, Format.JSON)
+}
+dependencyCheckNvdApi := {
+  val key = sys.env.getOrElse("NVD_API_KEY", "")
+  if (key.nonEmpty) NvdApiSettings(apiKey = key, requestDelay = Some(java.time.Duration.ofSeconds(4)))
+  else NvdApiSettings()
+}
+
 // Spark version to build against (override with -DsparkVersion=3.5.1)
 val sparkBuildVersion = sys.props.getOrElse("sparkVersion", spark35)
 val sparkMajorMinor   = sparkBuildVersion.split('.').take(2).mkString(".")

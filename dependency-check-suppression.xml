@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+
+  <!--
+    Suppression policy: only suppress CVEs in dependencies that are NOT shipped
+    in the assembly JAR. Flare bundles only opentelemetry-api and opentelemetry-context.
+    Everything else (Spark, OTEL SDK, ByteBuddy, SLF4J) is "provided" scope —
+    the runtime environment supplies them, not Flare.
+  -->
+
+  <!-- ── Spark (provided by cluster, not shipped) ──────────────────────────── -->
+  <suppress>
+    <notes>Spark core/sql and all transitive deps are provided scope, not shipped in Flare JAR</notes>
+    <filePath regex="true">.*spark-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Hadoop (transitive from Spark, provided) ──────────────────────────── -->
+  <suppress>
+    <notes>Hadoop is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*hadoop-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Jackson (transitive from Spark, provided) ─────────────────────────── -->
+  <suppress>
+    <notes>Jackson is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*jackson-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Guava (transitive from Spark, provided) ───────────────────────────── -->
+  <suppress>
+    <notes>Guava is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*guava-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Netty (transitive from Spark, provided) ───────────────────────────── -->
+  <suppress>
+    <notes>Netty is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*netty-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Jetty (transitive from Spark, provided) ───────────────────────────── -->
+  <suppress>
+    <notes>Jetty is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*jetty-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Commons (transitive from Spark, provided) ─────────────────────────── -->
+  <suppress>
+    <notes>Apache Commons libraries are transitive deps of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*commons-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Protobuf (transitive from Spark, provided) ────────────────────────── -->
+  <suppress>
+    <notes>Protobuf is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*protobuf-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Snappy/Zstd/LZ4 (transitive from Spark, provided) ────────────────── -->
+  <suppress>
+    <notes>Compression codecs are transitive deps of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*(snappy|zstd|lz4).*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Avro (transitive from Spark, provided) ────────────────────────────── -->
+  <suppress>
+    <notes>Avro is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*avro-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Arrow (transitive from Spark, provided) ────────────────────────────── -->
+  <suppress>
+    <notes>Apache Arrow is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*arrow-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Parquet (transitive from Spark, provided) ─────────────────────────── -->
+  <suppress>
+    <notes>Apache Parquet is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*parquet-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Hive (transitive from Spark, provided) ────────────────────────────── -->
+  <suppress>
+    <notes>Hive storage API is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*hive-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Zookeeper (transitive from Spark, provided) ───────────────────────── -->
+  <suppress>
+    <notes>Apache ZooKeeper is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*zookeeper.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Ivy (transitive from Spark, provided) ─────────────────────────────── -->
+  <suppress>
+    <notes>Apache Ivy is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*ivy-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── ORC (transitive from Spark, provided) ─────────────────────────────── -->
+  <suppress>
+    <notes>Apache ORC is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*orc-.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── ASM (transitive from Spark, provided) ─────────────────────────────── -->
+  <suppress>
+    <notes>ASM bytecode library is a transitive dependency of Spark, provided by the cluster runtime</notes>
+    <filePath regex="true">.*asm.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Janino (transitive from Spark SQL, provided) ──────────────────────── -->
+  <suppress>
+    <notes>Janino compiler is a transitive dependency of Spark SQL, provided by the cluster runtime</notes>
+    <filePath regex="true">.*(janino|commons-compiler).*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── SLF4J / Log4j (provided by Spark runtime) ────────────────────────── -->
+  <suppress>
+    <notes>Logging frameworks are provided by Spark and the OTEL agent at runtime</notes>
+    <filePath regex="true">.*(slf4j|log4j|logback).*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── ByteBuddy (provided by OTEL agent, not shipped) ───────────────────── -->
+  <suppress>
+    <notes>ByteBuddy is provided by the OTEL Java agent at runtime, not shipped in Flare JAR</notes>
+    <filePath regex="true">.*byte-buddy.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── OTEL SDK (provided by OTEL agent, not shipped) ────────────────────── -->
+  <suppress>
+    <notes>OTEL SDK is provided by the OTEL Java agent at runtime, not shipped in Flare JAR</notes>
+    <filePath regex="true">.*opentelemetry-sdk.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── OTEL extension API (provided by OTEL agent, not shipped) ──────────── -->
+  <suppress>
+    <notes>OTEL extension API is provided by the OTEL Java agent at runtime</notes>
+    <filePath regex="true">.*opentelemetry-javaagent.*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+  <!-- ── Test dependencies (never shipped) ─────────────────────────────────── -->
+  <suppress>
+    <notes>Test-only dependencies are never shipped in the assembly JAR</notes>
+    <filePath regex="true">.*(munit|scalacheck|scalameta).*\.jar.*</filePath>
+    <vulnerabilityName regex="true">.*</vulnerabilityName>
+  </suppress>
+
+</suppressions>
