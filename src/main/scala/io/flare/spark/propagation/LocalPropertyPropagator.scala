@@ -55,6 +55,20 @@ object LocalPropertyPropagator {
     parentContext
   }
 
+  /**
+   * Extract OTEL parent context from a raw `java.util.Properties` instance.
+   *
+   * Used by `TaskRunnerAdviceHelper` where `TaskContext` is not yet available —
+   * the ByteBuddy advice fires at the top of `TaskRunner.run()` before Spark sets
+   * `TaskContext.get()`. The traceparent is read directly from
+   * `TaskDescription.properties` via `@Advice.FieldValue`.
+   */
+  def extractFromProperties(props: ju.Properties): OtelContext = {
+    if (props == null) return OtelContext.root()
+    val propagator = GlobalOpenTelemetry.getPropagators.getTextMapPropagator
+    propagator.extract(OtelContext.root(), props, PropertiesGetter)
+  }
+
   // ── TextMapSetter for SparkContext ─────────────────────────────────────────
 
   private val SparkContextSetter: TextMapSetter[SparkContext] =
@@ -72,5 +86,24 @@ object LocalPropertyPropagator {
       override def get(carrier: TaskContext, key: String): String =
         if (carrier == null) null
         else carrier.getLocalProperty(key)
+    }
+
+  // ── TextMapGetter for java.util.Properties ────────────────────────────────
+  //
+  // keys() intentionally returns only W3C header names. The W3C propagator
+  // (default OTEL_PROPAGATORS) calls get() with "traceparent"/"tracestate"
+  // directly. If a non-W3C propagator is configured (B3, Jaeger), it will
+  // call get() with its own key names — Properties.getProperty will return
+  // null for missing keys, which is the correct "not present" signal.
+  // The keys() iterable is advisory and most propagators don't iterate it.
+
+  private[propagation] val PropertiesGetter: TextMapGetter[ju.Properties] =
+    new TextMapGetter[ju.Properties] {
+      override def keys(carrier: ju.Properties): java.lang.Iterable[String] =
+        ju.Arrays.asList(TraceparentKey, TracestateKey)
+
+      override def get(carrier: ju.Properties, key: String): String =
+        if (carrier == null) null
+        else carrier.getProperty(key)
     }
 }
