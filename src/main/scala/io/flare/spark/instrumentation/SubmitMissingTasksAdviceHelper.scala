@@ -39,7 +39,7 @@ import java.util.logging.{Level, Logger}
  */
 object SubmitMissingTasksAdviceHelper {
 
-  private val logger = Logger.getLogger(classOf[SubmitMissingTasksAdviceHelper.type].getName)
+  private val logger = Logger.getLogger(SubmitMissingTasksAdviceHelper.getClass.getName)
 
   /**
    * Job spans keyed by jobId. Created on first `submitMissingTasks` call for a

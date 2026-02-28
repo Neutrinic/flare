@@ -129,7 +129,7 @@ class TracingSparkListener(
   override def onJobEnd(event: SparkListenerJobEnd): Unit = {
     // Always clean up stageToJob, even if the job span was missed.
     // This prevents unbounded growth if onJobStart was lost due to listener registration timing.
-    stageToJob.filterInPlace { case (_, jobId) => jobId != event.jobId }
+    stageToJob.foreach { case (stageId, jId) => if (jId == event.jobId) stageToJob.remove(stageId) }
 
     // Clean up pre-created job span from the helper's map
     SubmitMissingTasksAdviceHelper.removeJobSpan(event.jobId)

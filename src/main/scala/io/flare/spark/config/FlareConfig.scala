@@ -1,5 +1,6 @@
 package io.flare.spark.config
 
+import scala.util.Try
 import scala.util.matching.Regex
 
 sealed trait TraceGranularity
@@ -97,7 +98,7 @@ object FlareConfig {
 
     val samplingRatio = envOrProp("FLARE_SAMPLING_RATIO")
       .map { s =>
-        val d = s.toDoubleOption.getOrElse(
+        val d = Try(s.toDouble).getOrElse(
           throw new IllegalArgumentException(s"Flare config error: FLARE_SAMPLING_RATIO '$s' is not a number")
         )
         if (d < 0.0 || d > 1.0)
@@ -108,7 +109,7 @@ object FlareConfig {
 
     val maxSpansPerTrace = envOrProp("FLARE_MAX_SPANS_PER_TRACE")
       .map { s =>
-        val n = s.toIntOption.getOrElse(
+        val n = Try(s.toInt).getOrElse(
           throw new IllegalArgumentException(s"Flare config error: FLARE_MAX_SPANS_PER_TRACE '$s' is not an integer")
         )
         if (n <= 0)
@@ -119,7 +120,7 @@ object FlareConfig {
 
     val slowTaskMs = envOrProp("FLARE_SLOW_TASK_MS")
       .map { s =>
-        val n = s.toLongOption.getOrElse(
+        val n = Try(s.toLong).getOrElse(
           throw new IllegalArgumentException(s"Flare config error: FLARE_SLOW_TASK_MS '$s' is not a number")
         )
         if (n < 0)
@@ -137,7 +138,7 @@ object FlareConfig {
     val taskStageIds = envOrProp("FLARE_TASK_STAGES")
       .map { s =>
         s.split(",").map(_.trim).filter(_.nonEmpty).map { id =>
-          id.toIntOption.getOrElse(
+          Try(id.toInt).getOrElse(
             throw new IllegalArgumentException(s"Flare config error: FLARE_TASK_STAGES '$id' is not an integer")
           )
         }.toSet

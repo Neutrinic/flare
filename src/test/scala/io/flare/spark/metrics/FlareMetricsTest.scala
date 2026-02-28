@@ -6,7 +6,7 @@ import io.opentelemetry.sdk.metrics.SdkMeterProvider
 import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader
 import munit.FunSuite
 
-import scala.jdk.CollectionConverters._
+import scala.collection.JavaConverters._
 
 class FlareMetricsTest extends FunSuite {
 

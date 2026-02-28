@@ -219,7 +219,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
 
         // SQL execution ID from local properties (captured context still has properties)
         Option(capturedTaskContext.getLocalProperty("spark.sql.execution.id"))
-          .flatMap(_.toLongOption)
+          .flatMap(s => scala.util.Try(s.toLong).toOption)
           .foreach(id => span.setLong(Task.SqlExecutionId, id))
 
         // Record OTEL metrics while span scope is still active → automatic exemplar linking.

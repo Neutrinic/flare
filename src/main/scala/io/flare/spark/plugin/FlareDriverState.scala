@@ -23,7 +23,7 @@ import java.util.logging.Logger
  */
 object FlareDriverState {
 
-  private val logger = Logger.getLogger(classOf[FlareDriverState.type].getName)
+  private val logger = Logger.getLogger(FlareDriverState.getClass.getName)
 
   @volatile private var _initialized: Boolean = false
   @volatile private[spark] var applicationSpan: Option[Span] = None

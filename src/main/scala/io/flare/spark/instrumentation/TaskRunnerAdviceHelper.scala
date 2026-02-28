@@ -24,7 +24,7 @@ import java.util.logging.{Level, Logger}
  */
 object TaskRunnerAdviceHelper {
 
-  private val logger = Logger.getLogger(classOf[TaskRunnerAdviceHelper.type].getName)
+  private val logger = Logger.getLogger(TaskRunnerAdviceHelper.getClass.getName)
 
   // Cached reflection — Method objects are thread-safe for invoke()
   @volatile private var propertiesMethod: java.lang.reflect.Method = _
