@@ -61,6 +61,41 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 
 ## Installation
 
+### Option 1: `--packages` (recommended)
+
+```bash
+spark-submit \
+  --packages io.github.neutrinic:flare-spark-3-5_2.13:1.0.0 \
+  --conf "spark.plugins=io.flare.spark.plugin.FlareSparkPlugin" \
+  --conf "spark.driver.extraJavaOptions=\
+    -javaagent:/opt/flare/opentelemetry-javaagent.jar \
+    -Dotel.service.name=my-app-driver \
+    -Dotel.exporter.otlp.protocol=grpc \
+    -Dotel.exporter.otlp.endpoint=http://your-collector:4317" \
+  --conf "spark.executor.extraJavaOptions=\
+    -javaagent:/opt/flare/opentelemetry-javaagent.jar \
+    -Dotel.service.name=my-app-executor \
+    -Dotel.exporter.otlp.protocol=grpc \
+    -Dotel.exporter.otlp.endpoint=http://your-collector:4317" \
+  myapp.jar
+```
+
+Pick the artifact matching your Spark version:
+
+```
+io.github.neutrinic:flare-spark-3-3_2.12:1.0.0   # Spark 3.3, Scala 2.12
+io.github.neutrinic:flare-spark-3-3_2.13:1.0.0   # Spark 3.3, Scala 2.13
+io.github.neutrinic:flare-spark-3-4_2.12:1.0.0   # Spark 3.4, Scala 2.12
+io.github.neutrinic:flare-spark-3-4_2.13:1.0.0   # Spark 3.4, Scala 2.13
+io.github.neutrinic:flare-spark-3-5_2.12:1.0.0   # Spark 3.5, Scala 2.12
+io.github.neutrinic:flare-spark-3-5_2.13:1.0.0   # Spark 3.5, Scala 2.13
+io.github.neutrinic:flare-spark-4-0_2.13:1.0.0   # Spark 4.0, Scala 2.13
+```
+
+The OTEL Java agent JAR (`opentelemetry-javaagent.jar`) must still be placed on every node — `--packages` handles only Flare and its dependencies.
+
+### Option 2: Manual JAR deployment
+
 ```bash
 spark-submit \
   --conf "spark.plugins=io.flare.spark.plugin.FlareSparkPlugin" \
@@ -96,6 +131,8 @@ Both JARs must be accessible on every node. On Kubernetes, bake them into your S
 | `FLARE_ENABLED` | `true` | Kill switch |
 
 Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables.
+
+> **Note:** When a Spark job fails, exception messages are recorded as span attributes. Spark exceptions sometimes include snippets of the data being processed (e.g., parse errors, type mismatches). Ensure your telemetry backend is secured appropriately if your jobs handle sensitive data.
 
 ## OTEL Agent Compatibility
 
