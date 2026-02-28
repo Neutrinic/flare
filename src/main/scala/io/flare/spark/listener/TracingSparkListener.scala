@@ -3,6 +3,7 @@ package io.flare.spark.listener
 import io.flare.spark.SpanCompat._
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.FlareConfig
+import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
 import org.apache.spark.scheduler._
@@ -37,7 +38,6 @@ class TracingSparkListener(
   // All maps use TrieMap for thread safety (LiveListenerBus may change threading model)
   private val activeJobSpans:   TrieMap[Int, Span]  = TrieMap.empty
   private val activeStageSpans: TrieMap[Int, Span]  = TrieMap.empty
-  private val activeSQLSpans:   TrieMap[Long, Span] = TrieMap.empty
 
   // Reverse index: stageId → jobId, built at onJobStart from jobStart.stageIds
   // Critical for correct parent attribution when multiple jobs run concurrently
@@ -68,15 +68,46 @@ class TracingSparkListener(
 
   override def onJobStart(event: SparkListenerJobStart): Unit =
     if (config.tracesJobs) safeHandle("onJobStart") {
-      val parentContext = applicationSpan
-        .map(Context.current().`with`)
-        .getOrElse(Context.current())
+      // Check if SubmitMissingTasksAdvice pre-created a job span for this jobId.
+      // The advice hooks DAGScheduler.submitMissingTasks and creates the job span
+      // on first call for a given jobId. We adopt (get, don't remove) it here.
+      //
+      // Race condition: onJobStart fires async on the listener bus. The advice's
+      // submitMissingTasks may or may not have run yet. Both sides use putIfAbsent
+      // on the shared jobSpans map so only ONE span wins per jobId.
+      val span = SubmitMissingTasksAdviceHelper.getJobSpan(event.jobId) match {
+        case Some(preCreated) =>
+          logger.debug(s"[Flare] Job ${event.jobId} adopted pre-created span")
+          preCreated
 
-      val span = tracer
-        .spanBuilder(s"spark.job.${event.jobId}")
-        .setSpanKind(SpanKind.INTERNAL)
-        .setParent(parentContext)
-        .startSpan()
+        case None =>
+          // No pre-created span yet. Create one and store it in the helper's map
+          // via putIfAbsent. If the advice races us and stores first, we discard ours.
+          // Parent under SQL span if this job was triggered by a SQL execution.
+          val sqlParent = Option(event.properties)
+            .flatMap(p => Option(p.getProperty("spark.sql.execution.id")))
+            .flatMap(id => try Some(id.toLong) catch { case _: NumberFormatException => None })
+            .flatMap(id => Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.get(id)))
+
+          val parentContext = sqlParent.orElse(applicationSpan)
+            .map(Context.current().`with`)
+            .getOrElse(Context.current())
+
+          val newSpan = tracer
+            .spanBuilder(s"spark.job.${event.jobId}")
+            .setSpanKind(SpanKind.INTERNAL)
+            .setParent(parentContext)
+            .startSpan()
+
+          val existing = SubmitMissingTasksAdviceHelper.jobSpans.putIfAbsent(event.jobId, newSpan)
+          if (existing != null) {
+            // Advice created a span between our get and putIfAbsent — use theirs
+            newSpan.end()
+            existing
+          } else {
+            newSpan
+          }
+      }
 
       span.setLong(Job.Id, event.jobId.toLong)
       span.setLong(Job.StageCount, event.stageIds.size.toLong)
@@ -97,6 +128,9 @@ class TracingSparkListener(
     // Always clean up stageToJob, even if the job span was missed.
     // This prevents unbounded growth if onJobStart was lost due to listener registration timing.
     stageToJob.filterInPlace { case (_, jobId) => jobId != event.jobId }
+
+    // Clean up pre-created job span from the helper's map
+    SubmitMissingTasksAdviceHelper.removeJobSpan(event.jobId)
 
     activeJobSpans.remove(event.jobId).foreach { span =>
       safeHandle("onJobEnd") {
@@ -122,29 +156,38 @@ class TracingSparkListener(
     if (config.tracesStages) safeHandle("onStageSubmitted") {
       val stageId = event.stageInfo.stageId
 
-      // Correct attribution: look up this stage's job, then that job's span
-      val parentSpan: Option[Span] =
-        stageToJob.get(stageId).flatMap(activeJobSpans.get).orElse(applicationSpan)
+      // Check if SubmitMissingTasksAdvice pre-created a stage span
+      val span = SubmitMissingTasksAdviceHelper.adoptPendingStageSpan(stageId) match {
+        case Some(preCreated) =>
+          logger.debug(s"[Flare] Stage $stageId adopted pre-created span")
+          preCreated
 
-      parentSpan match {
         case None =>
-          logger.warn(s"[Flare] No parent span found for stage $stageId, skipping")
+          // No pre-created span — create as before (backward-compat / SparkPlugin-only)
+          val parentSpan: Option[Span] =
+            stageToJob.get(stageId).flatMap(activeJobSpans.get).orElse(applicationSpan)
 
-        case Some(parent) =>
-          val span = tracer
-            .spanBuilder(s"spark.stage.${stageId}")
-            .setSpanKind(SpanKind.INTERNAL)
-            .setParent(Context.current().`with`(parent))
-            .startSpan()
+          parentSpan match {
+            case None =>
+              logger.warn(s"[Flare] No parent span found for stage $stageId, skipping")
+              return
 
-          span.setLong(Stage.Id, stageId.toLong)
-          span.setLong(Stage.AttemptId, event.stageInfo.attemptNumber().toLong)
-          span.setAttribute(Stage.Name, event.stageInfo.name)
-          span.setLong(Stage.TaskCount, event.stageInfo.numTasks.toLong)
-
-          activeStageSpans.put(stageId, span)
-          logger.debug(s"[Flare] Stage $stageId submitted")
+            case Some(parent) =>
+              tracer
+                .spanBuilder(s"spark.stage.$stageId")
+                .setSpanKind(SpanKind.INTERNAL)
+                .setParent(Context.current().`with`(parent))
+                .startSpan()
+          }
       }
+
+      span.setLong(Stage.Id, stageId.toLong)
+      span.setLong(Stage.AttemptId, event.stageInfo.attemptNumber().toLong)
+      span.setAttribute(Stage.Name, event.stageInfo.name)
+      span.setLong(Stage.TaskCount, event.stageInfo.numTasks.toLong)
+
+      activeStageSpans.put(stageId, span)
+      logger.debug(s"[Flare] Stage $stageId submitted")
     }
 
   override def onStageCompleted(event: SparkListenerStageCompleted): Unit = {
@@ -190,14 +233,16 @@ class TracingSparkListener(
               .setSpanKind(SpanKind.INTERNAL)
               .setParent(Context.current().`with`(parent))
               .startSpan()
-            activeSQLSpans.put(e.executionId, span)
+            // Store in shared map so advice and onJobStart can parent jobs under SQL
+            SubmitMissingTasksAdviceHelper.activeSQLSpans.put(e.executionId, span)
           }
         }
         case e: SparkListenerSQLExecutionEnd => safeHandle("onSQLEnd") {
-          activeSQLSpans.remove(e.executionId).foreach { span =>
-            span.setStatus(StatusCode.OK)
-            span.end()
-          }
+          Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.remove(e.executionId))
+            .foreach { span =>
+              span.setStatus(StatusCode.OK)
+              span.end()
+            }
         }
         case _ =>
       }
@@ -207,8 +252,12 @@ class TracingSparkListener(
 
   def shutdown(): Unit = {
     logger.info("[Flare] Shutting down listener, ending any open spans")
-    Seq[TrieMap[_, Span]](activeStageSpans, activeJobSpans, activeSQLSpans)
+    Seq[TrieMap[_, Span]](activeStageSpans, activeJobSpans)
       .foreach { m => m.values.foreach(_.end()); m.clear() }
+    // End any open SQL spans from the shared map
+    val sqlSpans = SubmitMissingTasksAdviceHelper.activeSQLSpans
+    sqlSpans.values().forEach(_.end())
+    sqlSpans.clear()
     applicationSpan.foreach(_.end())
     stageToJob.clear()
   }

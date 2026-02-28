@@ -26,7 +26,7 @@ object FlareDriverState {
   private val logger = Logger.getLogger(classOf[FlareDriverState.type].getName)
 
   @volatile private var _initialized: Boolean = false
-  @volatile private[plugin] var applicationSpan: Option[Span] = None
+  @volatile private[spark] var applicationSpan: Option[Span] = None
   @volatile private var listener: Option[TracingSparkListener] = None
 
   /** Read-only access to initialization state. */

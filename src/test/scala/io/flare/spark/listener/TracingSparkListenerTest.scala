@@ -2,6 +2,7 @@ package io.flare.spark.listener
 
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.{FlareConfig, TraceGranularity}
+import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
 import io.opentelemetry.api.trace.{SpanKind, StatusCode}
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -35,6 +36,11 @@ class TracingSparkListenerTest extends FunSuite {
    * into the exporter before asserting.
    */
   def withListener(body: (TracingSparkListener, InMemorySpanExporter) => Unit): Unit = {
+    // Clean up shared state from previous tests
+    SubmitMissingTasksAdviceHelper.jobSpans.clear()
+    SubmitMissingTasksAdviceHelper.pendingStageSpans.clear()
+    SubmitMissingTasksAdviceHelper.activeSQLSpans.clear()
+
     val exporter = InMemorySpanExporter.create()
     val tracerProvider = SdkTracerProvider.builder()
       .addSpanProcessor(SimpleSpanProcessor.create(exporter))
@@ -48,7 +54,12 @@ class TracingSparkListenerTest extends FunSuite {
     listener.setApplicationSpan(appSpan)
 
     try body(listener, exporter)
-    finally tracerProvider.close()
+    finally {
+      tracerProvider.close()
+      SubmitMissingTasksAdviceHelper.jobSpans.clear()
+      SubmitMissingTasksAdviceHelper.pendingStageSpans.clear()
+      SubmitMissingTasksAdviceHelper.activeSQLSpans.clear()
+    }
   }
 
   // ── Event helpers using FlareTestHelpers for private[spark] access ──────────
@@ -224,6 +235,151 @@ class TracingSparkListenerTest extends FunSuite {
     }
   }
 
+  test("onJobStart adopts pre-created span from SubmitMissingTasksAdviceHelper") {
+    withListener { (listener, exporter) =>
+      // Simulate what SubmitMissingTasksAdvice does: pre-create a job span
+      // and register it by jobId.
+      val tracer = io.opentelemetry.sdk.trace.SdkTracerProvider.builder()
+        .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+        .build().get("io.flare.spark.test")
+
+      val preCreatedSpan = tracer.spanBuilder("spark.job.42")
+        .setSpanKind(SpanKind.INTERNAL)
+        .startSpan()
+
+      SubmitMissingTasksAdviceHelper.jobSpans.put(42, preCreatedSpan)
+
+      listener.onJobStart(makeJobStart(42, Seq(0)))
+      listener.onJobEnd(makeJobEnd(42, succeeded = true))
+      listener.shutdown()
+
+      val spans = exporter.getFinishedSpanItems.asScala
+
+      // The adopted span should appear as "spark.job.42"
+      assert(spans.exists(_.getName == "spark.job.42"), "Adopted span should be present")
+
+      // The helper's map should be cleaned up after onJobEnd
+      assert(!SubmitMissingTasksAdviceHelper.jobSpans.containsKey(42))
+
+      // Clean up
+      SubmitMissingTasksAdviceHelper.jobSpans.clear()
+    }
+  }
+
+  test("onStageSubmitted adopts pre-created span from SubmitMissingTasksAdviceHelper") {
+    withListener { (listener, exporter) =>
+      val tracer = io.opentelemetry.sdk.trace.SdkTracerProvider.builder()
+        .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+        .build().get("io.flare.spark.test")
+
+      // Pre-create a stage span (as the advice would do)
+      val preCreatedStage = tracer.spanBuilder("spark.stage.10")
+        .setSpanKind(SpanKind.INTERNAL)
+        .startSpan()
+
+      SubmitMissingTasksAdviceHelper.pendingStageSpans.put(10, preCreatedStage)
+
+      listener.onJobStart(makeJobStart(0, Seq(10)))
+      listener.onStageSubmitted(makeStageSubmitted(10))
+      listener.onStageCompleted(makeStageCompleted(10))
+      listener.onJobEnd(makeJobEnd(0, succeeded = true))
+      listener.shutdown()
+
+      val spans = exporter.getFinishedSpanItems.asScala
+
+      // The adopted stage span should appear
+      assert(spans.exists(_.getName == "spark.stage.10"), "Adopted stage span should be present")
+
+      // The pending map should be empty
+      assert(!SubmitMissingTasksAdviceHelper.pendingStageSpans.containsKey(10))
+
+      // Clean up
+      SubmitMissingTasksAdviceHelper.pendingStageSpans.clear()
+    }
+  }
+
+  test("onJobStart falls back to creating span when no pre-created span exists") {
+    withListener { (listener, exporter) =>
+      // No pre-created span — should create span normally (backward compat)
+      // The listener now stores the created span in the helper's jobSpans map
+      // via putIfAbsent so the advice can find it if it races.
+      listener.onJobStart(makeJobStart(0, Seq(0)))
+
+      // Verify the span was stored in the helper's map
+      assert(SubmitMissingTasksAdviceHelper.jobSpans.containsKey(0),
+        "Fallback span should be stored in helper's jobSpans map")
+
+      listener.onJobEnd(makeJobEnd(0, succeeded = true))
+      listener.shutdown()
+
+      val spans = exporter.getFinishedSpanItems.asScala
+      val appSpan = spans.find(_.getName == "spark.application").get
+      val jobSpan = spans.find(_.getName == "spark.job.0").get
+
+      assertEquals(jobSpan.getParentSpanId, appSpan.getSpanId)
+
+      // onJobEnd should have cleaned up the helper's map
+      assert(!SubmitMissingTasksAdviceHelper.jobSpans.containsKey(0))
+
+      // Clean up
+      SubmitMissingTasksAdviceHelper.jobSpans.clear()
+    }
+  }
+
+  test("SQL-triggered job is parented under SQL span") {
+    withListener { (listener, exporter) =>
+      // Simulate what the listener's onOtherEvent does for SQL start:
+      // create a SQL span and put it in the shared helper map.
+      val tracer = SdkTracerProvider.builder()
+        .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+        .build().get("io.flare.spark.test")
+      val sqlSpan = tracer.spanBuilder("spark.sql.0")
+        .setSpanKind(SpanKind.INTERNAL)
+        .startSpan()
+      SubmitMissingTasksAdviceHelper.activeSQLSpans.put(0L, sqlSpan)
+
+      // Start a job with spark.sql.execution.id in its properties
+      val jobEvent = makeJobStart(0, Seq(0))
+      jobEvent.properties.setProperty("spark.sql.execution.id", "0")
+      listener.onJobStart(jobEvent)
+
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      listener.onStageCompleted(makeStageCompleted(0))
+      listener.onJobEnd(makeJobEnd(0, succeeded = true))
+
+      // End the SQL span
+      sqlSpan.end()
+      SubmitMissingTasksAdviceHelper.activeSQLSpans.remove(0L)
+
+      listener.shutdown()
+
+      val spans = exporter.getFinishedSpanItems.asScala
+      val sqlSpanData = spans.find(_.getName == "spark.sql.0").get
+      val jobSpanData = spans.find(_.getName == "spark.job.0").get
+      val stgSpan = spans.find(_.getName == "spark.stage.0").get
+
+      // Job is child of SQL (not app)
+      assertEquals(jobSpanData.getParentSpanId, sqlSpanData.getSpanId)
+      // Stage is child of job
+      assertEquals(stgSpan.getParentSpanId, jobSpanData.getSpanId)
+    }
+  }
+
+  test("non-SQL job is parented under app span") {
+    withListener { (listener, exporter) =>
+      // Job without spark.sql.execution.id — should be child of app
+      listener.onJobStart(makeJobStart(0, Seq(0)))
+      listener.onJobEnd(makeJobEnd(0, succeeded = true))
+      listener.shutdown()
+
+      val spans = exporter.getFinishedSpanItems.asScala
+      val appSpan = spans.find(_.getName == "spark.application").get
+      val jobSpan = spans.find(_.getName == "spark.job.0").get
+
+      assertEquals(jobSpan.getParentSpanId, appSpan.getSpanId)
+    }
+  }
+
   test("concurrent jobs do not interfere with stage attribution") {
     withListener { (listener, exporter) =>
       // Three concurrent jobs with interleaved stage submissions
@@ -262,6 +418,9 @@ class TracingSparkListenerTest extends FunSuite {
       // Job 2 stages
       assertEquals(stg300.getParentSpanId, job2.getSpanId)
       assertEquals(stg301.getParentSpanId, job2.getSpanId)
+
+      // Clean up
+      SubmitMissingTasksAdviceHelper.jobSpans.clear()
     }
   }
 }

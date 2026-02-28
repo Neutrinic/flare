@@ -25,10 +25,10 @@ import java.{util => ju}
  * This runs inside DriverPlugin.init(), which fires during SparkContext construction
  * after the LiveListenerBus is started but before any jobs are submitted.
  *
- * Phase 1 limitation: traceparent is injected once (pointing to the application span).
- * All executor task spans will be children of the application span, not of their
- * specific job/stage span. Phase 2 (ByteBuddy hooking runJob) will inject per-job
- * traceparent for full hierarchical nesting.
+ * The traceparent injected here points to the application span. When ByteBuddy is active,
+ * [[io.flare.spark.instrumentation.RunJobAdviceHelper]] temporarily overrides it at each
+ * `runJob` call with a per-job traceparent, giving executor tasks the correct job span as
+ * parent. Without ByteBuddy, all tasks fall back to being children of the application span.
  */
 class FlareDriverPlugin extends DriverPlugin {
 

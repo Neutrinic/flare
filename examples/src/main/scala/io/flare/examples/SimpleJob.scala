@@ -17,7 +17,6 @@ import org.apache.spark.sql.functions._
  *           └── spark.task.executor (partition 3 — executor-2)
  *
  * The task spans are created on the executor JVM with the driver trace as parent.
- * This is what no other open-source OTEL Spark integration provides.
  */
 object SimpleJob {
   def main(args: Array[String]): Unit = {
