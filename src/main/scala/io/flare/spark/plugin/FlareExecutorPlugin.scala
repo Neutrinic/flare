@@ -4,6 +4,7 @@ import io.flare.spark.BuildInfo
 import io.flare.spark.SpanCompat._
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.{FlareConfig, TraceGranularity}
+import io.flare.spark.metrics.{FlareMetrics, MetricAttributes}
 import io.flare.spark.propagation.LocalPropertyPropagator
 import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode}
@@ -35,6 +36,8 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   // Loaded once in init(), then only read — no volatile needed since Spark guarantees
   // init() completes before any task callbacks fire on this executor.
   private var config: FlareConfig = _
+  private var metrics: FlareMetrics = _
+  private var executorId: String = "unknown"
 
   // Counts spans created on this executor JVM across all tasks.
   private val spanCount = new AtomicLong(0L)
@@ -57,11 +60,14 @@ class FlareExecutorPlugin extends ExecutorPlugin {
         logger.error(s"[Flare] Configuration error — executor task spans disabled: ${e.getMessage}")
         FlareConfig(enabled = false, granularity = TraceGranularity.Stages,
           samplingRatio = 0.0, maxSpansPerTrace = 0, slowTaskMs = 0L,
-          retryTasksOnly = false, taskStageIds = Set.empty, taskStagePattern = None)
+          retryTasksOnly = false, taskStageIds = Set.empty, taskStagePattern = None,
+          metricsEnabled = false)
     }
-    logger.info(s"[Flare] Executor plugin initialized (granularity=${config.granularity}, " +
+    metrics = FlareMetrics.create(config.metricsEnabled)
+    executorId = ctx.executorID()
+    logger.info(s"[Flare] Executor plugin initialized (executorId=$executorId, granularity=${config.granularity}, " +
       s"sampling=${config.samplingRatio}, maxSpans=${config.maxSpansPerTrace}, " +
-      s"taskTracing=${config.tracesTasks})")
+      s"taskTracing=${config.tracesTasks}, metrics=${config.metricsEnabled})")
 
     // Stage name is not available on the executor in Phase 1 (ExecutorPlugin has no access to
     // stage metadata — only stageId from TaskContext). Warn if someone configures the pattern
@@ -168,6 +174,9 @@ class FlareExecutorPlugin extends ExecutorPlugin {
         // pressure proportional to concurrent executor threads, not total tasks — each ThreadLocal
         // is overwritten on the next task. Acceptable for the filtering benefit.
         if (config.slowTaskMs > 0 && durationMs >= 0 && durationMs < config.slowTaskMs) {
+          // Record metrics even for fast tasks whose spans are dropped — metrics have
+          // their own aggregation and don't suffer from span cardinality pressure.
+          recordTaskMetrics(capturedTaskContext, durationMs, success)
           MdcEnricher.remove()
           scope.close()
           spanCount.decrementAndGet() // reclaim slot — this span won't be exported
@@ -212,6 +221,10 @@ class FlareExecutorPlugin extends ExecutorPlugin {
         Option(capturedTaskContext.getLocalProperty("spark.sql.execution.id"))
           .flatMap(_.toLongOption)
           .foreach(id => span.setLong(Task.SqlExecutionId, id))
+
+        // Record OTEL metrics while span scope is still active → automatic exemplar linking.
+        // The SDK captures the current span's trace ID + span ID on each data point.
+        recordTaskMetrics(capturedTaskContext, durationMs, success)
       } finally {
         MdcEnricher.remove()
         scope.close()
@@ -219,6 +232,33 @@ class FlareExecutorPlugin extends ExecutorPlugin {
         taskState.remove()
         taskStartNanos.remove()
       }
+    }
+  }
+
+  private def recordTaskMetrics(tc: TaskContext, durationMs: Long, success: Boolean): Unit = {
+    try {
+      val eid = this.executorId
+      val attrs = MetricAttributes.forTask(eid, tc.stageId(), if (success) "SUCCESS" else "FAILED")
+
+      if (durationMs >= 0) {
+        metrics.taskDuration.record(durationMs.toDouble, attrs)
+      }
+
+      val m = tc.taskMetrics()
+      val totalRecords = m.inputMetrics.recordsRead + m.outputMetrics.recordsWritten
+      if (durationMs > 0 && totalRecords > 0) {
+        val throughput = totalRecords.toDouble / (durationMs.toDouble / 1000.0)
+        metrics.taskRecordsThroughput.record(throughput, attrs)
+      }
+
+      val shuffleRead = m.shuffleReadMetrics.totalBytesRead
+      if (shuffleRead > 0) metrics.taskShuffleReadBytes.add(shuffleRead, attrs)
+
+      val shuffleWrite = m.shuffleWriteMetrics.bytesWritten
+      if (shuffleWrite > 0) metrics.taskShuffleWriteBytes.add(shuffleWrite, attrs)
+    } catch {
+      case e: Throwable =>
+        logger.debug(s"[Flare] Could not record task metrics: ${e.getClass.getSimpleName}: ${e.getMessage}")
     }
   }
 
@@ -235,14 +275,15 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       taskState.remove()
     }
 
-    // Force-flush TracerProvider to push buffered spans before JVM exits.
-    // The SDK classes live in the agent classloader — catch NoClassDefFoundError
-    // if they're not visible from the app classloader.
+    // Force-flush TracerProvider and MeterProvider to push buffered spans/metrics
+    // before JVM exits. The SDK classes live in the agent classloader — catch
+    // NoClassDefFoundError if they're not visible from the app classloader.
     try {
       GlobalOpenTelemetry.get() match {
         case sdk: io.opentelemetry.sdk.OpenTelemetrySdk =>
           sdk.getSdkTracerProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
-          logger.info("[Flare] Forced flush of TracerProvider completed")
+          sdk.getSdkMeterProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
+          logger.info("[Flare] Forced flush of TracerProvider and MeterProvider completed")
         case _ => ()
       }
     } catch {

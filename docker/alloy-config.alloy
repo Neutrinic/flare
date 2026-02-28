@@ -1,4 +1,5 @@
-// Grafana Alloy configuration — OTLP receiver forwarding traces to Tempo, logs to Loki
+// Grafana Alloy configuration — OTLP receiver forwarding traces to Tempo,
+// metrics to Mimir, logs to Loki
 
 otelcol.receiver.otlp "default" {
   grpc {
@@ -9,14 +10,26 @@ otelcol.receiver.otlp "default" {
   }
 
   output {
-    traces = [otelcol.exporter.otlp.tempo.input]
-    logs   = [otelcol.exporter.otlphttp.loki.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+    metrics = [otelcol.exporter.otlphttp.mimir.input]
+    logs    = [otelcol.exporter.otlphttp.loki.input]
   }
 }
 
 otelcol.exporter.otlp "tempo" {
   client {
     endpoint = "tempo:4317"
+
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// OTLP metrics → Mimir via OTLP HTTP (Mimir supports native OTLP ingestion)
+otelcol.exporter.otlphttp "mimir" {
+  client {
+    endpoint = "http://mimir:9009/otlp"
 
     tls {
       insecure = true

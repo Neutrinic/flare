@@ -4,6 +4,7 @@ import io.flare.spark.BuildInfo
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.FlareConfig
 import io.flare.spark.listener.TracingSparkListener
+import io.flare.spark.metrics.FlareMetrics
 import io.flare.spark.propagation.LocalPropertyPropagator
 import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode}
@@ -80,7 +81,8 @@ class FlareDriverPlugin extends DriverPlugin {
     LocalPropertyPropagator.inject(spanContext, sc)
 
     // 3. Register TracingSparkListener for driver-side job/stage/SQL spans
-    val tracingListener = new TracingSparkListener(tracer, config)
+    val flareMetrics = FlareMetrics.create(config.metricsEnabled)
+    val tracingListener = new TracingSparkListener(tracer, config, Some(flareMetrics))
     tracingListener.setApplicationSpan(appSpan)
     sc.addSparkListener(tracingListener)
     listener = Some(tracingListener)
@@ -110,6 +112,22 @@ class FlareDriverPlugin extends DriverPlugin {
         span.setStatus(StatusCode.OK)
         span.end()
       }
+    }
+
+    // Force-flush TracerProvider and MeterProvider to push buffered spans/metrics.
+    try {
+      GlobalOpenTelemetry.get() match {
+        case sdk: io.opentelemetry.sdk.OpenTelemetrySdk =>
+          sdk.getSdkTracerProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
+          sdk.getSdkMeterProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
+          logger.info("[Flare] Forced flush of TracerProvider and MeterProvider completed")
+        case _ => ()
+      }
+    } catch {
+      case _: NoClassDefFoundError =>
+        logger.debug("[Flare] SDK classes not accessible, relying on agent shutdown hook")
+      case e: Exception =>
+        logger.warn(s"[Flare] Error during shutdown flush: {}", e.getMessage)
     }
 
     logger.info("[Flare] Driver plugin shutdown complete")

@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **OTEL metrics instruments** — task-level `DoubleHistogram` for duration and throughput,
+  `LongCounter` for shuffle bytes, recorded in `FlareExecutorPlugin.endTask()` with automatic
+  exemplar linking (metrics recorded while span scope is active). Stage-level counters and
+  histograms recorded in `TracingSparkListener.onStageCompleted()` for executor run time,
+  input/output bytes, and shuffle bytes ([#10], [#11])
+- **`FLARE_METRICS_ENABLED`** — kill switch for OTEL metrics emission (default `true`).
+  When disabled, all instruments use a no-op meter with zero overhead
+- **`FlareMetrics`** — centralized holder for all OTEL metric instruments, constructed from
+  a `Meter` instance for testability. Factory method `FlareMetrics.create(enabled)` selects
+  real vs no-op meter
+- **`MetricAttributes`** — helper for building `Attributes` with correct Scala→Java Long
+  boxing for metric dimensional tags (`executor.id`, `stage.id`, `task.result`, `stage.name`)
 - **Per-stage traceparent injection** — `SubmitMissingTasksInstrumentation` hooks
   `DAGScheduler.submitMissingTasks(stage, jobId)` via ByteBuddy to inject a per-stage
   traceparent into `ActiveJob.properties` before tasks are created. Executor task spans now
@@ -110,4 +122,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#9]: https://github.com/Neutrinic/flare/issues/9
 [#14]: https://github.com/Neutrinic/flare/issues/14
 [#15]: https://github.com/Neutrinic/flare/issues/15
+[#10]: https://github.com/Neutrinic/flare/issues/10
+[#11]: https://github.com/Neutrinic/flare/issues/11
 [#26]: https://github.com/Neutrinic/flare/issues/26

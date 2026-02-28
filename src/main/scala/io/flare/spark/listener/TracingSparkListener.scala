@@ -4,6 +4,7 @@ import io.flare.spark.SpanCompat._
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.FlareConfig
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
+import io.flare.spark.metrics.{FlareMetrics, MetricAttributes}
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
 import org.apache.spark.scheduler._
@@ -28,6 +29,7 @@ import scala.collection.concurrent.TrieMap
 class TracingSparkListener(
   tracer:  Tracer,
   config:  FlareConfig,
+  metrics: Option[FlareMetrics] = None,
   // When true, safeHandle rethrows exceptions instead of swallowing them.
   // Set to true in tests so assertion failures surface the actual cause.
   private val throwOnError: Boolean = false,
@@ -205,6 +207,20 @@ class TracingSparkListener(
           span.setLong(Stage.ShuffleReadBytes, m.shuffleReadMetrics.totalBytesRead)
           span.setLong(Stage.ShuffleWriteBytes, m.shuffleWriteMetrics.bytesWritten)
           span.setLong(Stage.MemorySpilled, m.memoryBytesSpilled)
+
+          // Record OTEL stage-level metrics
+          metrics.foreach { fm =>
+            val attrs = MetricAttributes.forStage(stageId, event.stageInfo.name)
+            fm.stageExecutorRunTime.record(m.executorRunTime.toDouble, attrs)
+            val inputBytes = m.inputMetrics.bytesRead
+            if (inputBytes > 0) fm.stageInputBytes.add(inputBytes, attrs)
+            val outputBytes = m.outputMetrics.bytesWritten
+            if (outputBytes > 0) fm.stageOutputBytes.add(outputBytes, attrs)
+            val shuffleRead = m.shuffleReadMetrics.totalBytesRead
+            if (shuffleRead > 0) fm.stageShuffleReadBytes.add(shuffleRead, attrs)
+            val shuffleWrite = m.shuffleWriteMetrics.bytesWritten
+            if (shuffleWrite > 0) fm.stageShuffleWriteBytes.add(shuffleWrite, attrs)
+          }
         }
 
         event.stageInfo.failureReason match {

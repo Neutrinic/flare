@@ -31,6 +31,7 @@ final case class FlareConfig(
   // None = no filter. Some(r) = only stages whose name matches r get task spans.
   // Compiled once at load time, not per task.
   taskStagePattern: Option[Regex],
+  metricsEnabled:   Boolean,      // FLARE_METRICS_ENABLED, default true
 ) {
   def tracesJobs:        Boolean = enabled
   def tracesStages:      Boolean = enabled && granularity != TraceGranularity.Jobs
@@ -153,6 +154,9 @@ object FlareConfig {
         }
       }
 
+    val metricsEnabled = !envOrProp("FLARE_METRICS_ENABLED")
+      .map(_.toLowerCase).contains("false")
+
     FlareConfig(
       enabled          = enabled,
       granularity      = granularity,
@@ -162,6 +166,7 @@ object FlareConfig {
       retryTasksOnly   = retryTasksOnly,
       taskStageIds     = taskStageIds,
       taskStagePattern = taskStagePattern,
+      metricsEnabled   = metricsEnabled,
     )
   }
 }

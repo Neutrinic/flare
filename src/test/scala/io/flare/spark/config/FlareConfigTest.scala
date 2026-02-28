@@ -22,6 +22,7 @@ class FlareConfigTest extends FunSuite {
       retryTasksOnly   = retryTasksOnly,
       taskStageIds     = taskStageIds,
       taskStagePattern = taskStagePattern,
+      metricsEnabled   = true,
     )
 
   // ── shouldTraceTask tests ──────────────────────────────────────────────────
@@ -134,7 +135,7 @@ class FlareConfigTest extends FunSuite {
   private val testProps = List(
     "FLARE_ENABLED", "FLARE_TRACE_GRANULARITY", "FLARE_SAMPLING_RATIO",
     "FLARE_MAX_SPANS_PER_TRACE", "FLARE_SLOW_TASK_MS", "FLARE_RETRY_TASKS_ONLY",
-    "FLARE_TASK_STAGES", "FLARE_TASK_STAGE_PATTERN",
+    "FLARE_TASK_STAGES", "FLARE_TASK_STAGE_PATTERN", "FLARE_METRICS_ENABLED",
   )
 
   override def afterEach(context: AfterEach): Unit = {
@@ -200,5 +201,17 @@ class FlareConfigTest extends FunSuite {
     assert(!config.retryTasksOnly)
     assert(config.taskStageIds.isEmpty)
     assert(config.taskStagePattern.isEmpty)
+    assert(config.metricsEnabled)
+  }
+
+  test("load() FLARE_METRICS_ENABLED=false disables metrics") {
+    sys.props("FLARE_METRICS_ENABLED") = "false"
+    val config = FlareConfig.load()
+    assert(!config.metricsEnabled)
+  }
+
+  test("load() FLARE_METRICS_ENABLED defaults to true") {
+    val config = FlareConfig.load()
+    assert(config.metricsEnabled)
   }
 }

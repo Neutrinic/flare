@@ -25,6 +25,7 @@ class TracingSparkListenerTest extends FunSuite {
     retryTasksOnly   = false,
     taskStageIds     = Set.empty,
     taskStagePattern = None,
+    metricsEnabled   = true,
   )
 
   /**

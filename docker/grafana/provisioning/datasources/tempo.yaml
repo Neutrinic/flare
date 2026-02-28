@@ -13,13 +13,46 @@ datasources:
       tracesToLogsV2:
         datasourceUid: loki
         filterByTraceID: true
-        filterBySpanID: true
+        filterBySpanID: false
       tracesToMetrics:
-        datasourceUid: ''
+        datasourceUid: mimir
+        spanStartTimeShift: '-30m'
+        spanEndTimeShift: '30m'
+        queries:
+          - name: Task Duration p95 (ms)
+            query: 'histogram_quantile(0.95, sum(spark_task_duration_bucket) by (le))'
+          - name: Avg Task Duration (ms)
+            query: 'sum(spark_task_duration_sum) / sum(spark_task_duration_count)'
+          - name: Total Tasks
+            query: 'sum(spark_task_duration_count)'
+          - name: Shuffle Read (bytes)
+            query: 'sum(spark_task_shuffle_read_bytes)'
+          - name: Shuffle Write (bytes)
+            query: 'sum(spark_task_shuffle_write_bytes)'
+          - name: Stage Executor Run Time p95 (ms)
+            query: 'histogram_quantile(0.95, sum(spark_stage_executor_run_time_bucket) by (le))'
+          - name: Stage Input (bytes)
+            query: 'sum(spark_stage_input_bytes)'
+          - name: Stage Shuffle Read (bytes)
+            query: 'sum(spark_stage_shuffle_read_bytes)'
+          - name: Stage Shuffle Write (bytes)
+            query: 'sum(spark_stage_shuffle_write_bytes)'
       nodeGraph:
         enabled: true
       serviceMap:
-        datasourceUid: ''
+        datasourceUid: mimir
+
+  - name: Mimir
+    type: prometheus
+    access: proxy
+    uid: mimir
+    url: http://mimir:9009/prometheus
+    editable: false
+    jsonData:
+      httpMethod: POST
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
 
   - name: Loki
     type: loki

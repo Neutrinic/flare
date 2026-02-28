@@ -3,21 +3,21 @@
 OpenTelemetry distributed tracing for Apache Spark — driver-to-executor context propagation.
 
 ```
-spark.application                                    (driver)
-├── spark.sql.0                                      (driver)
-│   ├── spark.job.0                                  (driver)
-│   │   └── spark.stage.0                            (driver)
-│   │       ├── spark.task.executor  (executor-1)    ← Flare
-│   │       └── spark.task.executor  (executor-2)    ← Flare
-│   └── spark.job.1                                  (driver)
-│       └── spark.stage.2                            (driver)
-│           ├── spark.task.executor  (executor-1)    ← Flare
-│           └── spark.task.executor  (executor-2)    ← Flare
-└── spark.sql.1                                      (driver)
-    └── spark.job.2                                  (driver)
-        └── spark.stage.4                            (driver)
-            ├── spark.task.executor  (executor-1)    ← Flare
-            └── spark.task.executor  (executor-2)    ← Flare
+spark.application                          (flare-driver)
+├── spark.sql.0                            (flare-driver)
+│   ├── spark.job.0                        (flare-driver)
+│   │   └── spark.stage.0                  (flare-driver)
+│   │       ├── spark.task.executor        (flare-executor)
+│   │       └── spark.task.executor        (flare-executor)
+│   └── spark.job.1                        (flare-driver)
+│       └── spark.stage.2                  (flare-driver)
+│           ├── spark.task.executor        (flare-executor)
+│           └── spark.task.executor        (flare-executor)
+└── spark.sql.1                            (flare-driver)
+    └── spark.job.2                        (flare-driver)
+        └── spark.stage.4                  (flare-driver)
+            ├── spark.task.executor        (flare-executor)
+            └── spark.task.executor        (flare-executor)
 ```
 
 ## Overview
@@ -70,6 +70,7 @@ Both JARs must be accessible on every node. On Kubernetes, bake them into your S
 | `FLARE_SLOW_TASK_MS` | `0` (disabled) | Only emit task spans exceeding this ms |
 | `FLARE_RETRY_TASKS_ONLY` | `false` | Only emit spans for retries and speculative tasks |
 | `FLARE_MAX_SPANS_PER_TRACE` | `10000` | Circuit breaker for high-cardinality jobs |
+| `FLARE_METRICS_ENABLED` | `true` | Enable OTEL metrics (task duration, shuffle bytes, stage aggregates) |
 | `FLARE_ENABLED` | `true` | Kill switch |
 
 Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables.
