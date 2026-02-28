@@ -3,21 +3,21 @@
 OpenTelemetry distributed tracing for Apache Spark — driver-to-executor context propagation.
 
 ```
-spark.application                                    (driver)
-├── spark.sql.0                                      (driver)
-│   ├── spark.job.0                                  (driver)
-│   │   └── spark.stage.0                            (driver)
-│   │       ├── spark.task.executor  (executor-1)    ← Flare
-│   │       └── spark.task.executor  (executor-2)    ← Flare
-│   └── spark.job.1                                  (driver)
-│       └── spark.stage.2                            (driver)
-│           ├── spark.task.executor  (executor-1)    ← Flare
-│           └── spark.task.executor  (executor-2)    ← Flare
-└── spark.sql.1                                      (driver)
-    └── spark.job.2                                  (driver)
-        └── spark.stage.4                            (driver)
-            ├── spark.task.executor  (executor-1)    ← Flare
-            └── spark.task.executor  (executor-2)    ← Flare
+spark.application                          (flare-driver)
+├── spark.sql.0                            (flare-driver)
+│   ├── spark.job.0                        (flare-driver)
+│   │   └── spark.stage.0                  (flare-driver)
+│   │       ├── spark.task.executor        (flare-executor)
+│   │       └── spark.task.executor        (flare-executor)
+│   └── spark.job.1                        (flare-driver)
+│       └── spark.stage.2                  (flare-driver)
+│           ├── spark.task.executor        (flare-executor)
+│           └── spark.task.executor        (flare-executor)
+└── spark.sql.1                            (flare-driver)
+    └── spark.job.2                        (flare-driver)
+        └── spark.stage.4                  (flare-driver)
+            ├── spark.task.executor        (flare-executor)
+            └── spark.task.executor        (flare-executor)
 ```
 
 ## Overview
