@@ -89,6 +89,13 @@ object LocalPropertyPropagator {
     }
 
   // ── TextMapGetter for java.util.Properties ────────────────────────────────
+  //
+  // keys() intentionally returns only W3C header names. The W3C propagator
+  // (default OTEL_PROPAGATORS) calls get() with "traceparent"/"tracestate"
+  // directly. If a non-W3C propagator is configured (B3, Jaeger), it will
+  // call get() with its own key names — Properties.getProperty will return
+  // null for missing keys, which is the correct "not present" signal.
+  // The keys() iterable is advisory and most propagators don't iterate it.
 
   private[propagation] val PropertiesGetter: TextMapGetter[ju.Properties] =
     new TextMapGetter[ju.Properties] {

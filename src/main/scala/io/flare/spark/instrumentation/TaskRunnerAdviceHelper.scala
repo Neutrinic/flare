@@ -79,9 +79,11 @@ object TaskRunnerAdviceHelper {
    * from extension code. The `properties` method is a public accessor on the
    * case class, returning `java.util.Properties`.
    *
-   * The Method reference is cached after first successful lookup. `@volatile`
-   * + double-check is sufficient — worst case is two threads both do the
-   * reflective lookup, which is harmless.
+   * The Method reference is cached after first successful lookup. This is a
+   * benign race, not proper double-checked locking — two threads can both see
+   * null and both do the reflective lookup. This is harmless: both resolve to
+   * the same Method object, and the write to `@volatile propertiesMethod` is
+   * atomic. Not worth synchronizing for a one-time-per-JVM lookup.
    */
   private def getProperties(taskDescription: Any): java.util.Properties = {
     var m = propertiesMethod
