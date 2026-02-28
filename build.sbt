@@ -1,7 +1,6 @@
 import Dependencies._
 
 ThisBuild / organization := "io.github.neutrinic"
-ThisBuild / version      := "0.9.0-SNAPSHOT"
 ThisBuild / scalaVersion := scala213
 ThisBuild / crossScalaVersions := Seq(scala212, scala213)
 ThisBuild / versionScheme := Some("semver-spec")
