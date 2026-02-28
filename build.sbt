@@ -1,10 +1,23 @@
 import Dependencies._
 
 ThisBuild / organization := "io.github.neutrinic"
-ThisBuild / version      := "0.2.0-SNAPSHOT"
+ThisBuild / version      := "0.9.0-SNAPSHOT"
 ThisBuild / scalaVersion := scala213
 ThisBuild / crossScalaVersions := Seq(scala212, scala213)
 ThisBuild / versionScheme := Some("semver-spec")
+
+// Maven Central publishing metadata
+ThisBuild / homepage := Some(url("https://github.com/Neutrinic/flare"))
+ThisBuild / licenses := List("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0"))
+ThisBuild / developers := List(
+  Developer("neutrinic", "Neutrinic", "neutrinic@users.noreply.github.com", url("https://github.com/Neutrinic"))
+)
+ThisBuild / scmInfo := Some(
+  ScmInfo(
+    url("https://github.com/Neutrinic/flare"),
+    "scm:git@github.com:Neutrinic/flare.git"
+  )
+)
 
 ThisBuild / scalacOptions ++= Seq(
   "-encoding", "UTF-8",
@@ -91,6 +104,7 @@ lazy val root = (project in file("."))
 lazy val examples = (project in file("examples"))
   .settings(
     name := "flare-examples",
+    publish / skip := true,
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-core" % sparkBuildVersion % "provided",
       "org.apache.spark" %% "spark-sql"  % sparkBuildVersion % "provided",
