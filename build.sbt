@@ -87,6 +87,9 @@ lazy val root = (project in file("."))
       case _                                    => MergeStrategy.first
     },
 
+    // Scaladoc crashes on OTEL/Spark types — publish empty javadoc JAR
+    Compile / doc / sources := Seq.empty,
+
     // Bundle OTEL API + context (needed on Spark's app classloader for SparkPlugin).
     // Everything else (Spark, SLF4J, ByteBuddy, OTEL SDK) is provided.
     assembly / assemblyJarName := s"flare-spark-$sparkMajorMinor.jar",
