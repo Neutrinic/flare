@@ -22,11 +22,16 @@ metrics_generator:
       store: inmemory
   processor:
     service_graphs:
+      max_items: 10000
     span_metrics:
-    local_blocks:
+      dimensions:
+        - service.name
+      enable_target_info: true
   storage:
     path: /var/tempo/generator/wal
-    remote_write: []
+    remote_write:
+      - url: http://mimir:9009/api/v1/push
+        send_exemplars: true
 
 overrides:
   defaults:
@@ -34,7 +39,6 @@ overrides:
       processors:
         - service-graphs
         - span-metrics
-        - local-blocks
 
 storage:
   trace:

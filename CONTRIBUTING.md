@@ -104,7 +104,6 @@ docker/            Docker Compose stack, Spark config, Alloy/Tempo/Loki/Grafana 
 - [ ] `sbt assembly` produces a clean JAR
 - [ ] `sbt ++2.12.18 compile` cross-compiles
 - [ ] No new runtime dependencies added (see below)
-- [ ] New configuration documented in README or CLAUDE.md
 
 ### Dependency policy
 
@@ -137,8 +136,6 @@ wrapping. See `FlareConfig.scala` for the full list. New config variables must:
 
 - Have a sensible default
 - Be validated at startup (fail fast with `IllegalArgumentException`)
-- Be documented in CLAUDE.md
-
 ## License
 
 By contributing, you agree that your contributions will be licensed under the project's

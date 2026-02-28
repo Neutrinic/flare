@@ -4,6 +4,7 @@ import io.flare.spark.BuildInfo
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.FlareConfig
 import io.flare.spark.listener.TracingSparkListener
+import io.flare.spark.metrics.FlareMetrics
 import io.flare.spark.plugin.FlareDriverState
 import io.flare.spark.propagation.LocalPropertyPropagator
 import io.opentelemetry.api.GlobalOpenTelemetry
@@ -63,7 +64,8 @@ object SparkContextAdviceHelper {
       LocalPropertyPropagator.inject(spanContext, sc)
 
       // 3. Create listener (but do NOT register with SparkContext yet)
-      val tracingListener = new TracingSparkListener(tracer, config)
+      val flareMetrics = FlareMetrics.create(config.metricsEnabled)
+      val tracingListener = new TracingSparkListener(tracer, config, Some(flareMetrics))
       tracingListener.setApplicationSpan(appSpan)
 
       // 4. Atomically register in shared state — must happen BEFORE addSparkListener.

@@ -12,6 +12,7 @@ services:
       - SPARK_ROLE=master
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317
       - OTEL_RESOURCE_ATTRIBUTES=cluster.name=flare-dev,environment=development
+      - OTEL_METRIC_EXPORT_INTERVAL=10000
       - FLARE_TRACE_GRANULARITY=all
       - FLARE_SAMPLING_RATIO=1.0
     ports:
@@ -41,6 +42,7 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317
       - OTEL_RESOURCE_ATTRIBUTES=cluster.name=flare-dev,environment=development
+      - OTEL_METRIC_EXPORT_INTERVAL=10000
       - FLARE_TRACE_GRANULARITY=all
       - FLARE_SAMPLING_RATIO=1.0
     ports:
@@ -63,6 +65,7 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317
       - OTEL_RESOURCE_ATTRIBUTES=cluster.name=flare-dev,environment=development
+      - OTEL_METRIC_EXPORT_INTERVAL=10000
       - FLARE_TRACE_GRANULARITY=all
       - FLARE_SAMPLING_RATIO=1.0
     ports:
@@ -115,6 +118,17 @@ services:
     command: -config.file=/etc/loki/config.yaml
     networks: [flare-net]
 
+  mimir:
+    image: grafana/mimir:2.15.0
+    hostname: mimir
+    ports:
+      - "9009:9009"   # Mimir HTTP (Prometheus-compatible query + OTLP ingest)
+    volumes:
+      - ./mimir-config.yaml:/etc/mimir/config.yaml:ro
+      - mimir-data:/data/mimir
+    command: -config.file=/etc/mimir/config.yaml
+    networks: [flare-net]
+
   tempo:
     image: grafana/tempo:2.6.1
     hostname: tempo
@@ -139,7 +153,7 @@ services:
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
-    depends_on: [tempo, loki]
+    depends_on: [tempo, mimir, loki]
     networks: [flare-net]
 
 networks:
@@ -150,5 +164,6 @@ volumes:
   spark-events:
   spark-logs:
   loki-data:
+  mimir-data:
   tempo-data:
   grafana-data:

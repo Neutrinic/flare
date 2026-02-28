@@ -32,6 +32,7 @@ class FlareDriverStateTest extends FunSuite {
     retryTasksOnly   = false,
     taskStageIds     = Set.empty,
     taskStagePattern = None,
+    metricsEnabled   = true,
   )
 
   override def beforeEach(context: BeforeEach): Unit = {
