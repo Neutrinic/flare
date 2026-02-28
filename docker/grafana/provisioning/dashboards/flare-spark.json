@@ -117,7 +117,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_task_duration_count)",
+          "expr": "sum(flare_task_duration_count)",
           "refId": "A",
           "instant": true
         }
@@ -156,7 +156,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_task_duration_count{task_result=\"FAILED\"}) / sum(spark_task_duration_count) or vector(0)",
+          "expr": "sum(flare_task_duration_count{task_result=\"FAILED\"}) / sum(flare_task_duration_count) or vector(0)",
           "refId": "A",
           "instant": true
         }
@@ -200,7 +200,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_task_duration_bucket) by (le, stage_id)",
+          "expr": "sum(flare_task_duration_bucket) by (le, stage_id)",
           "refId": "A",
           "format": "heatmap",
           "legendFormat": "stage {{stage_id}}",
@@ -241,21 +241,21 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "histogram_quantile(0.50, sum(spark_task_duration_bucket) by (le))",
+          "expr": "histogram_quantile(0.50, sum(flare_task_duration_bucket) by (le))",
           "refId": "A",
           "instant": true,
           "legendFormat": "p50"
         },
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "histogram_quantile(0.95, sum(spark_task_duration_bucket) by (le))",
+          "expr": "histogram_quantile(0.95, sum(flare_task_duration_bucket) by (le))",
           "refId": "B",
           "instant": true,
           "legendFormat": "p95"
         },
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "histogram_quantile(0.99, sum(spark_task_duration_bucket) by (le))",
+          "expr": "histogram_quantile(0.99, sum(flare_task_duration_bucket) by (le))",
           "refId": "C",
           "instant": true,
           "legendFormat": "p99"
@@ -310,14 +310,14 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_task_shuffle_read_bytes) by (stage_id)",
+          "expr": "sum(flare_task_shuffle_read_bytes) by (stage_id)",
           "refId": "A",
           "instant": true,
           "legendFormat": "Read \u2014 stage {{stage_id}}"
         },
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_task_shuffle_write_bytes) by (stage_id)",
+          "expr": "sum(flare_task_shuffle_write_bytes) by (stage_id)",
           "refId": "B",
           "instant": true,
           "legendFormat": "Write \u2014 stage {{stage_id}}"
@@ -365,14 +365,14 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_task_shuffle_read_bytes) by (executor_id)",
+          "expr": "sum(flare_task_shuffle_read_bytes) by (executor_id)",
           "refId": "A",
           "instant": true,
           "legendFormat": "Read \u2014 executor {{executor_id}}"
         },
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_task_shuffle_write_bytes) by (executor_id)",
+          "expr": "sum(flare_task_shuffle_write_bytes) by (executor_id)",
           "refId": "B",
           "instant": true,
           "legendFormat": "Write \u2014 executor {{executor_id}}"
@@ -438,7 +438,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "histogram_quantile(0.95, sum(spark_stage_executor_run_time_bucket) by (le, stage_id, stage_name))",
+          "expr": "histogram_quantile(0.95, sum(flare_stage_executor_run_time_bucket) by (le, stage_id, stage_name))",
           "refId": "A",
           "instant": true,
           "legendFormat": "Executor Run Time p95",
@@ -446,7 +446,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_stage_input_bytes) by (stage_id, stage_name)",
+          "expr": "sum(flare_stage_input_bytes) by (stage_id, stage_name)",
           "refId": "B",
           "instant": true,
           "legendFormat": "Input",
@@ -454,7 +454,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_stage_shuffle_read_bytes) by (stage_id, stage_name)",
+          "expr": "sum(flare_stage_shuffle_read_bytes) by (stage_id, stage_name)",
           "refId": "C",
           "instant": true,
           "legendFormat": "Shuffle Read",
@@ -462,7 +462,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_stage_shuffle_write_bytes) by (stage_id, stage_name)",
+          "expr": "sum(flare_stage_shuffle_write_bytes) by (stage_id, stage_name)",
           "refId": "D",
           "instant": true,
           "legendFormat": "Shuffle Write",
@@ -537,7 +537,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_task_duration_sum) by (executor_id) / sum(spark_task_duration_count) by (executor_id)",
+          "expr": "sum(flare_task_duration_sum) by (executor_id) / sum(flare_task_duration_count) by (executor_id)",
           "refId": "A",
           "instant": true,
           "legendFormat": "executor {{executor_id}}"
@@ -584,7 +584,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "mimir" },
-          "expr": "sum(spark_task_duration_count) by (executor_id)",
+          "expr": "sum(flare_task_duration_count) by (executor_id)",
           "refId": "A",
           "instant": true,
           "legendFormat": "executor {{executor_id}}"

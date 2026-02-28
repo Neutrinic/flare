@@ -183,7 +183,7 @@ docker compose exec spark-master \
 Open Grafana at `http://localhost:3000`:
 - **Dashboards > Flare — Spark Observability** — task duration heatmap, shuffle skew, executor comparison, stage summary, logs, and trace links
 - **Explore > Tempo** — search traces by service name, drill into span details with linked metrics and logs
-- **Explore > Mimir** — query spark_task_* and spark_stage_* metrics directly
+- **Explore > Mimir** — query flare_task_* and flare_stage_* metrics directly
 
 ## Architecture
 
