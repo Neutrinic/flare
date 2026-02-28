@@ -81,6 +81,22 @@ class MuzzleCheckTest extends FunSuite {
       s"Found methods containing 'submit': ${methods.filter(_.getName.contains("submit")).map(_.getName).mkString(", ")}")
   }
 
+  test("DAGScheduler.submitMissingTasks has expected parameter types") {
+    // SubmitMissingTasksAdvice captures @Advice.Argument(0) as Stage and
+    // @Advice.Argument(1) as int jobId. If Spark adds an overload or changes
+    // the signature, the ElementMatchers might silently match the wrong method.
+    val clazz = Class.forName("org.apache.spark.scheduler.DAGScheduler")
+    val stageClass = Class.forName("org.apache.spark.scheduler.Stage")
+    val methods = clazz.getDeclaredMethods.filter(_.getName == "submitMissingTasks")
+    val found = methods.exists { m =>
+      val p = m.getParameterTypes
+      p.length >= 2 && stageClass.isAssignableFrom(p(0)) && p(1) == classOf[Int]
+    }
+    assert(found,
+      s"submitMissingTasks must take (Stage, Int, ...). Found signatures: " +
+      methods.map(m => s"(${m.getParameterTypes.map(_.getSimpleName).mkString(", ")})").mkString("; "))
+  }
+
   // ── SubmitMissingTasksAdviceHelper reflection targets ───────────────────────
   // These are accessed via reflection in SubmitMissingTasksAdviceHelper.ensureReflection()
 
