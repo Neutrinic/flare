@@ -27,7 +27,7 @@ class FlareMetricsTest extends FunSuite {
       metrics.taskDuration.record(150.0, attrs)
 
       val metricData = reader.collectAllMetrics().asScala
-      val histogram = metricData.find(_.getName == "spark.task.duration")
+      val histogram = metricData.find(_.getName == "flare.task.duration")
       assert(histogram.isDefined, s"Expected spark.task.duration, got: ${metricData.map(_.getName).mkString(", ")}")
     }
   }
@@ -38,7 +38,7 @@ class FlareMetricsTest extends FunSuite {
       metrics.taskRecordsThroughput.record(5000.0, attrs)
 
       val metricData = reader.collectAllMetrics().asScala
-      val histogram = metricData.find(_.getName == "spark.task.records_throughput")
+      val histogram = metricData.find(_.getName == "flare.task.records_throughput")
       assert(histogram.isDefined)
     }
   }
@@ -50,7 +50,7 @@ class FlareMetricsTest extends FunSuite {
       metrics.taskShuffleReadBytes.add(2048L, attrs)
 
       val metricData = reader.collectAllMetrics().asScala
-      val counter = metricData.find(_.getName == "spark.task.shuffle.read_bytes")
+      val counter = metricData.find(_.getName == "flare.task.shuffle.read_bytes")
       assert(counter.isDefined, s"Expected spark.task.shuffle.read_bytes, got: ${metricData.map(_.getName).mkString(", ")}")
     }
   }
@@ -64,9 +64,9 @@ class FlareMetricsTest extends FunSuite {
 
       val metricData = reader.collectAllMetrics().asScala
       val names = metricData.map(_.getName).toSet
-      assert(names.contains("spark.stage.executor.run_time"))
-      assert(names.contains("spark.stage.input.bytes"))
-      assert(names.contains("spark.stage.shuffle.read_bytes"))
+      assert(names.contains("flare.stage.executor.run_time"))
+      assert(names.contains("flare.stage.input.bytes"))
+      assert(names.contains("flare.stage.shuffle.read_bytes"))
     }
   }
 

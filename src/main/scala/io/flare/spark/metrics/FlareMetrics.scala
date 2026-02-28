@@ -20,25 +20,25 @@ class FlareMetrics(meter: Meter) {
   // ── Executor-side (Issue #11) ──────────────────────────────────────────
 
   val taskDuration: DoubleHistogram = meter
-    .histogramBuilder("spark.task.duration")
+    .histogramBuilder("flare.task.duration")
     .setDescription("Task execution duration")
     .setUnit("ms")
     .build()
 
   val taskRecordsThroughput: DoubleHistogram = meter
-    .histogramBuilder("spark.task.records_throughput")
+    .histogramBuilder("flare.task.records_throughput")
     .setDescription("Task records processed per second")
     .setUnit("{records}/s")
     .build()
 
   val taskShuffleReadBytes: LongCounter = meter
-    .counterBuilder("spark.task.shuffle.read_bytes")
+    .counterBuilder("flare.task.shuffle.read_bytes")
     .setDescription("Bytes read during shuffle by individual tasks")
     .setUnit("By")
     .build()
 
   val taskShuffleWriteBytes: LongCounter = meter
-    .counterBuilder("spark.task.shuffle.write_bytes")
+    .counterBuilder("flare.task.shuffle.write_bytes")
     .setDescription("Bytes written during shuffle by individual tasks")
     .setUnit("By")
     .build()
@@ -46,31 +46,31 @@ class FlareMetrics(meter: Meter) {
   // ── Driver-side (Issue #10 partial) ────────────────────────────────────
 
   val stageExecutorRunTime: DoubleHistogram = meter
-    .histogramBuilder("spark.stage.executor.run_time")
+    .histogramBuilder("flare.stage.executor.run_time")
     .setDescription("Total executor run time per stage")
     .setUnit("ms")
     .build()
 
   val stageInputBytes: LongCounter = meter
-    .counterBuilder("spark.stage.input.bytes")
+    .counterBuilder("flare.stage.input.bytes")
     .setDescription("Total bytes read across all tasks in a stage")
     .setUnit("By")
     .build()
 
   val stageOutputBytes: LongCounter = meter
-    .counterBuilder("spark.stage.output.bytes")
+    .counterBuilder("flare.stage.output.bytes")
     .setDescription("Total bytes written across all tasks in a stage")
     .setUnit("By")
     .build()
 
   val stageShuffleReadBytes: LongCounter = meter
-    .counterBuilder("spark.stage.shuffle.read_bytes")
+    .counterBuilder("flare.stage.shuffle.read_bytes")
     .setDescription("Total shuffle bytes read in a stage")
     .setUnit("By")
     .build()
 
   val stageShuffleWriteBytes: LongCounter = meter
-    .counterBuilder("spark.stage.shuffle.write_bytes")
+    .counterBuilder("flare.stage.shuffle.write_bytes")
     .setDescription("Total shuffle bytes written in a stage")
     .setUnit("By")
     .build()
