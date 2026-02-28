@@ -7,14 +7,13 @@ import org.apache.spark.sql.functions._
  * Skewed partition example — the hero demo for Flare.
  *
  * Intentionally creates severe partition skew: one partition gets ~90% of the data,
- * the rest share 10%. In a driver-side-only tool (Spot, metrics-only APMs), the stage
- * span shows a single aggregate duration — you cannot see which partition is slow.
+ * the rest share 10%. With driver-side-only metrics, the stage span shows a single
+ * aggregate duration — you cannot see which partition is slow.
  *
  * With Flare, each executor task span shows its actual wall-clock duration on the
  * executor thread. In Grafana you immediately see one span taking 10x longer than
  * its siblings, on a specific executor, with the partition ID as an attribute.
  *
- * This is the trace you should screenshot for the README.
  */
 object SkewedJob {
   def main(args: Array[String]): Unit = {

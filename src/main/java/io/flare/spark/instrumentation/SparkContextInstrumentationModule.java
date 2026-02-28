@@ -3,7 +3,7 @@ package io.flare.spark.instrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -33,7 +33,10 @@ public class SparkContextInstrumentationModule
 
     @Override
     public List<TypeInstrumentation> typeInstrumentations() {
-        return Collections.singletonList(new SparkContextInstrumentation());
+        return Arrays.asList(
+            new SparkContextInstrumentation(),
+            new SubmitMissingTasksInstrumentation()
+        );
     }
 
     /**

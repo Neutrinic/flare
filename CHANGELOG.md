@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-stage traceparent injection** — `SubmitMissingTasksInstrumentation` hooks
+  `DAGScheduler.submitMissingTasks(stage, jobId)` via ByteBuddy to inject a per-stage
+  traceparent into `ActiveJob.properties` before tasks are created. Executor task spans now
+  nest under their specific stage span (`app → job → stage → task`). Captures ALL stages
+  including AQE (Adaptive Query Execution) sub-jobs that bypass `SparkContext.runJob`.
+  Job and stage spans are pre-created via reflection on DAGScheduler internals, then adopted
+  by `TracingSparkListener` when `onJobStart`/`onStageSubmitted` fire. Backward compatible
+  with SparkPlugin-only mode ([#26])
 - **ByteBuddy TaskRunner context restoration** — `TaskRunnerInstrumentationModule` hooks
   `Executor$TaskRunner.run()` to extract `traceparent` from `TaskDescription.properties`
   and make the parent OTEL context current for the entire task execution. Downstream
@@ -102,3 +110,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#9]: https://github.com/Neutrinic/flare/issues/9
 [#14]: https://github.com/Neutrinic/flare/issues/14
 [#15]: https://github.com/Neutrinic/flare/issues/15
+[#26]: https://github.com/Neutrinic/flare/issues/26

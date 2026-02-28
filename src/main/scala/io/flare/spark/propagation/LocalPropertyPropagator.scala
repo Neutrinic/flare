@@ -8,6 +8,7 @@ import org.apache.spark.TaskContext
 import org.slf4j.LoggerFactory
 
 import java.{util => ju}
+import java.util.Properties
 
 /**
  * Injects and extracts W3C traceparent/tracestate via Spark's LocalProperty mechanism.
@@ -56,6 +57,17 @@ object LocalPropertyPropagator {
   }
 
   /**
+   * Inject OTEL context directly into a `java.util.Properties` instance.
+   *
+   * Used by `SubmitMissingTasksAdviceHelper` to inject per-stage traceparent
+   * into `ActiveJob.properties` before tasks are created.
+   */
+  def injectIntoProperties(context: OtelContext, props: Properties): Unit = {
+    val propagator = GlobalOpenTelemetry.getPropagators.getTextMapPropagator
+    propagator.inject(context, props, PropertiesSetter)
+  }
+
+  /**
    * Extract OTEL parent context from a raw `java.util.Properties` instance.
    *
    * Used by `TaskRunnerAdviceHelper` where `TaskContext` is not yet available —
@@ -86,6 +98,13 @@ object LocalPropertyPropagator {
       override def get(carrier: TaskContext, key: String): String =
         if (carrier == null) null
         else carrier.getLocalProperty(key)
+    }
+
+  // ── TextMapSetter for java.util.Properties ────────────────────────────────
+
+  private val PropertiesSetter: TextMapSetter[Properties] =
+    (carrier: Properties, key: String, value: String) => {
+      carrier.setProperty(key, value)
     }
 
   // ── TextMapGetter for java.util.Properties ────────────────────────────────
