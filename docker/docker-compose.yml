@@ -22,7 +22,7 @@ services:
     volumes:
       - spark-events:/opt/spark/spark-events
       - spark-logs:/opt/spark/logs
-      - ../target/scala-2.13/flare-spark.jar:/opt/flare/flare-spark.jar:ro
+      - ../target/scala-2.13/flare-spark-3.5.jar:/opt/flare/flare-spark.jar:ro
       - ../examples/target/scala-2.13/flare-examples.jar:/opt/flare/flare-examples.jar:ro
       - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
       - ./entrypoint.sh:/entrypoint.sh:ro
@@ -48,7 +48,7 @@ services:
     ports:
       - "8081:8081"   # Worker UI
     volumes:
-      - ../target/scala-2.13/flare-spark.jar:/opt/flare/flare-spark.jar:ro
+      - ../target/scala-2.13/flare-spark-3.5.jar:/opt/flare/flare-spark.jar:ro
       - ../examples/target/scala-2.13/flare-examples.jar:/opt/flare/flare-examples.jar:ro
       - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
       - ./entrypoint.sh:/entrypoint.sh:ro
@@ -71,7 +71,7 @@ services:
     ports:
       - "8082:8081"
     volumes:
-      - ../target/scala-2.13/flare-spark.jar:/opt/flare/flare-spark.jar:ro
+      - ../target/scala-2.13/flare-spark-3.5.jar:/opt/flare/flare-spark.jar:ro
       - ../examples/target/scala-2.13/flare-examples.jar:/opt/flare/flare-examples.jar:ro
       - ./spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
       - ./entrypoint.sh:/entrypoint.sh:ro

@@ -10,6 +10,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - spark: "3.3.4"
+            scala: "2.12.18"
+          - spark: "3.3.4"
+            scala: "2.13.16"
+          - spark: "3.4.3"
+            scala: "2.12.18"
+          - spark: "3.4.3"
+            scala: "2.13.16"
+          - spark: "3.5.1"
+            scala: "2.12.18"
+          - spark: "3.5.1"
+            scala: "2.13.16"
+          - spark: "4.0.0"
+            scala: "2.13.16"
+
+    name: Spark ${{ matrix.spark }} / Scala ${{ matrix.scala }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,10 +42,10 @@ jobs:
       - uses: sbt/setup-sbt@v1
 
       - name: Compile
-        run: sbt compile
+        run: sbt -DsparkVersion=${{ matrix.spark }} ++${{ matrix.scala }} compile
 
       - name: Test
-        run: sbt test
+        run: sbt -DsparkVersion=${{ matrix.spark }} ++${{ matrix.scala }} test
 
       - name: Assembly
-        run: sbt assembly
+        run: sbt -DsparkVersion=${{ matrix.spark }} ++${{ matrix.scala }} assembly

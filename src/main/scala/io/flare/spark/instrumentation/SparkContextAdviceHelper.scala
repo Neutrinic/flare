@@ -29,7 +29,7 @@ import java.util.logging.{Level, Logger}
  */
 object SparkContextAdviceHelper {
 
-  private val logger = Logger.getLogger(classOf[SparkContextAdviceHelper.type].getName)
+  private val logger = Logger.getLogger(SparkContextAdviceHelper.getClass.getName)
 
   def onSparkContextInit(sc: SparkContext): Unit = {
     // Fast path: already initialized by SparkPlugin or a previous advice call

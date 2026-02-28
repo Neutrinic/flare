@@ -103,8 +103,24 @@ Requires Java 17+ and sbt.
 
 ```bash
 sbt compile
-sbt assembly  # fat JAR at target/scala-2.13/flare-spark-assembly-*.jar
+sbt assembly  # fat JAR at target/scala-2.13/flare-spark-3.5.jar
 ```
+
+Cross-compile for a specific Spark version:
+
+```bash
+sbt -DsparkVersion=3.3.4 ++2.12.18 assembly   # Spark 3.3, Scala 2.12
+sbt -DsparkVersion=4.0.0 ++2.13.16 assembly   # Spark 4.0, Scala 2.13
+```
+
+Supported matrix:
+
+| Spark | Scala 2.12 | Scala 2.13 |
+|-------|:----------:|:----------:|
+| 3.3   | ✓          | ✓          |
+| 3.4   | ✓          | ✓          |
+| 3.5   | ✓          | ✓          |
+| 4.0   |            | ✓          |
 
 ## Docker
 

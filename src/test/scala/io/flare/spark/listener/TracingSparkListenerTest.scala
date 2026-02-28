@@ -11,7 +11,7 @@ import munit.FunSuite
 import org.apache.spark.FlareTestHelpers
 import org.apache.spark.scheduler._
 
-import scala.jdk.CollectionConverters._
+import scala.collection.JavaConverters._
 
 class TracingSparkListenerTest extends FunSuite {
 

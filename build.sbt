@@ -14,23 +14,31 @@ ThisBuild / scalacOptions ++= Seq(
   "-Xlint",
 )
 
-ThisBuild / scalacOptions ++= (CrossVersion.partialVersion(scalaVersion.value) match {
-  case Some((2, 12)) => Seq("-Ypartial-unification", "-Ywarn-unused:imports")
-  case Some((2, 13)) => Seq("-Ywarn-unused:imports")
-  case _             => Seq.empty
-})
+// NOTE: version-dependent scalacOptions are in root project settings, not ThisBuild,
+// because `++2.12.18` changes ThisBuild/scalaVersion which would leak -Ypartial-unification
+// to the examples sub-project (which stays on 2.13 and rejects that flag).
 
 // Spark version to build against (override with -DsparkVersion=3.5.1)
 val sparkBuildVersion = sys.props.getOrElse("sparkVersion", spark35)
+val sparkMajorMinor   = sparkBuildVersion.split('.').take(2).mkString(".")
 
 lazy val root = (project in file("."))
   .enablePlugins(BuildInfoPlugin)
   .aggregate(examples)
   .settings(
-    name := "flare-spark",
+    name := s"flare-spark-$sparkMajorMinor",
+
+    // Spark 4.0 dropped Scala 2.12
+    crossScalaVersions := (if (sparkMajorMinor == "4.0") Seq(scala213) else Seq(scala212, scala213)),
+
+    scalacOptions ++= (CrossVersion.partialVersion(scalaVersion.value) match {
+      case Some((2, 12)) => Seq("-Ypartial-unification", "-Ywarn-unused:imports")
+      case Some((2, 13)) => Seq("-Ywarn-unused:imports")
+      case _             => Seq.empty
+    }),
 
     // sbt-buildinfo — generates io.flare.spark.BuildInfo with version at compile time
-    buildInfoKeys    := Seq[BuildInfoKey](name, version),
+    buildInfoKeys    := Seq[BuildInfoKey](name, version, "sparkVersion" -> sparkBuildVersion),
     buildInfoPackage := "io.flare.spark",
     buildInfoObject  := "BuildInfo",
 
@@ -51,7 +59,7 @@ lazy val root = (project in file("."))
 
     // Bundle OTEL API + context (needed on Spark's app classloader for SparkPlugin).
     // Everything else (Spark, SLF4J, ByteBuddy, OTEL SDK) is provided.
-    assembly / assemblyJarName := "flare-spark.jar",
+    assembly / assemblyJarName := s"flare-spark-$sparkMajorMinor.jar",
     assembly / assemblyOption  := (assembly / assemblyOption).value
       .withIncludeScala(false),
 
