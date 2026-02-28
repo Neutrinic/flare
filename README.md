@@ -97,6 +97,40 @@ Both JARs must be accessible on every node. On Kubernetes, bake them into your S
 
 Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables.
 
+## OTEL Agent Compatibility
+
+Flare is an OTEL Java agent **extension** — not a standalone library. It is loaded by the agent's `AgentClassLoader` and shares the agent's ByteBuddy and SDK classes at runtime. This means the agent version matters.
+
+### Tested Versions
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| OTEL Java Agent | 2.16.0 | Built and tested against this version |
+| OTEL API / SDK | 1.50.0 | Matches agent 2.16.0's bundled SDK |
+| ByteBuddy | 1.14.19 | Matches agent 2.16.0's bundled ByteBuddy |
+
+### Version Compatibility
+
+**Same minor version (recommended):** Use the exact agent version Flare was built against. The extension API is published with an `-alpha` suffix, meaning it can break between minor releases.
+
+**Newer agent:** May work if the extension API hasn't changed. The OTEL team generally maintains backward compatibility within the `2.x` line, but the extension API is explicitly unstable. Test before deploying.
+
+**Older agent:** Likely to fail. Flare uses `InstrumentationModule` and `TypeInstrumentation` from the extension API, which have evolved across agent releases.
+
+### Why Shading Doesn't Help
+
+The agent's extension mechanism loads Flare into the same classloader as the agent's own SDK and ByteBuddy classes. If Flare bundled its own copies, class conflicts would cause `LinkageError` or `ClassCastException` at runtime. All OTEL and ByteBuddy dependencies must be `provided` scope — the agent supplies them.
+
+### Checking Your Agent Version
+
+```bash
+java -javaagent:/path/to/opentelemetry-javaagent.jar -version
+# Or check the JAR manifest:
+unzip -p opentelemetry-javaagent.jar META-INF/MANIFEST.MF | grep Implementation-Version
+```
+
+If you see version mismatches at runtime, the most common symptom is a `NoSuchMethodError` or `ClassNotFoundException` in Flare's instrumentation modules during Spark startup.
+
 ## Building
 
 Requires Java 17+ and sbt.
@@ -182,7 +216,7 @@ Executor: TaskRunner.run() / ExecutorPlugin.onTaskStart()
 
 ## Stack
 
-- Scala 2.12 / 2.13, Spark 3.5 / 4.0
+- Scala 2.12 / 2.13, Spark 3.3–4.0
 - OpenTelemetry Java Agent 2.16.0 (extension mechanism)
 - OpenTelemetry API 1.50.0
 - munit (tests)
