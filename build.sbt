@@ -33,8 +33,14 @@ ThisBuild / scalacOptions ++= Seq(
 // ── OWASP dependency check ────────────────────────────────────────────────
 import net.nmoncho.sbt.dependencycheck.settings._
 dependencyCheckFailBuildOnCVSS := 7  // fail on high + critical
-dependencyCheckSuppressions := SuppressionSettings(
-  files = SuppressionFilesSettings.files()(file("dependency-check-suppression.xml"))
+// Only scan compile + runtime scope — skip provided (Spark, OTEL agent, ByteBuddy)
+// and test deps since Flare doesn't ship them.
+dependencyCheckScopes := ScopesSettings(
+  compile  = true,
+  optional = false,
+  provided = false,
+  runtime  = true,
+  test     = false
 )
 dependencyCheckOutputDirectory := target.value / "dependency-check"
 dependencyCheckFormats := {
