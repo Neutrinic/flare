@@ -10,9 +10,9 @@ object Dependencies {
   val spark35 = "3.5.1"
   val spark40 = "4.0.0"
 
-  val otelVersion      = "1.50.0"
-  val otelAgentVersion = "2.16.0"
-  val byteBuddyVersion = "1.14.19"
+  val otelVersion      = "1.64.0"
+  val otelAgentVersion = "2.30.0"
+  val byteBuddyVersion = "1.18.11"
   val slf4jVersion     = "2.0.16"
   val munitVersion     = "1.1.1"
 
@@ -40,13 +40,15 @@ object Dependencies {
 
   // Provided by the OTEL agent at runtime
   val byteBuddyCompileOnly = Seq(
-    "net.bytebuddy" % "byte-buddy"       % byteBuddyVersion % "provided",
-    "net.bytebuddy" % "byte-buddy-agent" % byteBuddyVersion % "provided",
+    // The agent uses byte-buddy-dep (not byte-buddy). Compile against the same
+    // artifact and version to avoid two copies of Byte Buddy on the classpath.
+    "net.bytebuddy" % "byte-buddy-dep" % byteBuddyVersion % "provided",
   )
 
   def testDeps(sparkVersion: String) = Seq(
     "org.scalameta"    %% "munit"                     % munitVersion % Test,
     "io.opentelemetry"  % "opentelemetry-sdk-testing" % otelVersion  % Test,
+    "io.opentelemetry"  % "opentelemetry-sdk-extension-autoconfigure" % otelVersion % Test,
     "org.apache.spark" %% "spark-core"                % sparkVersion % Test,
     "org.apache.spark" %% "spark-sql"                 % sparkVersion % Test,
   )

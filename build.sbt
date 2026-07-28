@@ -5,6 +5,8 @@ ThisBuild / scalaVersion := scala213
 ThisBuild / crossScalaVersions := Seq(scala212, scala213)
 ThisBuild / versionScheme := Some("semver-spec")
 
+lazy val AgentTest = config("agentTest") extend Test
+
 // Maven Central publishing metadata
 ThisBuild / homepage := Some(url("https://github.com/Neutrinic/flare"))
 ThisBuild / licenses := List("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0"))
@@ -60,6 +62,8 @@ val sparkMajorMinor   = sparkBuildVersion.split('.').take(2).mkString(".")
 lazy val root = (project in file("."))
   .enablePlugins(BuildInfoPlugin)
   .aggregate(examples)
+  .configs(AgentTest)
+  .settings(inConfig(AgentTest)(Defaults.testSettings))
   .settings(
     name := s"flare-spark-$sparkMajorMinor",
 
@@ -83,7 +87,10 @@ lazy val root = (project in file("."))
       "org.slf4j"                % "slf4j-api"  % slf4jVersion % "provided",
       // log4j-api is provided transitively by spark-core — no explicit dep needed.
       // MdcEnricher references ThreadContext at compile time; Spark's log4j-api satisfies it.
-    ) ++ testDeps(sparkBuildVersion),
+    ) ++ testDeps(sparkBuildVersion) ++ Seq(
+      "io.opentelemetry.javaagent" % "opentelemetry-javaagent" % otelAgentVersion % AgentTest,
+      "org.apache.kafka"            % "kafka-clients"           % "3.4.1"          % AgentTest,
+    ),
 
     // SPI files — do not let assembly deduplicate these
     assembly / assemblyMergeStrategy := {
@@ -102,11 +109,42 @@ lazy val root = (project in file("."))
       .withIncludeScala(false),
 
     Test / fork := true,
+    // Config suites mutate JVM system properties; serialize them to avoid cross-suite races.
+    Test / parallelExecution := false,
     Test / javaOptions ++= Seq(
       s"-Dspark.version=$sparkBuildVersion",
     ),
 
     testFrameworks := Seq(new TestFramework("munit.Framework")),
+
+    // A separate fork is required: the OTEL agent installs GlobalOpenTelemetry at
+    // JVM startup, while the regular unit tests install isolated in-memory SDKs.
+    AgentTest / fork := true,
+    AgentTest / parallelExecution := false,
+    AgentTest / testFrameworks := Seq(new TestFramework("munit.Framework")),
+    AgentTest / javaOptions ++= {
+      val agentJar = (AgentTest / dependencyClasspath).value
+        .map(_.data)
+        .find(_.getName == s"opentelemetry-javaagent-$otelAgentVersion.jar")
+        .getOrElse(sys.error(s"Could not resolve OpenTelemetry Java agent $otelAgentVersion"))
+      val extensionJar = (Compile / assembly).value
+
+      Seq(
+        s"-javaagent:${agentJar.getAbsolutePath}",
+        s"-Dotel.javaagent.extensions=${extensionJar.getAbsolutePath}",
+        "-Dotel.traces.exporter=none",
+        "-Dotel.metrics.exporter=none",
+        "-Dotel.logs.exporter=none",
+        "-Dotel.traces.sampler=always_on",
+        "-Dotel.service.name=flare-agent-test",
+        "-DFLARE_TRACE_GRANULARITY=tasks",
+        "-DFLARE_SAMPLING_RATIO=1.0",
+        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.nio=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+      )
+    },
   )
 
 lazy val examples = (project in file("examples"))

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Kafka Structured Streaming trace correlation** — a Java agent auto-configuration provider
+  enables OpenTelemetry messaging receive telemetry by default, keeping Kafka process spans under
+  the active Spark stage/task context while linking the propagated producer context. Explicit
+  OpenTelemetry configuration remains authoritative
+- **Real-agent Kafka bridge test** — a brokerless Spark `local[1]` integration test runs under the
+  supported OpenTelemetry Java agent and exercises the exact
+  `ConsumerRecords.records(TopicPartition).listIterator()` path
 - **OTEL metrics instruments** — task-level `DoubleHistogram` for duration and throughput,
   `LongCounter` for shuffle bytes, recorded in `FlareExecutorPlugin.endTask()` with automatic
   exemplar linking (metrics recorded while span scope is active). Stage-level counters and
@@ -50,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-initialization, and concurrent initialization race safety
 
 ### Changed
+- **OpenTelemetry baseline** — Java agent 2.30.0, API/SDK 1.64.0, and
+  `byte-buddy-dep` 1.18.11. The required Spark Kafka `ListIterator` instrumentation first
+  appeared upstream in agent 2.21.0
 - **Dockerfile stable JAR names** — `COPY flare-spark.jar` and `COPY flare-examples.jar`
   instead of `flare-spark-assembly-${FLARE_VERSION}.jar`; removed `FLARE_VERSION` build arg
 

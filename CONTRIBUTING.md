@@ -18,6 +18,9 @@ sbt compile
 # Run tests
 sbt test
 
+# Run the forked OpenTelemetry agent + Kafka ListIterator bridge smoke test
+sbt -DsparkVersion=3.5.1 ++2.13.16 "AgentTest / test"
+
 # Build assembly JAR (bundles only Flare code + OTEL API)
 sbt assembly
 # Output: target/scala-2.13/flare-spark.jar
