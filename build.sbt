@@ -5,6 +5,8 @@ ThisBuild / scalaVersion := scala213
 ThisBuild / crossScalaVersions := Seq(scala212, scala213)
 ThisBuild / versionScheme := Some("semver-spec")
 
+lazy val AgentTest = config("agentTest") extend Test
+
 // Maven Central publishing metadata
 ThisBuild / homepage := Some(url("https://github.com/Neutrinic/flare"))
 ThisBuild / licenses := List("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0"))
@@ -60,6 +62,8 @@ val sparkMajorMinor   = sparkBuildVersion.split('.').take(2).mkString(".")
 lazy val root = (project in file("."))
   .enablePlugins(BuildInfoPlugin)
   .aggregate(examples)
+  .configs(AgentTest)
+  .settings(inConfig(AgentTest)(Defaults.testSettings))
   .settings(
     name := s"flare-spark-$sparkMajorMinor",
 
@@ -77,13 +81,26 @@ lazy val root = (project in file("."))
     buildInfoPackage := "io.flare.spark",
     buildInfoObject  := "BuildInfo",
 
+    // The agent extension classloader has no Scala runtime, so the Java
+    // AutoConfigurationCustomizerProvider cannot reference BuildInfo directly.
+    // Generate the same version as a classpath resource for that provider.
+    Compile / resourceGenerators += Def.task {
+      val output =
+        (Compile / resourceManaged).value / "io" / "flare" / "spark" / "flare-build.properties"
+      IO.createDirectory(output.getParentFile)
+      IO.write(output, s"flare.version=${version.value}\n")
+      Seq(output)
+    }.taskValue,
+
     libraryDependencies ++= otelBundled ++ otelProvided ++ otelExtensionApi ++ byteBuddyCompileOnly ++ Seq(
       "org.apache.spark" %% "spark-core" % sparkBuildVersion % "provided",
       "org.apache.spark" %% "spark-sql"  % sparkBuildVersion % "provided",
       "org.slf4j"                % "slf4j-api"  % slf4jVersion % "provided",
       // log4j-api is provided transitively by spark-core — no explicit dep needed.
       // MdcEnricher references ThreadContext at compile time; Spark's log4j-api satisfies it.
-    ) ++ testDeps(sparkBuildVersion),
+    ) ++ testDeps(sparkBuildVersion) ++ Seq(
+      "io.opentelemetry.javaagent" % "opentelemetry-javaagent" % otelAgentVersion % AgentTest,
+    ),
 
     // SPI files — do not let assembly deduplicate these
     assembly / assemblyMergeStrategy := {
@@ -104,9 +121,45 @@ lazy val root = (project in file("."))
     Test / fork := true,
     Test / javaOptions ++= Seq(
       s"-Dspark.version=$sparkBuildVersion",
+      s"-Dflare.test.expected.version=${version.value}",
     ),
 
     testFrameworks := Seq(new TestFramework("munit.Framework")),
+
+    // A separate fork is required: the OTEL agent installs GlobalOpenTelemetry at
+    // JVM startup, while the regular unit tests install isolated in-memory SDKs.
+    AgentTest / fork := true,
+    AgentTest / parallelExecution := false,
+    AgentTest / testFrameworks := Seq(new TestFramework("munit.Framework")),
+    AgentTest / javaOptions ++= {
+      val agentJar = (AgentTest / dependencyClasspath).value
+        .map(_.data)
+        .find(_.getName == s"opentelemetry-javaagent-$otelAgentVersion.jar")
+        .getOrElse(sys.error(s"Could not resolve OpenTelemetry Java agent $otelAgentVersion"))
+      val extensionJar = (Compile / assembly).value
+      val collectorSocket =
+        new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress)
+      val collectorPort = try collectorSocket.getLocalPort finally collectorSocket.close()
+
+      Seq(
+        s"-javaagent:${agentJar.getAbsolutePath}",
+        s"-Dotel.javaagent.extensions=${extensionJar.getAbsolutePath}",
+        "-Dotel.traces.exporter=otlp",
+        "-Dotel.exporter.otlp.protocol=http/protobuf",
+        s"-Dotel.exporter.otlp.traces.endpoint=http://127.0.0.1:$collectorPort/v1/traces",
+        "-Dotel.exporter.otlp.traces.compression=none",
+        "-Dotel.bsp.schedule.delay=100",
+        "-Dotel.instrumentation.java-http-server.enabled=false",
+        "-Dotel.metrics.exporter=none",
+        "-Dotel.logs.exporter=none",
+        "-Dotel.traces.sampler=always_on",
+        "-Dotel.service.name=flare-agent-test",
+        s"-Dflare.agent.test.collector.port=$collectorPort",
+        s"-Dflare.agent.test.expected.version=${version.value}",
+        s"-Dflare.agent.test.extension.jar=${extensionJar.getAbsolutePath}",
+        "--add-modules=jdk.httpserver",
+      )
+    },
   )
 
 lazy val examples = (project in file("examples"))

@@ -4,7 +4,7 @@ LABEL maintainer="Flare"
 ARG SPARK_VERSION=4.0.0
 ARG SCALA_VERSION=2.13
 ARG JDK_VERSION=21
-ARG OTEL_AGENT_VERSION=2.16.0
+ARG OTEL_AGENT_VERSION=2.30.0
 
 # ── System dependencies ────────────────────────────────────────────────────────
 # No Python, no Jupyter, no Almond — Flare is JVM-only

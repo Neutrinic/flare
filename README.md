@@ -142,9 +142,9 @@ Flare is an OTEL Java agent **extension** — not a standalone library. It is lo
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| OTEL Java Agent | 2.16.0 | Built and tested against this version |
-| OTEL API / SDK | 1.50.0 | Matches agent 2.16.0's bundled SDK |
-| ByteBuddy | 1.14.19 | Matches agent 2.16.0's bundled ByteBuddy |
+| OTEL Java Agent | 2.30.0 | Built and tested against this version |
+| OTEL API / SDK | 1.64.0 | Matches agent 2.30.0's bundled SDK |
+| ByteBuddy | 1.18.11 | Matches agent 2.30.0's `byte-buddy-dep` |
 
 ### Version Compatibility
 
@@ -152,7 +152,8 @@ Flare is an OTEL Java agent **extension** — not a standalone library. It is lo
 
 **Newer agent:** May work if the extension API hasn't changed. The OTEL team generally maintains backward compatibility within the `2.x` line, but the extension API is explicitly unstable. Test before deploying.
 
-**Older agent:** Likely to fail. Flare uses `InstrumentationModule` and `TypeInstrumentation` from the extension API, which have evolved across agent releases.
+**Older agent:** Likely to fail. Flare uses `InstrumentationModule` and `TypeInstrumentation` from
+the extension API, which have evolved across agent releases.
 
 ### Why Shading Doesn't Help
 
@@ -175,6 +176,7 @@ Requires Java 17+ and sbt.
 ```bash
 sbt compile
 sbt assembly  # fat JAR at target/scala-2.13/flare-spark-3.5.jar
+sbt -DsparkVersion=3.5.1 ++2.13.16 "AgentTest / test"  # assembled real-agent SPI smoke test
 ```
 
 Cross-compile for a specific Spark version:
@@ -254,8 +256,8 @@ Executor: TaskRunner.run() / ExecutorPlugin.onTaskStart()
 ## Stack
 
 - Scala 2.12 / 2.13, Spark 3.3–4.0
-- OpenTelemetry Java Agent 2.16.0 (extension mechanism)
-- OpenTelemetry API 1.50.0
+- OpenTelemetry Java Agent 2.30.0 (extension mechanism)
+- OpenTelemetry API 1.64.0
 - munit (tests)
 
 ## License

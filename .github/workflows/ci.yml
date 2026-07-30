@@ -49,3 +49,21 @@ jobs:
 
       - name: Assembly
         run: sbt -DsparkVersion=${{ matrix.spark }} ++${{ matrix.scala }} assembly
+
+  agent-test:
+    name: Real agent extension smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: sbt/setup-sbt@v1
+
+      - name: Test assembled OpenTelemetry extension
+        run: sbt -DsparkVersion=3.5.1 ++2.13.16 "AgentTest / test"
