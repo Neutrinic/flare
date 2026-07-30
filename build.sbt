@@ -81,6 +81,17 @@ lazy val root = (project in file("."))
     buildInfoPackage := "io.flare.spark",
     buildInfoObject  := "BuildInfo",
 
+    // The agent extension classloader has no Scala runtime, so the Java
+    // AutoConfigurationCustomizerProvider cannot reference BuildInfo directly.
+    // Generate the same version as a classpath resource for that provider.
+    Compile / resourceGenerators += Def.task {
+      val output =
+        (Compile / resourceManaged).value / "io" / "flare" / "spark" / "flare-build.properties"
+      IO.createDirectory(output.getParentFile)
+      IO.write(output, s"flare.version=${version.value}\n")
+      Seq(output)
+    }.taskValue,
+
     libraryDependencies ++= otelBundled ++ otelProvided ++ otelExtensionApi ++ byteBuddyCompileOnly ++ Seq(
       "org.apache.spark" %% "spark-core" % sparkBuildVersion % "provided",
       "org.apache.spark" %% "spark-sql"  % sparkBuildVersion % "provided",
@@ -89,7 +100,6 @@ lazy val root = (project in file("."))
       // MdcEnricher references ThreadContext at compile time; Spark's log4j-api satisfies it.
     ) ++ testDeps(sparkBuildVersion) ++ Seq(
       "io.opentelemetry.javaagent" % "opentelemetry-javaagent" % otelAgentVersion % AgentTest,
-      "org.apache.kafka"            % "kafka-clients"           % "3.4.1"          % AgentTest,
     ),
 
     // SPI files — do not let assembly deduplicate these
@@ -109,10 +119,9 @@ lazy val root = (project in file("."))
       .withIncludeScala(false),
 
     Test / fork := true,
-    // Config suites mutate JVM system properties; serialize them to avoid cross-suite races.
-    Test / parallelExecution := false,
     Test / javaOptions ++= Seq(
       s"-Dspark.version=$sparkBuildVersion",
+      s"-Dflare.test.expected.version=${version.value}",
     ),
 
     testFrameworks := Seq(new TestFramework("munit.Framework")),
@@ -128,21 +137,27 @@ lazy val root = (project in file("."))
         .find(_.getName == s"opentelemetry-javaagent-$otelAgentVersion.jar")
         .getOrElse(sys.error(s"Could not resolve OpenTelemetry Java agent $otelAgentVersion"))
       val extensionJar = (Compile / assembly).value
+      val collectorSocket =
+        new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress)
+      val collectorPort = try collectorSocket.getLocalPort finally collectorSocket.close()
 
       Seq(
         s"-javaagent:${agentJar.getAbsolutePath}",
         s"-Dotel.javaagent.extensions=${extensionJar.getAbsolutePath}",
-        "-Dotel.traces.exporter=none",
+        "-Dotel.traces.exporter=otlp",
+        "-Dotel.exporter.otlp.protocol=http/protobuf",
+        s"-Dotel.exporter.otlp.traces.endpoint=http://127.0.0.1:$collectorPort/v1/traces",
+        "-Dotel.exporter.otlp.traces.compression=none",
+        "-Dotel.bsp.schedule.delay=100",
+        "-Dotel.instrumentation.java-http-server.enabled=false",
         "-Dotel.metrics.exporter=none",
         "-Dotel.logs.exporter=none",
         "-Dotel.traces.sampler=always_on",
         "-Dotel.service.name=flare-agent-test",
-        "-DFLARE_TRACE_GRANULARITY=tasks",
-        "-DFLARE_SAMPLING_RATIO=1.0",
-        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
-        "--add-opens=java.base/java.lang=ALL-UNNAMED",
-        "--add-opens=java.base/java.nio=ALL-UNNAMED",
-        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        s"-Dflare.agent.test.collector.port=$collectorPort",
+        s"-Dflare.agent.test.expected.version=${version.value}",
+        s"-Dflare.agent.test.extension.jar=${extensionJar.getAbsolutePath}",
+        "--add-modules=jdk.httpserver",
       )
     },
   )

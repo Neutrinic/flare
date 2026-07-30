@@ -86,7 +86,8 @@ object SparkContextAdviceHelper {
         s"[Flare] ByteBuddy advice initialized — " +
         s"traceId=${appSpan.getSpanContext.getTraceId}, " +
         s"granularity=${config.granularity}, " +
-        s"sampling=${config.samplingRatio}"
+        s"sampling=${config.samplingRatio}, " +
+        s"maxSpans=${config.maxSpansPerTrace}"
       )
 
     } catch {

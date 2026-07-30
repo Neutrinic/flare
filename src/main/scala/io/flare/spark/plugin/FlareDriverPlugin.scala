@@ -93,7 +93,8 @@ class FlareDriverPlugin extends DriverPlugin {
     logger.info(s"[Flare] Driver plugin initialized — " +
       s"traceId=${appSpan.getSpanContext.getTraceId}, " +
       s"granularity=${config.granularity}, " +
-      s"sampling=${config.samplingRatio}")
+      s"sampling=${config.samplingRatio}, " +
+      s"maxSpans=${config.maxSpansPerTrace}")
 
     ju.Collections.emptyMap()
   }

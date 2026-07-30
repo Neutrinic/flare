@@ -8,13 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Kafka Structured Streaming trace correlation** — a Java agent auto-configuration provider
-  enables OpenTelemetry messaging receive telemetry by default, keeping Kafka process spans under
-  the active Spark stage/task context while linking the propagated producer context. Explicit
-  OpenTelemetry configuration remains authoritative
-- **Real-agent Kafka bridge test** — a brokerless Spark `local[1]` integration test runs under the
-  supported OpenTelemetry Java agent and exercises the exact
-  `ConsumerRecords.records(TopicPartition).listIterator()` path
+- **Real-agent extension test** — a forked JVM runs the supported OpenTelemetry Java agent with
+  Flare's assembled JAR, then verifies the packaged SPI descriptor, generated version metadata,
+  and exported `flare.role` / `flare.version` resource attributes
 - **OTEL metrics instruments** — task-level `DoubleHistogram` for duration and throughput,
   `LongCounter` for shuffle bytes, recorded in `FlareExecutorPlugin.endTask()` with automatic
   exemplar linking (metrics recorded while span scope is active). Stage-level counters and
@@ -58,10 +54,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **OpenTelemetry baseline** — Java agent 2.30.0, API/SDK 1.64.0, and
-  `byte-buddy-dep` 1.18.11. The required Spark Kafka `ListIterator` instrumentation first
-  appeared upstream in agent 2.21.0
+  `byte-buddy-dep` 1.18.11
+- **Consumer dependency update** — `opentelemetry-api` and `opentelemetry-context` move from
+  1.50.0 to 1.64.0. Both are compile-scoped and bundled in the assembly, so this updates the
+  published POM dependency graph and shipped bytecode. OpenTelemetry 1.x compatibility should
+  preserve consumers, but applications should validate dependency convergence when upgrading
+- **Startup diagnostics** — all live Scala initialization paths log the active trace granularity,
+  sampling ratio, and maximum spans per trace after configuration validation
 - **Dockerfile stable JAR names** — `COPY flare-spark.jar` and `COPY flare-examples.jar`
   instead of `flare-spark-assembly-${FLARE_VERSION}.jar`; removed `FLARE_VERSION` build arg
+
+### Fixed
+- **Agent resource attributes** — register the Java
+  `AutoConfigurationCustomizerProvider` through ServiceLoader so `flare.role` and
+  `flare.version` are emitted. Version metadata now comes from an sbt-generated classpath
+  resource instead of nullable JAR package metadata
 
 ## [0.2.0] - 2026-02-27
 

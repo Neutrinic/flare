@@ -35,7 +35,6 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 - **Executor task spans** — real spans on the executor thread, not driver-side approximations
 - **Per-stage context** — each task inherits its specific stage span as parent, including AQE sub-jobs
 - **W3C trace continuity** — `traceparent` propagated via Spark's local property channel
-- **Kafka source correlation** — Spark execution stays primary while upstream producer contexts are linked
 - **Granularity control** — jobs, stages, tasks, or all; plus slow-task and retry-only filters
 - **Sampling** — consistent across the JVM boundary via W3C traceparent flags
 
@@ -95,12 +94,7 @@ io.github.neutrinic:flare-spark-4-0_2.13:1.0.0   # Spark 4.0, Scala 2.13
 
 The OTEL Java agent JAR (`opentelemetry-javaagent.jar`) must still be placed on every node — `--packages` handles only Flare and its dependencies.
 
-This mode loads Flare as a Spark plugin after the Java agent has initialized. For automatic
-Kafka source correlation, use the agent-extension deployment below. If you need to stay with
-`--packages`, add both properties shown in
-[Kafka Structured Streaming](#kafka-structured-streaming) explicitly.
-
-### Option 2: Agent extension deployment (recommended for Kafka)
+### Option 2: Manual JAR deployment
 
 ```bash
 spark-submit \
@@ -124,10 +118,6 @@ spark-submit \
 
 Both JARs must be accessible on every node. On Kubernetes, bake them into your Spark image. On YARN/EMR, use `--files` and reference via `{{PWD}}`.
 
-Loading Flare through `otel.javaagent.extensions` makes its auto-configuration available during
-JVM startup. With the supported OpenTelemetry Java agent 2.30.0, no additional Kafka tracing flag
-is required.
-
 ## Configuration
 
 | Variable | Default | Description |
@@ -143,82 +133,6 @@ is required.
 Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables.
 
 > **Note:** When a Spark job fails, exception messages are recorded as span attributes. Spark exceptions sometimes include snippets of the data being processed (e.g., parse errors, type mismatches). Ensure your telemetry backend is secured appropriately if your jobs handle sensitive data.
-
-## Kafka Structured Streaming
-
-Flare delegates Kafka spans and header extraction to the OpenTelemetry Java agent. It does not
-wrap Kafka clients or create duplicate messaging spans. When Flare is loaded as an agent extension,
-it enables this low-precedence OpenTelemetry default:
-
-```properties
-otel.instrumentation.messaging.experimental.receive-telemetry.enabled=true
-```
-
-With task tracing enabled, the resulting relationship is:
-
-```text
-spark.stage
-└── spark.task.executor
-    └── <topic> receive
-        └── <topic> process
-            ├── downstream HTTP/JDBC/etc.
-            └── link → upstream producer context
-```
-
-With the default `stages` granularity, the task level is omitted:
-
-```text
-spark.stage
-└── <topic> receive
-    └── <topic> process
-        └── link → upstream producer context
-```
-
-Flare restores the active stage context on the executor. With
-`FLARE_TRACE_GRANULARITY=tasks` or `all`, the executor task span becomes the parent instead.
-
-This model deliberately keeps record processing in the Spark execution trace and represents the
-incoming producer context as a span link. A Spark task can process many records from different
-producer traces, so there is no single correct upstream parent for the task.
-
-Requirements:
-
-- Flare pins and tests OpenTelemetry Java agent 2.30.0. Upstream version 2.21.0 introduced the
-  [`records(TopicPartition).listIterator()` instrumentation](https://github.com/open-telemetry/opentelemetry-java-instrumentation/pull/14757)
-  used by Spark Structured Streaming, but it is not a tested Flare runtime baseline.
-- Flare must be supplied through `otel.javaagent.extensions` on both driver and executors for the
-  automatic default to run during agent startup.
-- Producers must inject a supported propagation header, such as W3C `traceparent`, into Kafka
-  record headers.
-
-An explicit OpenTelemetry setting always overrides Flare. Set the following on both executor and
-driver JVMs to restore the agent's normal direct-parent behavior:
-
-```properties
--Dotel.instrumentation.messaging.experimental.receive-telemetry.enabled=false
-```
-
-In direct-parent mode, Kafka process spans continue the producer trace but are no longer children
-of the Flare stage/task trace.
-
-When using `--packages` without `otel.javaagent.extensions`, the agent has already initialized
-before Spark loads Flare, and TaskRunner context restoration is unavailable. Add the OpenTelemetry
-property explicitly and enable task spans so a Flare context is active while Kafka records are
-processed:
-
-```text
--Dotel.instrumentation.messaging.experimental.receive-telemetry.enabled=true
--DFLARE_TRACE_GRANULARITY=tasks
-```
-
-The bridge covers Kafka source consumption inside the Spark task. It cannot preserve per-record
-context after a shuffle, window, join, aggregation, or state-store boundary unless the application
-carries that context as data. Per-record spans can also make long-running, high-throughput
-streaming traces very large. Because parent-based sampling retains children of a sampled
-long-running application trace, use collector-side span filtering or explicitly disable receive
-telemetry when that trade-off is unsuitable. The OpenTelemetry setting is shared by messaging
-instrumentations, so it also changes receive/process parenting for any other instrumented
-messaging clients in the same JVM.
 
 ## OTEL Agent Compatibility
 
@@ -238,9 +152,8 @@ Flare is an OTEL Java agent **extension** — not a standalone library. It is lo
 
 **Newer agent:** May work if the extension API hasn't changed. The OTEL team generally maintains backward compatibility within the `2.x` line, but the extension API is explicitly unstable. Test before deploying.
 
-**Older agent:** Agent 2.21.0 is where the required Spark `ListIterator` instrumentation first
-appeared, but Flare's alpha extension API is compiled and tested against 2.30.0. Use the exact
-2.30.0 baseline unless you maintain a separate compatibility test.
+**Older agent:** Likely to fail. Flare uses `InstrumentationModule` and `TypeInstrumentation` from
+the extension API, which have evolved across agent releases.
 
 ### Why Shading Doesn't Help
 
@@ -263,7 +176,7 @@ Requires Java 17+ and sbt.
 ```bash
 sbt compile
 sbt assembly  # fat JAR at target/scala-2.13/flare-spark-3.5.jar
-sbt -DsparkVersion=3.5.1 ++2.13.16 "AgentTest / test"  # real-agent ListIterator bridge smoke test
+sbt -DsparkVersion=3.5.1 ++2.13.16 "AgentTest / test"  # assembled real-agent SPI smoke test
 ```
 
 Cross-compile for a specific Spark version:
@@ -343,7 +256,7 @@ Executor: TaskRunner.run() / ExecutorPlugin.onTaskStart()
 ## Stack
 
 - Scala 2.12 / 2.13, Spark 3.3–4.0
-- OpenTelemetry Java Agent 2.30.0 (the required Kafka path first appeared in 2.21.0)
+- OpenTelemetry Java Agent 2.30.0 (extension mechanism)
 - OpenTelemetry API 1.64.0
 - munit (tests)
 
