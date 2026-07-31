@@ -75,8 +75,32 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
     return version.trim();
   }
 
-  private static String detectRole() {
+  static String detectRole() {
     String executorId = System.getenv("SPARK_EXECUTOR_ID");
+    if (executorId == null || executorId.isEmpty()) {
+      executorId = executorIdFromCommand(System.getProperty("sun.java.command"));
+    }
     return executorId == null || executorId.isEmpty() ? "driver" : "executor-" + executorId;
+  }
+
+  /**
+   * Extracts the executor id from the JVM command line.
+   *
+   * <p>Only Kubernetes sets {@code SPARK_EXECUTOR_ID} in the executor environment. Standalone and
+   * YARN pass identity as a {@code --executor-id} argument to the executor backend, so without this
+   * fallback every executor would report itself as a driver.
+   */
+  static String executorIdFromCommand(String command) {
+    if (command == null || !command.contains("CoarseGrainedExecutorBackend")) {
+      return null;
+    }
+
+    String[] tokens = command.trim().split("\\s+");
+    for (int i = 0; i < tokens.length - 1; i++) {
+      if ("--executor-id".equals(tokens[i])) {
+        return tokens[i + 1];
+      }
+    }
+    return null;
   }
 }
