@@ -86,6 +86,8 @@ object FlareConfig {
 
   /** Load and validate config from system properties / env vars. Throws at startup on invalid config. */
   def load(): FlareConfig = {
+    // Kept deliberately in step with FlareAutoConfig.isFlareEnabled(), which parses the same key
+    // in Java because the agent extension classloader has no Scala runtime. Change both together.
     val enabled = !envOrProp("FLARE_ENABLED")
       .map(_.toLowerCase).contains("false")
 

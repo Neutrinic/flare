@@ -4,7 +4,7 @@ import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 import io.opentelemetry.api.GlobalOpenTelemetry
 import munit.FunSuite
 
-import java.net.InetSocketAddress
+import java.net.{BindException, InetSocketAddress}
 import java.nio.charset.StandardCharsets.{ISO_8859_1, UTF_8}
 import java.util.Properties
 import java.util.concurrent.{Executors, LinkedBlockingQueue, TimeUnit}
@@ -24,7 +24,7 @@ class FlareAgentExtensionTest extends FunSuite {
     val collectorPort = requiredProperty("flare.agent.test.collector.port").toInt
     val requests = new LinkedBlockingQueue[Array[Byte]]()
     val executor = Executors.newSingleThreadExecutor()
-    val server = HttpServer.create(new InetSocketAddress("127.0.0.1", collectorPort), 0)
+    val server = bindCollector(collectorPort)
 
     server.createContext(
       "/v1/traces",
@@ -61,6 +61,34 @@ class FlareAgentExtensionTest extends FunSuite {
     }
   }
 
+  /**
+   * Binds the stub collector on the port the build reserved.
+   *
+   * <p>The build has to pick the port before this JVM forks, because the agent resolves the OTLP
+   * endpoint during premain. It therefore opens an ephemeral port and closes it again, which
+   * leaves a window for another process to take it. Retry briefly to ride out a transient
+   * collision, and otherwise fail with a message that names the actual cause.
+   */
+  private def bindCollector(port: Int): HttpServer = {
+    val address = new InetSocketAddress("127.0.0.1", port)
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+    var lastFailure: BindException = null
+
+    while (System.nanoTime() < deadline) {
+      try return HttpServer.create(address, 0)
+      catch {
+        case failure: BindException =>
+          lastFailure = failure
+          Thread.sleep(250)
+      }
+    }
+
+    fail(
+      s"could not bind the stub OTLP collector on 127.0.0.1:$port — the build reserved this " +
+        s"port but another process claimed it before the test JVM started ($lastFailure)",
+    )
+  }
+
   private def verifyAssembly(expectedVersion: String): Unit = {
     val jar = new JarFile(requiredProperty("flare.agent.test.extension.jar"))
     try {
@@ -91,6 +119,16 @@ class FlareAgentExtensionTest extends FunSuite {
     finally stream.close()
   }
 
+  /**
+   * Scans the raw OTLP payload for each required string.
+   *
+   * <p>This is a substring match over protobuf decoded as ISO-8859-1, chosen to keep a protobuf
+   * dependency out of the test. It proves each string appears somewhere in the export, not that
+   * it appears as the value of its own key. `expectedVersion` is distinctive enough for that to
+   * be a real assertion; `"driver"` is a short generic needle and only weakly implies that
+   * `flare.role` holds it. Treat this as a smoke test that the SPI ran and the attributes were
+   * exported — `FlareAutoConfigTest` is what pins the actual values.
+   */
   private def awaitPayload(
     requests: LinkedBlockingQueue[Array[Byte]],
     requiredStrings: Seq[String],

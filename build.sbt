@@ -137,6 +137,10 @@ lazy val root = (project in file("."))
         .find(_.getName == s"opentelemetry-javaagent-$otelAgentVersion.jar")
         .getOrElse(sys.error(s"Could not resolve OpenTelemetry Java agent $otelAgentVersion"))
       val extensionJar = (Compile / assembly).value
+      // The agent resolves the OTLP endpoint during premain, so the port has to be picked before
+      // the JVM forks and cannot be chosen by the test itself. Asking the OS for an ephemeral
+      // port and releasing it leaves a window where another process could claim it, so the test
+      // retries the bind and fails with an actionable message instead of a bare BindException.
       val collectorSocket =
         new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress)
       val collectorPort = try collectorSocket.getLocalPort finally collectorSocket.close()
