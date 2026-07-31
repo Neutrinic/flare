@@ -27,6 +27,18 @@ metrics_generator:
       dimensions:
         - service.name
       enable_target_info: true
+    # Required by TraceQL metrics queries, which back Grafana's Traces Drilldown.
+    # Without it the trace view fails with "localblocks processor not found".
+    local_blocks:
+      flush_to_storage: true
+      # Defaults to true, which keeps only SERVER-kind spans. Flare emits exactly one
+      # SERVER span (spark.application); jobs, stages and executor tasks are all
+      # INTERNAL, so the default silently drops everything worth drilling into.
+      filter_server_spans: false
+  # The local-blocks processor keeps whole traces, not just aggregates, so it needs
+  # its own WAL separate from the metrics WAL below.
+  traces_storage:
+    path: /var/tempo/generator/traces
   storage:
     path: /var/tempo/generator/wal
     remote_write:
@@ -39,6 +51,7 @@ overrides:
       processors:
         - service-graphs
         - span-metrics
+        - local-blocks
 
 storage:
   trace:

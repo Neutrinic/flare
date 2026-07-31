@@ -96,7 +96,7 @@ services:
   # ── Observability stack ───────────────────────────────────────────────────────
 
   alloy:
-    image: grafana/alloy:latest
+    image: grafana/alloy:v1.13.2
     hostname: alloy
     ports:
       - "4317:4317"   # OTLP gRPC (Spark → Alloy)
@@ -142,7 +142,7 @@ services:
     networks: [flare-net]
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.4.0
     hostname: grafana
     ports:
       - "3000:3000"
