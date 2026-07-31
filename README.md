@@ -61,7 +61,38 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 
 ## Installation
 
-### Option 1: `--packages` (recommended)
+Flare is an OTEL Java agent **extension**. The agent loads it from a filesystem path given by
+`-Dotel.javaagent.extensions`, so the JAR must sit at a stable, identical path on every node.
+That requirement drives the two options below.
+
+### Option 1: Manual JAR deployment (recommended)
+
+```bash
+spark-submit \
+  --conf "spark.plugins=io.flare.spark.plugin.FlareSparkPlugin" \
+  --conf "spark.driver.extraClassPath=/opt/flare/flare-spark.jar" \
+  --conf "spark.executor.extraClassPath=/opt/flare/flare-spark.jar" \
+  --conf "spark.driver.extraJavaOptions=\
+    -javaagent:/opt/flare/opentelemetry-javaagent.jar \
+    -Dotel.javaagent.extensions=/opt/flare/flare-spark.jar \
+    -Dotel.service.name=my-app-driver \
+    -Dotel.exporter.otlp.protocol=grpc \
+    -Dotel.exporter.otlp.endpoint=http://your-collector:4317" \
+  --conf "spark.executor.extraJavaOptions=\
+    -javaagent:/opt/flare/opentelemetry-javaagent.jar \
+    -Dotel.javaagent.extensions=/opt/flare/flare-spark.jar \
+    -Dotel.service.name=my-app-executor \
+    -Dotel.exporter.otlp.protocol=grpc \
+    -Dotel.exporter.otlp.endpoint=http://your-collector:4317" \
+  myapp.jar
+```
+
+Both JARs must be accessible on every node. On Kubernetes, bake them into your Spark image. On YARN/EMR, use `--files` and reference via `{{PWD}}`.
+
+Download the JAR matching your Spark version from
+[Releases](https://github.com/Neutrinic/flare/releases), or pull it from Maven Central.
+
+### Option 2: `--packages` (reduced fidelity)
 
 ```bash
 spark-submit \
@@ -94,29 +125,17 @@ io.github.neutrinic:flare-spark-4-0_2.13:1.0.0   # Spark 4.0, Scala 2.13
 
 The OTEL Java agent JAR (`opentelemetry-javaagent.jar`) must still be placed on every node — `--packages` handles only Flare and its dependencies.
 
-### Option 2: Manual JAR deployment
-
-```bash
-spark-submit \
-  --conf "spark.plugins=io.flare.spark.plugin.FlareSparkPlugin" \
-  --conf "spark.driver.extraClassPath=/opt/flare/flare-spark.jar" \
-  --conf "spark.executor.extraClassPath=/opt/flare/flare-spark.jar" \
-  --conf "spark.driver.extraJavaOptions=\
-    -javaagent:/opt/flare/opentelemetry-javaagent.jar \
-    -Dotel.javaagent.extensions=/opt/flare/flare-spark.jar \
-    -Dotel.service.name=my-app-driver \
-    -Dotel.exporter.otlp.protocol=grpc \
-    -Dotel.exporter.otlp.endpoint=http://your-collector:4317" \
-  --conf "spark.executor.extraJavaOptions=\
-    -javaagent:/opt/flare/opentelemetry-javaagent.jar \
-    -Dotel.javaagent.extensions=/opt/flare/flare-spark.jar \
-    -Dotel.service.name=my-app-executor \
-    -Dotel.exporter.otlp.protocol=grpc \
-    -Dotel.exporter.otlp.endpoint=http://your-collector:4317" \
-  myapp.jar
-```
-
-Both JARs must be accessible on every node. On Kubernetes, bake them into your Spark image. On YARN/EMR, use `--files` and reference via `{{PWD}}`.
+> **`--packages` cannot load the agent extension.** It resolves into a per-node Ivy cache, so
+> there is no stable path to give `-Dotel.javaagent.extensions`. Flare still runs through
+> `spark.plugins` and still produces traces, but everything that ships as agent SPI is inactive:
+>
+> | Lost | Effect |
+> |------|--------|
+> | `SubmitMissingTasksInstrumentation` | No per-stage traceparent. Task spans parent to `spark.application` instead of their stage, so the hierarchy flattens to `app → task` alongside `app → job → stage`. AQE sub-jobs are missed |
+> | `TaskRunnerInstrumentationModule` | No OTEL context inside task bodies. JDBC/HTTP/gRPC calls made by your task code are not linked into the trace |
+> | `FlareAutoConfig` | No `flare.role` / `flare.version` resource attributes |
+>
+> Use this option only if a stable JAR path is genuinely unavailable in your environment.
 
 ## Configuration
 
@@ -136,8 +155,9 @@ any other value leaves it on.
 
 ### Resource Attributes
 
-Loaded as an agent extension, Flare adds two attributes to the OTEL `Resource`, so they appear on
-every span, metric and log record the JVM emits:
+Flare adds two attributes to the OTEL `Resource`, so they appear on every span, metric and log
+record the JVM emits. These come from the agent extension, so they are present with Option 1 and
+absent with Option 2:
 
 | Attribute | Example | Description |
 |-----------|---------|-------------|
