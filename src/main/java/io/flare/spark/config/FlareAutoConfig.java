@@ -39,6 +39,14 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
         (resource, config) -> Resource.create(flareResourceAttributes()).merge(resource));
   }
 
+  /**
+   * Reads the {@code FLARE_ENABLED} kill switch: system property first, then environment, and only
+   * the literal value {@code "false"} disables Flare.
+   *
+   * <p>{@code FlareConfig.load()} parses the same key independently on the Scala side, because
+   * this class cannot reach the Scala runtime from the agent extension classloader. The two must
+   * agree; change them together.
+   */
   static boolean isFlareEnabled() {
     String configured = System.getProperty("FLARE_ENABLED");
     if (configured == null) {

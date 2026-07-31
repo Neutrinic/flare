@@ -119,6 +119,16 @@ class FlareAgentExtensionTest extends FunSuite {
     finally stream.close()
   }
 
+  /**
+   * Scans the raw OTLP payload for each required string.
+   *
+   * <p>This is a substring match over protobuf decoded as ISO-8859-1, chosen to keep a protobuf
+   * dependency out of the test. It proves each string appears somewhere in the export, not that
+   * it appears as the value of its own key. `expectedVersion` is distinctive enough for that to
+   * be a real assertion; `"driver"` is a short generic needle and only weakly implies that
+   * `flare.role` holds it. Treat this as a smoke test that the SPI ran and the attributes were
+   * exported — `FlareAutoConfigTest` is what pins the actual values.
+   */
   private def awaitPayload(
     requests: LinkedBlockingQueue[Array[Byte]],
     requiredStrings: Seq[String],
