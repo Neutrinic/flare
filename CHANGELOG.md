@@ -84,12 +84,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 - **Resource attributes** — README documents `flare.role` and `flare.version`, how the role is
   derived per deployment mode, and its cardinality behaviour under dynamic allocation ([#42])
-- **Installation options reordered** — `--packages` was labelled "recommended" but cannot load
-  the agent extension: it resolves into a per-node Ivy cache, so there is no stable path for
-  `-Dotel.javaagent.extensions`. Such deployments silently lose per-stage traceparent injection
-  (task spans parent to `spark.application` rather than their stage), in-task context
-  restoration, and the Flare resource attributes. Manual JAR deployment is now the recommended
-  option and the `--packages` caveats are spelled out ([#42])
+- **Installation options reordered** — `--packages` was labelled "recommended" but does not load
+  the agent extension: `-Dotel.javaagent.extensions` is read at premain from a fixed path, and
+  resolved packages are neither present nor at a nameable path by then. Such deployments silently
+  lose per-stage traceparent injection (task spans parent to `spark.application` rather than
+  their stage), in-task context restoration, and the Flare resource attributes. Manual JAR
+  deployment is now the recommended option and the `--packages` caveats are spelled out ([#42])
+- **Driver-side extension attachment documented** — `SparkContext` and `DAGScheduler` are both
+  driver-side, so attaching the extension on the driver alone restores per-stage traceparent
+  injection and `spark.task → spark.stage` parenting. Executors recover the correct parent from
+  task properties through the plugin without needing the extension. Useful where a stable JAR
+  path exists on the driver but not cluster-wide ([#42])
 
 ## [0.2.0] - 2026-02-27
 

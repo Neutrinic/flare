@@ -125,17 +125,35 @@ io.github.neutrinic:flare-spark-4-0_2.13:1.0.0   # Spark 4.0, Scala 2.13
 
 The OTEL Java agent JAR (`opentelemetry-javaagent.jar`) must still be placed on every node — `--packages` handles only Flare and its dependencies.
 
-> **`--packages` cannot load the agent extension.** It resolves into a per-node Ivy cache, so
-> there is no stable path to give `-Dotel.javaagent.extensions`. Flare still runs through
-> `spark.plugins` and still produces traces, but everything that ships as agent SPI is inactive:
+> **`--packages` alone does not load the agent extension.** `-Dotel.javaagent.extensions` is read
+> at premain, from a fixed path. Resolved packages land in an Ivy cache on the driver and are
+> fetched into a per-application directory on executors at executor startup — in both cases too
+> late, and at a path you cannot name in advance. Flare still runs through `spark.plugins` and
+> still produces traces, but the agent SPI components are inactive:
 >
 > | Lost | Effect |
 > |------|--------|
 > | `SubmitMissingTasksInstrumentation` | No per-stage traceparent. Task spans parent to `spark.application` instead of their stage, so the hierarchy flattens to `app → task` alongside `app → job → stage`. AQE sub-jobs are missed |
 > | `TaskRunnerInstrumentationModule` | No OTEL context inside task bodies. JDBC/HTTP/gRPC calls made by your task code are not linked into the trace |
 > | `FlareAutoConfig` | No `flare.role` / `flare.version` resource attributes |
->
-> Use this option only if a stable JAR path is genuinely unavailable in your environment.
+
+#### Recovering stage attribution with a driver-side JAR
+
+The first row is the one that costs you most, and it is recoverable on its own. Both
+`SparkContext` and `DAGScheduler` live on the driver, so attaching the extension **only there**
+restores per-stage traceparent injection. Executors read it out of the task properties through
+the plugin and parent correctly, without needing the extension themselves:
+
+```bash
+  --conf "spark.driver.extraJavaOptions=\
+    -javaagent:/opt/flare/opentelemetry-javaagent.jar \
+    -Dotel.javaagent.extensions=/opt/flare/flare-spark.jar \
+    ..."
+```
+
+Verified: `spark.task → spark.stage` is restored, while executors report no `flare.role` and get
+no in-task context restoration. This only needs a stable path on the driver node, which is often
+available even when a cluster-wide one is not — notebooks and `spark-shell` in particular.
 
 ## Configuration
 
