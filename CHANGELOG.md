@@ -69,6 +69,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AutoConfigurationCustomizerProvider` through ServiceLoader so `flare.role` and
   `flare.version` are emitted. Version metadata now comes from an sbt-generated classpath
   resource instead of nullable JAR package metadata
+- **Executor role detection** — `flare.role` fell back to `driver` on every standalone and YARN
+  executor, because only Kubernetes sets `SPARK_EXECUTOR_ID`. `FlareAutoConfig` now also parses
+  `--executor-id` out of `sun.java.command`, which is the only executor identity available at
+  agent premain ([#42])
+- **Missing build metadata is no longer fatal** — `loadFlareVersion()` warns and reports
+  `flare.version=unknown` instead of throwing. It runs inside the agent premain, so a repackaged
+  extension JAR that lost the resource would have aborted auto-configuration for the whole JVM
+  ([#42])
+- **Agent test port collision** — the reserved OTLP collector port is released before the test
+  JVM forks, so the stub collector now retries the bind and reports the real cause rather than
+  surfacing a bare `BindException` ([#42])
+
+### Documentation
+- **Resource attributes** — README documents `flare.role` and `flare.version`, how the role is
+  derived per deployment mode, and its cardinality behaviour under dynamic allocation ([#42])
 
 ## [0.2.0] - 2026-02-27
 
@@ -142,3 +157,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#10]: https://github.com/Neutrinic/flare/issues/10
 [#11]: https://github.com/Neutrinic/flare/issues/11
 [#26]: https://github.com/Neutrinic/flare/issues/26
+[#42]: https://github.com/Neutrinic/flare/issues/42

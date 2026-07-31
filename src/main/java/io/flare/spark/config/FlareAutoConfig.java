@@ -7,6 +7,7 @@ import io.opentelemetry.sdk.resources.Resource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -23,6 +24,7 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
   private static final String BUILD_INFO_RESOURCE =
       "/io/flare/spark/flare-build.properties";
   private static final String FLARE_VERSION_PROPERTY = "flare.version";
+  private static final String UNKNOWN_VERSION = "unknown";
 
   private static final Logger logger = Logger.getLogger(FlareAutoConfig.class.getName());
 
@@ -52,25 +54,48 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
         .build();
   }
 
+  /**
+   * Reads the build-stamped Flare version, falling back to {@code "unknown"}.
+   *
+   * <p>This runs inside the agent's premain. Throwing here would abort auto-configuration for the
+   * whole JVM, so a repackaged or shaded extension jar that lost the metadata resource would take
+   * down the instrumented application rather than just mislabel it. A missing version is a
+   * cosmetic problem; it must never be a fatal one.
+   */
   static String loadFlareVersion() {
     Properties properties = new Properties();
 
     try (InputStream stream = FlareAutoConfig.class.getResourceAsStream(BUILD_INFO_RESOURCE)) {
       if (stream == null) {
-        throw new IllegalStateException(
-            "Missing Flare build metadata resource " + BUILD_INFO_RESOURCE);
+        logger.warning(
+            "[Flare] Missing build metadata resource "
+                + BUILD_INFO_RESOURCE
+                + ", reporting flare.version="
+                + UNKNOWN_VERSION);
+        return UNKNOWN_VERSION;
       }
       properties.load(stream);
     } catch (IOException exception) {
-      throw new IllegalStateException(
-          "Could not read Flare build metadata resource " + BUILD_INFO_RESOURCE,
+      logger.log(
+          Level.WARNING,
+          "[Flare] Could not read build metadata resource "
+              + BUILD_INFO_RESOURCE
+              + ", reporting flare.version="
+              + UNKNOWN_VERSION,
           exception);
+      return UNKNOWN_VERSION;
     }
 
     String version = properties.getProperty(FLARE_VERSION_PROPERTY);
     if (version == null || version.trim().isEmpty()) {
-      throw new IllegalStateException(
-          "Missing " + FLARE_VERSION_PROPERTY + " in " + BUILD_INFO_RESOURCE);
+      logger.warning(
+          "[Flare] Missing "
+              + FLARE_VERSION_PROPERTY
+              + " in "
+              + BUILD_INFO_RESOURCE
+              + ", reporting flare.version="
+              + UNKNOWN_VERSION);
+      return UNKNOWN_VERSION;
     }
     return version.trim();
   }

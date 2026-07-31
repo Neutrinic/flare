@@ -4,7 +4,7 @@ import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 import io.opentelemetry.api.GlobalOpenTelemetry
 import munit.FunSuite
 
-import java.net.InetSocketAddress
+import java.net.{BindException, InetSocketAddress}
 import java.nio.charset.StandardCharsets.{ISO_8859_1, UTF_8}
 import java.util.Properties
 import java.util.concurrent.{Executors, LinkedBlockingQueue, TimeUnit}
@@ -24,7 +24,7 @@ class FlareAgentExtensionTest extends FunSuite {
     val collectorPort = requiredProperty("flare.agent.test.collector.port").toInt
     val requests = new LinkedBlockingQueue[Array[Byte]]()
     val executor = Executors.newSingleThreadExecutor()
-    val server = HttpServer.create(new InetSocketAddress("127.0.0.1", collectorPort), 0)
+    val server = bindCollector(collectorPort)
 
     server.createContext(
       "/v1/traces",
@@ -59,6 +59,34 @@ class FlareAgentExtensionTest extends FunSuite {
       server.stop(0)
       executor.shutdownNow()
     }
+  }
+
+  /**
+   * Binds the stub collector on the port the build reserved.
+   *
+   * <p>The build has to pick the port before this JVM forks, because the agent resolves the OTLP
+   * endpoint during premain. It therefore opens an ephemeral port and closes it again, which
+   * leaves a window for another process to take it. Retry briefly to ride out a transient
+   * collision, and otherwise fail with a message that names the actual cause.
+   */
+  private def bindCollector(port: Int): HttpServer = {
+    val address = new InetSocketAddress("127.0.0.1", port)
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+    var lastFailure: BindException = null
+
+    while (System.nanoTime() < deadline) {
+      try return HttpServer.create(address, 0)
+      catch {
+        case failure: BindException =>
+          lastFailure = failure
+          Thread.sleep(250)
+      }
+    }
+
+    fail(
+      s"could not bind the stub OTLP collector on 127.0.0.1:$port — the build reserved this " +
+        s"port but another process claimed it before the test JVM started ($lastFailure)",
+    )
   }
 
   private def verifyAssembly(expectedVersion: String): Unit = {

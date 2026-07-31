@@ -130,7 +130,26 @@ Both JARs must be accessible on every node. On Kubernetes, bake them into your S
 | `FLARE_METRICS_ENABLED` | `true` | Enable OTEL metrics (task duration, shuffle bytes, stage aggregates) |
 | `FLARE_ENABLED` | `true` | Kill switch |
 
-Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables.
+Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables. System properties take
+precedence. `FLARE_ENABLED` only disables Flare for the literal value `false` (case-insensitive);
+any other value leaves it on.
+
+### Resource Attributes
+
+Loaded as an agent extension, Flare adds two attributes to the OTEL `Resource`, so they appear on
+every span, metric and log record the JVM emits:
+
+| Attribute | Example | Description |
+|-----------|---------|-------------|
+| `flare.version` | `1.1.0` | Flare build version, or `unknown` if the build metadata is unreadable |
+| `flare.role` | `driver`, `executor-3` | Which side of the cluster the JVM is |
+
+`flare.role` comes from `SPARK_EXECUTOR_ID` where it exists (Kubernetes) and otherwise from the
+executor backend's `--executor-id` argument (standalone, YARN). It identifies the *individual*
+executor, so under dynamic allocation the set of values grows as executors churn. Most backends
+keep resource attributes off the metric series themselves — Prometheus-compatible stores expose
+them through `target_info` — but Loki promotes them, so weigh this against log stream cardinality
+if you run large elastic clusters.
 
 > **Note:** When a Spark job fails, exception messages are recorded as span attributes. Spark exceptions sometimes include snippets of the data being processed (e.g., parse errors, type mismatches). Ensure your telemetry backend is secured appropriately if your jobs handle sensitive data.
 
