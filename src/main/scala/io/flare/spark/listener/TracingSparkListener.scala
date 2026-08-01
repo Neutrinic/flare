@@ -4,11 +4,6 @@ import io.flare.spark.SpanCompat._
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.FlareConfig
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
-import io.flare.spark.listener.TracingSparkListener.{
-  MaxDescriptionChars,
-  MaxDetailsChars,
-  MaxPlanChars,
-}
 import io.flare.spark.metrics.{FlareMetrics, MetricAttributes}
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
@@ -329,19 +324,19 @@ class TracingSparkListener(
   ): Unit = {
     span.setLong(Sql.ExecutionId, executionId)
     // Spark leaves these empty on some execution paths; an empty attribute is pure noise.
-    setIfNonEmpty(span, Sql.Description, description, MaxDescriptionChars)
-    setIfNonEmpty(span, Sql.Details, details, MaxDetailsChars)
+    setIfNonEmpty(span, Sql.Description, description, config.sqlDescriptionMaxChars)
+    setIfNonEmpty(span, Sql.Details, details, config.sqlDetailsMaxChars)
 
     val plan = Option(physicalPlanDescription).getOrElse("")
-    if (plan.nonEmpty) {
-      span.setAttribute(Sql.Plan, plan.take(MaxPlanChars))
+    if (plan.nonEmpty && config.sqlPlanMaxChars > 0) {
+      span.setAttribute(Sql.Plan, plan.take(config.sqlPlanMaxChars))
       // Flag truncation explicitly. A silently clipped plan reads exactly like a complete one,
       // which is worse than no plan at all when someone is diagnosing a slow join.
-      if (plan.length > MaxPlanChars) span.setBool(Sql.PlanTruncated, true)
+      if (plan.length > config.sqlPlanMaxChars) span.setBool(Sql.PlanTruncated, true)
     }
   }
 
-  /** Sets `key` only when Spark actually supplied a value, capping it at `maxChars`. */
+  /** Sets `key` only when Spark supplied a value and the cap allows it. `maxChars = 0` drops it. */
   private def setIfNonEmpty(
     span:     Span,
     key:      io.opentelemetry.api.common.AttributeKey[String],
@@ -349,25 +344,6 @@ class TracingSparkListener(
     maxChars: Int,
   ): Unit = {
     val v = Option(value).getOrElse("")
-    if (v.nonEmpty) span.setAttribute(key, v.take(maxChars))
+    if (v.nonEmpty && maxChars > 0) span.setAttribute(key, v.take(maxChars))
   }
-}
-
-object TracingSparkListener {
-
-  /**
-   * Caps for the free-form strings on SparkListenerSQLExecutionStart.
-   *
-   * These are unbounded at the source. A wide query plan runs to tens of kilobytes, and one
-   * attribute per SQL execution at that size is enough to push an OTLP batch over a collector's
-   * message limit — at which point the whole batch is dropped, not just the plan. The caps trade
-   * a partial plan for a delivered trace.
-   *
-   * The plan cap is deliberately far larger than the 500 used for `Stage.FailureReason`: a
-   * failure reason is readable in its first line, whereas a plan truncated to 500 chars loses
-   * every operator that matters.
-   */
-  private[listener] val MaxPlanChars        = 4096
-  private[listener] val MaxDetailsChars     = 2048
-  private[listener] val MaxDescriptionChars = 1024
 }

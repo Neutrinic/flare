@@ -377,10 +377,11 @@ class TracingSparkListenerTest extends FunSuite {
    * this logic covered on every version we build.
    */
   def sqlAttributes(
-    description: String = "",
-    details:     String = "",
-    plan:        String = "",
-    executionId: Long   = 7L,
+    description: String       = "",
+    details:     String       = "",
+    plan:        String       = "",
+    executionId: Long         = 7L,
+    sqlConfig:   FlareConfig  = config,
   ): Attributes = {
     val exporter = InMemorySpanExporter.create()
     val provider = SdkTracerProvider.builder()
@@ -388,7 +389,7 @@ class TracingSparkListenerTest extends FunSuite {
       .build()
     try {
       val tracer   = provider.get("io.flare.spark.test")
-      val listener = new TracingSparkListener(tracer, config, throwOnError = true)
+      val listener = new TracingSparkListener(tracer, sqlConfig, throwOnError = true)
       val span     = tracer.spanBuilder(s"spark.sql.$executionId").startSpan()
       listener.describeSqlExecution(span, executionId, description, details, plan)
       span.end()
@@ -424,24 +425,61 @@ class TracingSparkListenerTest extends FunSuite {
   }
 
   test("an oversized physical plan is truncated and flagged as such") {
-    val attrs = sqlAttributes(plan = "X" * (TracingSparkListener.MaxPlanChars + 500))
-    assertEquals(attrs.get(Sql.Plan).length, TracingSparkListener.MaxPlanChars)
+    val attrs = sqlAttributes(plan = "X" * (config.sqlPlanMaxChars + 500))
+    assertEquals(attrs.get(Sql.Plan).length, config.sqlPlanMaxChars)
     assertEquals(attrs.get(Sql.PlanTruncated).booleanValue(), true)
   }
 
   test("a physical plan exactly at the cap is kept whole and not flagged") {
-    val attrs = sqlAttributes(plan = "X" * TracingSparkListener.MaxPlanChars)
-    assertEquals(attrs.get(Sql.Plan).length, TracingSparkListener.MaxPlanChars)
+    val attrs = sqlAttributes(plan = "X" * config.sqlPlanMaxChars)
+    assertEquals(attrs.get(Sql.Plan).length, config.sqlPlanMaxChars)
     assertEquals(attrs.get(Sql.PlanTruncated), null)
   }
 
   test("description and details are capped independently of the plan") {
     val attrs = sqlAttributes(
-      description = "d" * (TracingSparkListener.MaxDescriptionChars + 100),
-      details     = "s" * (TracingSparkListener.MaxDetailsChars + 100),
+      description = "d" * (config.sqlDescriptionMaxChars + 100),
+      details     = "s" * (config.sqlDetailsMaxChars + 100),
     )
-    assertEquals(attrs.get(Sql.Description).length, TracingSparkListener.MaxDescriptionChars)
-    assertEquals(attrs.get(Sql.Details).length, TracingSparkListener.MaxDetailsChars)
+    assertEquals(attrs.get(Sql.Description).length, config.sqlDescriptionMaxChars)
+    assertEquals(attrs.get(Sql.Details).length, config.sqlDetailsMaxChars)
+  }
+
+  test("configured caps override the defaults") {
+    val attrs = sqlAttributes(
+      description = "d" * 100,
+      details     = "s" * 100,
+      plan        = "X" * 100,
+      sqlConfig   = config.copy(
+        sqlPlanMaxChars        = 10,
+        sqlDetailsMaxChars     = 20,
+        sqlDescriptionMaxChars = 30,
+      ),
+    )
+    assertEquals(attrs.get(Sql.Plan).length, 10)
+    assertEquals(attrs.get(Sql.Details).length, 20)
+    assertEquals(attrs.get(Sql.Description).length, 30)
+    assertEquals(attrs.get(Sql.PlanTruncated).booleanValue(), true)
+  }
+
+  test("a cap of 0 drops the attribute rather than exporting an empty string") {
+    val attrs = sqlAttributes(
+      description = "d" * 100,
+      details     = "s" * 100,
+      plan        = "X" * 100,
+      sqlConfig   = config.copy(
+        sqlPlanMaxChars        = 0,
+        sqlDetailsMaxChars     = 0,
+        sqlDescriptionMaxChars = 0,
+      ),
+    )
+    assertEquals(attrs.get(Sql.Plan), null)
+    assertEquals(attrs.get(Sql.Details), null)
+    assertEquals(attrs.get(Sql.Description), null)
+    // No plan attribute means nothing to flag as truncated.
+    assertEquals(attrs.get(Sql.PlanTruncated), null)
+    // The execution id is never suppressed.
+    assertEquals(attrs.get(Sql.ExecutionId).longValue(), 7L)
   }
 
   test("non-SQL job is parented under app span") {

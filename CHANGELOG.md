@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clipped plan sets `spark.sql.plan.truncated=true`, so a partial plan is never mistaken for a
   complete one. Empty or absent values are omitted rather than exported as empty attributes.
   Per-operator metrics from `sparkPlanInfo` are not included ([#44], tracked in [#47])
+- **`FLARE_SQL_PLAN_MAX_CHARS` / `FLARE_SQL_DETAILS_MAX_CHARS` /
+  `FLARE_SQL_DESCRIPTION_MAX_CHARS`** — the SQL truncation caps above are now configurable rather
+  than compiled in, so a deployment whose collector accepts larger payloads can keep the whole
+  plan. Setting a cap to `0` drops that attribute entirely; a negative value is rejected at
+  startup ([#44])
 - **Real-agent extension test** — a forked JVM runs the supported OpenTelemetry Java agent with
   Flare's assembled JAR, then verifies the packaged SPI descriptor, generated version metadata,
   and exported `flare.role` / `flare.version` resource attributes

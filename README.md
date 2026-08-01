@@ -165,11 +165,20 @@ available even when a cluster-wide one is not — notebooks and `spark-shell` in
 | `FLARE_RETRY_TASKS_ONLY` | `false` | Only emit spans for retries and speculative tasks |
 | `FLARE_MAX_SPANS_PER_TRACE` | `10000` | Circuit breaker for high-cardinality jobs |
 | `FLARE_METRICS_ENABLED` | `true` | Enable OTEL metrics (task duration, shuffle bytes, stage aggregates) |
+| `FLARE_SQL_PLAN_MAX_CHARS` | `4096` | Cap on `spark.sql.plan`; `0` drops the attribute |
+| `FLARE_SQL_DETAILS_MAX_CHARS` | `2048` | Cap on `spark.sql.details`; `0` drops the attribute |
+| `FLARE_SQL_DESCRIPTION_MAX_CHARS` | `1024` | Cap on `spark.sql.description`; `0` drops the attribute |
 | `FLARE_ENABLED` | `true` | Kill switch |
 
 Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables. System properties take
 precedence. `FLARE_ENABLED` only disables Flare for the literal value `false` (case-insensitive);
 any other value leaves it on.
+
+The SQL caps exist because a physical plan is unbounded at the source — a wide query runs to tens
+of kilobytes, which is enough to push an OTLP batch past a collector's message limit, dropping the
+whole batch rather than just the plan. Raise `FLARE_SQL_PLAN_MAX_CHARS` if your collector accepts
+larger payloads. When a plan is clipped, `spark.sql.plan.truncated=true` is set alongside it, so a
+partial plan never reads as a complete one.
 
 ### Resource Attributes
 

@@ -33,6 +33,11 @@ final case class FlareConfig(
   // Compiled once at load time, not per task.
   taskStagePattern: Option[Regex],
   metricsEnabled:   Boolean,      // FLARE_METRICS_ENABLED, default true
+  // Caps for the free-form strings on SparkListenerSQLExecutionStart. 0 drops the
+  // attribute entirely. See FlareConfig.DefaultSql*Chars for why these exist.
+  sqlPlanMaxChars:        Int = FlareConfig.DefaultSqlPlanChars,
+  sqlDetailsMaxChars:     Int = FlareConfig.DefaultSqlDetailsChars,
+  sqlDescriptionMaxChars: Int = FlareConfig.DefaultSqlDescriptionChars,
 ) {
   def tracesJobs:        Boolean = enabled
   def tracesStages:      Boolean = enabled && granularity != TraceGranularity.Jobs
@@ -74,6 +79,26 @@ final case class FlareConfig(
 }
 
 object FlareConfig {
+
+  /**
+   * Caps for the free-form strings on SparkListenerSQLExecutionStart.
+   *
+   * These are unbounded at the source. A wide query plan runs to tens of kilobytes, and one
+   * attribute per SQL execution at that size is enough to push an OTLP batch over a collector's
+   * message limit — at which point the whole batch is dropped, not just the plan. The caps trade
+   * a partial plan for a delivered trace.
+   *
+   * The plan cap is deliberately far larger than the 500 used for `Stage.FailureReason`: a
+   * failure reason is readable in its first line, whereas a plan truncated to 500 chars loses
+   * every operator that matters.
+   *
+   * Override per deployment with FLARE_SQL_PLAN_MAX_CHARS / FLARE_SQL_DETAILS_MAX_CHARS /
+   * FLARE_SQL_DESCRIPTION_MAX_CHARS. Raise them if your collector accepts larger payloads;
+   * set one to 0 to drop that attribute entirely.
+   */
+  val DefaultSqlPlanChars        = 4096
+  val DefaultSqlDetailsChars     = 2048
+  val DefaultSqlDescriptionChars = 1024
 
   /**
    * Read a config value from system properties first, then environment variables.
@@ -160,6 +185,18 @@ object FlareConfig {
     val metricsEnabled = !envOrProp("FLARE_METRICS_ENABLED")
       .map(_.toLowerCase).contains("false")
 
+    // 0 is legal and means "drop this attribute"; negative is a typo, not an intent.
+    def charCap(key: String, default: Int): Int = envOrProp(key)
+      .map { s =>
+        val n = Try(s.toInt).getOrElse(
+          throw new IllegalArgumentException(s"Flare config error: $key '$s' is not an integer")
+        )
+        if (n < 0)
+          throw new IllegalArgumentException(s"Flare config error: $key must be >= 0, got $n")
+        n
+      }
+      .getOrElse(default)
+
     FlareConfig(
       enabled          = enabled,
       granularity      = granularity,
@@ -170,6 +207,9 @@ object FlareConfig {
       taskStageIds     = taskStageIds,
       taskStagePattern = taskStagePattern,
       metricsEnabled   = metricsEnabled,
+      sqlPlanMaxChars        = charCap("FLARE_SQL_PLAN_MAX_CHARS", DefaultSqlPlanChars),
+      sqlDetailsMaxChars     = charCap("FLARE_SQL_DETAILS_MAX_CHARS", DefaultSqlDetailsChars),
+      sqlDescriptionMaxChars = charCap("FLARE_SQL_DESCRIPTION_MAX_CHARS", DefaultSqlDescriptionChars),
     )
   }
 }
