@@ -3,6 +3,7 @@ package io.flare.spark.listener
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.{FlareConfig, TraceGranularity}
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
+import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.trace.{SpanKind, StatusCode}
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -364,6 +365,83 @@ class TracingSparkListenerTest extends FunSuite {
       // Stage is child of job
       assertEquals(stgSpan.getParentSpanId, jobSpanData.getSpanId)
     }
+  }
+
+  /**
+   * Runs describeSqlExecution against a real span and returns the exported attributes.
+   *
+   * The listener's SQL branch deliberately is not driven end to end from here.
+   * SparkListenerSQLExecutionStart changes constructor shape across the supported matrix —
+   * 3.4 inserts `rootExecutionId` second, 4.0 appends `jobTags` and `jobGroupId` — so any
+   * fixture that compiles on 3.5 fails to compile on 3.3. Calling the method directly keeps
+   * this logic covered on every version we build.
+   */
+  def sqlAttributes(
+    description: String = "",
+    details:     String = "",
+    plan:        String = "",
+    executionId: Long   = 7L,
+  ): Attributes = {
+    val exporter = InMemorySpanExporter.create()
+    val provider = SdkTracerProvider.builder()
+      .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+      .build()
+    try {
+      val tracer   = provider.get("io.flare.spark.test")
+      val listener = new TracingSparkListener(tracer, config, throwOnError = true)
+      val span     = tracer.spanBuilder(s"spark.sql.$executionId").startSpan()
+      listener.describeSqlExecution(span, executionId, description, details, plan)
+      span.end()
+      exporter.getFinishedSpanItems.asScala.head.getAttributes
+    } finally provider.close()
+  }
+
+  test("SQL execution metadata is attached to the spark.sql span") {
+    val attrs = sqlAttributes(
+      description = "count at PipelineJob.scala:42",
+      details     = "org.apache.spark.sql.Dataset.count(Dataset.scala:3125)",
+      plan        = "== Physical Plan ==\n*(1) HashAggregate(keys=[], functions=[count(1)])",
+    )
+    assertEquals(attrs.get(Sql.ExecutionId).longValue(), 7L)
+    assertEquals(attrs.get(Sql.Description), "count at PipelineJob.scala:42")
+    assertEquals(attrs.get(Sql.Details), "org.apache.spark.sql.Dataset.count(Dataset.scala:3125)")
+    assertEquals(
+      attrs.get(Sql.Plan),
+      "== Physical Plan ==\n*(1) HashAggregate(keys=[], functions=[count(1)])",
+    )
+    // A plan that fits must not claim to be truncated.
+    assertEquals(attrs.get(Sql.PlanTruncated), null)
+  }
+
+  test("empty and null SQL strings are omitted, not exported as empty attributes") {
+    val attrs = sqlAttributes(description = "", details = null, plan = null)
+    assertEquals(attrs.get(Sql.Description), null)
+    assertEquals(attrs.get(Sql.Details), null)
+    assertEquals(attrs.get(Sql.Plan), null)
+    assertEquals(attrs.get(Sql.PlanTruncated), null)
+    // The execution id is always meaningful, even when Spark supplies no strings at all.
+    assertEquals(attrs.get(Sql.ExecutionId).longValue(), 7L)
+  }
+
+  test("an oversized physical plan is truncated and flagged as such") {
+    val attrs = sqlAttributes(plan = "X" * (TracingSparkListener.MaxPlanChars + 500))
+    assertEquals(attrs.get(Sql.Plan).length, TracingSparkListener.MaxPlanChars)
+    assertEquals(attrs.get(Sql.PlanTruncated).booleanValue(), true)
+  }
+
+  test("a physical plan exactly at the cap is kept whole and not flagged") {
+    val attrs = sqlAttributes(plan = "X" * TracingSparkListener.MaxPlanChars)
+    assertEquals(attrs.get(Sql.Plan).length, TracingSparkListener.MaxPlanChars)
+    assertEquals(attrs.get(Sql.PlanTruncated), null)
+  }
+
+  test("description and details are capped independently of the plan") {
+    val attrs = sqlAttributes(
+      description = "d" * (TracingSparkListener.MaxDescriptionChars + 100),
+      details     = "s" * (TracingSparkListener.MaxDetailsChars + 100),
+    )
+    assertEquals(attrs.get(Sql.Description).length, TracingSparkListener.MaxDescriptionChars)
+    assertEquals(attrs.get(Sql.Details).length, TracingSparkListener.MaxDetailsChars)
   }
 
   test("non-SQL job is parented under app span") {

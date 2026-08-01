@@ -4,6 +4,11 @@ import io.flare.spark.SpanCompat._
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.FlareConfig
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
+import io.flare.spark.listener.TracingSparkListener.{
+  MaxDescriptionChars,
+  MaxDetailsChars,
+  MaxPlanChars,
+}
 import io.flare.spark.metrics.{FlareMetrics, MetricAttributes}
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
@@ -249,6 +254,16 @@ class TracingSparkListener(
               .setSpanKind(SpanKind.INTERNAL)
               .setParent(Context.current().`with`(parent))
               .startSpan()
+
+            // Fields are read by name, never positionally — see describeSqlExecution.
+            describeSqlExecution(
+              span,
+              e.executionId,
+              e.description,
+              e.details,
+              e.physicalPlanDescription,
+            )
+
             // Store in shared map so advice and onJobStart can parent jobs under SQL
             SubmitMissingTasksAdviceHelper.activeSQLSpans.put(e.executionId, span)
           }
@@ -287,4 +302,72 @@ class TracingSparkListener(
         logger.error(s"[Flare] Error handling $eventName: ${ex.getMessage}", ex)
         if (throwOnError) throw ex
     }
+
+  /**
+   * Applies SparkListenerSQLExecutionStart metadata to the `spark.sql.N` span.
+   *
+   * Takes loose values rather than the event itself, deliberately. The event's constructor is not
+   * source-compatible across the supported Spark matrix — 3.4 inserted `rootExecutionId` as the
+   * second parameter, and 4.0 appended `jobTags` and `jobGroupId`:
+   *
+   * {{{
+   * 3.3: (executionId, description, details, physicalPlanDescription, sparkPlanInfo, time, modifiedConfigs)
+   * 3.4: (executionId, rootExecutionId, description, ..., modifiedConfigs)
+   * 4.0: (executionId, rootExecutionId, description, ..., modifiedConfigs, jobTags, jobGroupId)
+   * }}}
+   *
+   * Reading fields by name at the single call site compiles everywhere; constructing one does
+   * not, so no shared test source set can build a fixture. Keeping the logic here means it stays
+   * directly testable without a Spark event at all.
+   */
+  private[listener] def describeSqlExecution(
+    span:                    Span,
+    executionId:             Long,
+    description:             String,
+    details:                 String,
+    physicalPlanDescription: String,
+  ): Unit = {
+    span.setLong(Sql.ExecutionId, executionId)
+    // Spark leaves these empty on some execution paths; an empty attribute is pure noise.
+    setIfNonEmpty(span, Sql.Description, description, MaxDescriptionChars)
+    setIfNonEmpty(span, Sql.Details, details, MaxDetailsChars)
+
+    val plan = Option(physicalPlanDescription).getOrElse("")
+    if (plan.nonEmpty) {
+      span.setAttribute(Sql.Plan, plan.take(MaxPlanChars))
+      // Flag truncation explicitly. A silently clipped plan reads exactly like a complete one,
+      // which is worse than no plan at all when someone is diagnosing a slow join.
+      if (plan.length > MaxPlanChars) span.setBool(Sql.PlanTruncated, true)
+    }
+  }
+
+  /** Sets `key` only when Spark actually supplied a value, capping it at `maxChars`. */
+  private def setIfNonEmpty(
+    span:     Span,
+    key:      io.opentelemetry.api.common.AttributeKey[String],
+    value:    String,
+    maxChars: Int,
+  ): Unit = {
+    val v = Option(value).getOrElse("")
+    if (v.nonEmpty) span.setAttribute(key, v.take(maxChars))
+  }
+}
+
+object TracingSparkListener {
+
+  /**
+   * Caps for the free-form strings on SparkListenerSQLExecutionStart.
+   *
+   * These are unbounded at the source. A wide query plan runs to tens of kilobytes, and one
+   * attribute per SQL execution at that size is enough to push an OTLP batch over a collector's
+   * message limit — at which point the whole batch is dropped, not just the plan. The caps trade
+   * a partial plan for a delivered trace.
+   *
+   * The plan cap is deliberately far larger than the 500 used for `Stage.FailureReason`: a
+   * failure reason is readable in its first line, whereas a plan truncated to 500 chars loses
+   * every operator that matters.
+   */
+  private[listener] val MaxPlanChars        = 4096
+  private[listener] val MaxDetailsChars     = 2048
+  private[listener] val MaxDescriptionChars = 1024
 }
