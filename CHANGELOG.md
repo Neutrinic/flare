@@ -82,6 +82,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of `flare-spark-assembly-${FLARE_VERSION}.jar`; removed `FLARE_VERSION` build arg
 
 ### Fixed
+- **Task metrics are no longer dropped when the task span is suppressed** — every guard in
+  `FlareExecutorPlugin.onTaskStart()` (granularity, sampling, stage filters, and the
+  `FLARE_MAX_SPANS_PER_TRACE` circuit breaker) returned before any measurement state was armed,
+  so `flare.task.duration` and the shuffle counters saw nothing for those tasks. On a job that
+  tripped the breaker, or at the default `stages` granularity, the task histogram was empty or
+  badly undercounted — and a drop caused by span filtering read as a drop in cluster throughput.
+  Metric state is now armed independently of the span, so a suppressed span still yields a
+  measurement ([#53])
+- **Dangling exemplars on tail-filtered tasks** — a task suppressed by `FLARE_SLOW_TASK_MS` has
+  its span abandoned rather than ended, so it is never exported. Its metric was nonetheless
+  recorded while the span scope was still current, and the SDK's default `trace_based` exemplar
+  filter stamped the data point with that span's ID. Clicking the exemplar in Grafana opened a
+  trace that does not exist. The scope is now closed before recording in that path ([#52])
 - **Agent resource attributes** — register the Java
   `AutoConfigurationCustomizerProvider` through ServiceLoader so `flare.role` and
   `flare.version` are emitted. Version metadata now comes from an sbt-generated classpath
@@ -188,3 +201,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#42]: https://github.com/Neutrinic/flare/issues/42
 [#44]: https://github.com/Neutrinic/flare/issues/44
 [#47]: https://github.com/Neutrinic/flare/issues/47
+[#52]: https://github.com/Neutrinic/flare/issues/52
+[#53]: https://github.com/Neutrinic/flare/issues/53
