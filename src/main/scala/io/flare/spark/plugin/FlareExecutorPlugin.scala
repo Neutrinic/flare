@@ -45,14 +45,17 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   // Set to true once the maxSpansPerTrace warning has been logged, to avoid log spam
   @volatile private var maxSpansWarned = false
 
-  // ThreadLocal holds the active (span, scope, taskContext) for the current task on this thread.
-  // None means this task was not sampled or granularity suppressed it.
+  // Span state for the current task on this thread. None means a filter suppressed the span.
+  private val taskState = new ThreadLocal[Option[(Span, Scope)]]()
+
+  // Metric state for the current task on this thread: the captured TaskContext and the start
+  // timestamp. Deliberately independent of taskState — metrics are pre-aggregated, so the
+  // cardinality pressure that justifies dropping spans does not apply to them, and a task whose
+  // span is suppressed must still be measured.
+  //
   // TaskContext is captured at onTaskStart because Spark 4.0 clears TaskContext.get() before
   // onTaskSucceeded/onTaskFailed fires, so we can't rely on it in endTask.
-  private val taskState = new ThreadLocal[Option[(Span, Scope, TaskContext)]]()
-
-  // Nanosecond timestamp at task start — used for duration_ms attribute and slow task filter.
-  private val taskStartNanos = new ThreadLocal[Long]()
+  private val taskMetricState = new ThreadLocal[Option[(TaskContext, Long)]]()
 
   override def init(ctx: PluginContext, extraConf: ju.Map[String, String]): Unit = {
     config = try FlareConfig.load() catch {
@@ -80,12 +83,21 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   }
 
   override def onTaskStart(): Unit = {
+    // Clear both up front so a task can never inherit state from the previous task that ran
+    // on this thread, whatever path the rest of this method takes.
+    taskState.set(None)
+    taskMetricState.set(None)
+
     val taskContext = TaskContext.get()
     if (taskContext == null) {
+      // Nothing to attribute a span or a measurement to. The only guard that suppresses both.
       logger.warn("[Flare] onTaskStart called with null TaskContext")
-      taskState.set(None)
       return
     }
+
+    // Armed before the span guards, so every task Spark hands us is measured even when its
+    // span is filtered out below.
+    taskMetricState.set(Some((taskContext, System.nanoTime())))
 
     // Guard 1: granularity + stage/retry filters (replaces simple tracesTasks check).
     // slowTaskMs is deferred to endTask since duration is not known at start.
@@ -96,10 +108,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
                              // handles them. True speculative detection needs Phase 2 ByteBuddy.
       stageId       = taskContext.stageId(),
       stageName     = "",    // stage name not available on executor until Phase 2
-    )) {
-      taskState.set(None)
-      return
-    }
+    )) return
 
     val parentContext = LocalPropertyPropagator.extract(taskContext)
 
@@ -111,7 +120,6 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     val parentSpanContext = io.opentelemetry.api.trace.Span.fromContext(parentContext).getSpanContext
     if (parentSpanContext.isValid && !parentSpanContext.isSampled) {
       logger.debug(s"[Flare] Task not sampled (inherited from driver), partition=${taskContext.partitionId()}")
-      taskState.set(None)
       return
     }
 
@@ -119,10 +127,10 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     if (spanCount.get() >= config.maxSpansPerTrace) {
       if (!maxSpansWarned) {
         logger.warn(s"[Flare] Executor span limit reached (${config.maxSpansPerTrace}). " +
-          s"Suppressing further task spans. Increase FLARE_MAX_SPANS_PER_TRACE to raise the limit.")
+          s"Suppressing further task spans. Task metrics continue to be recorded. " +
+          s"Increase FLARE_MAX_SPANS_PER_TRACE to raise the limit.")
         maxSpansWarned = true
       }
-      taskState.set(None)
       return
     }
     val currentCount = spanCount.incrementAndGet()
@@ -143,8 +151,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
 
     val span  = spanBuilder.startSpan()
     val scope = span.makeCurrent()
-    taskState.set(Some((span, scope, taskContext)))
-    taskStartNanos.set(System.nanoTime())
+    taskState.set(Some((span, scope)))
 
     // MDC enrichment — inject trace_id/span_id into Log4j 2 ThreadContext for log correlation
     MdcEnricher.put(span.getSpanContext.getTraceId, span.getSpanContext.getSpanId)
@@ -159,80 +166,105 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     endTask(success = false, reason = Some(failureReason.toString))
 
   private def endTask(success: Boolean, reason: Option[String]): Unit = {
-    Option(taskState.get()).flatten.foreach { case (span, scope, capturedTaskContext) =>
-      try {
-        // Compute duration for slow task filter and duration attribute
-        val startNanos = taskStartNanos.get()
-        val durationMs = if (startNanos > 0) (System.nanoTime() - startNanos) / 1000000L else -1L
+    val metricState = Option(taskMetricState.get()).flatten
+    val durationMs  = metricState
+      .map { case (_, startNanos) => (System.nanoTime() - startNanos) / 1000000L }
+      .getOrElse(-1L)
 
-        // Slow task filter — drop span if task was faster than threshold.
-        // We cannot avoid starting the span (duration unknown at start), so we abandon it here.
-        // Calling span.end() would export a span we want to suppress. Instead we close the scope
-        // and leave the span unended — BatchSpanProcessor only exports ended spans.
+    try {
+      (Option(taskState.get()).flatten, metricState) match {
+        // A span was created and survives the slow-task filter: describe it, then record
+        // metrics while the scope is still open so the SDK attaches an exemplar pointing at
+        // a span that really will be exported.
+        case (Some((span, scope)), Some((tc, _))) if !isSuppressedAsFast(durationMs) =>
+          try {
+            describeTaskSpan(span, tc, durationMs, success, reason)
+            recordTaskMetrics(tc, durationMs, success)
+          } finally {
+            MdcEnricher.remove()
+            scope.close()
+            span.end()
+          }
+
+        // A span was created but the task finished under FLARE_SLOW_TASK_MS, so the span is
+        // abandoned rather than ended. We cannot avoid starting it — duration is unknown at
+        // task start — and calling span.end() would export exactly what we mean to suppress.
+        // BatchSpanProcessor only exports ended spans, so leaving it unended drops it.
+        //
+        // Ordering is load-bearing: the scope must be closed BEFORE the metric is recorded.
+        // The SDK's default exemplar filter is trace_based, which reads Span.current() at
+        // record time. Recording inside the scope would stamp the data point with the trace
+        // and span id of a span that is never exported, leaving a dashboard exemplar that
+        // links to nothing.
+        //
         // Tradeoff: the SDK's internal SdkSpan object remains allocated until GC reclaims it.
-        // On jobs with many fast tasks (e.g. thousands below threshold) this is transient memory
-        // pressure proportional to concurrent executor threads, not total tasks — each ThreadLocal
-        // is overwritten on the next task. Acceptable for the filtering benefit.
-        if (config.slowTaskMs > 0 && durationMs >= 0 && durationMs < config.slowTaskMs) {
-          // Record metrics even for fast tasks whose spans are dropped — metrics have
-          // their own aggregation and don't suffer from span cardinality pressure.
-          recordTaskMetrics(capturedTaskContext, durationMs, success)
+        // On jobs with many fast tasks this is transient memory pressure proportional to
+        // concurrent executor threads, not total tasks. Acceptable for the filtering benefit.
+        case (Some((span, scope)), Some((tc, _))) =>
           MdcEnricher.remove()
           scope.close()
           spanCount.decrementAndGet() // reclaim slot — this span won't be exported
-          taskState.remove()
-          taskStartNanos.remove()
-          return
-        }
+          recordTaskMetrics(tc, durationMs, success)
 
-        // Set status
-        if (success) {
-          span.setStatus(StatusCode.OK)
-          span.setAttribute(Task.Result, "SUCCESS")
-        } else {
-          span.setStatus(StatusCode.ERROR, reason.getOrElse("Task failed"))
-          span.setAttribute(Task.Result, "FAILED")
-          reason.foreach(r => span.setAttribute(Error.Message, r))
-        }
+        // No span: a guard in onTaskStart suppressed it. The task still ran and is still
+        // measured — this is the case that keeps the task histogram honest when the
+        // maxSpansPerTrace circuit breaker trips, or when driver sampling excluded the trace.
+        // No scope is open here, so no exemplar is attached, which is correct.
+        case (None, Some((tc, _))) =>
+          recordTaskMetrics(tc, durationMs, success)
 
-        // Record task duration
-        if (durationMs >= 0) {
-          span.setLong(Task.DurationMs, durationMs)
-        }
-
-        // Record task metrics from TaskMetrics (only fully populated at task end).
-        // TaskContext is captured at onTaskStart because Spark 4.0 clears TaskContext.get()
-        // before onTaskSucceeded/onTaskFailed fires (unlike Spark 3.x).
-        try {
-          val m = capturedTaskContext.taskMetrics()
-          span.setLong(Task.ShuffleReadBytes, m.shuffleReadMetrics.totalBytesRead)
-          span.setLong(Task.ShuffleWriteBytes, m.shuffleWriteMetrics.bytesWritten)
-          span.setLong(Task.PeakMemory, m.peakExecutionMemory)
-          span.setLong(Task.InputBytes, m.inputMetrics.bytesRead)
-          span.setLong(Task.OutputBytes, m.outputMetrics.bytesWritten)
-        } catch {
-          // TaskMetrics is private[spark] — may throw IllegalAccessError from outside
-          // org.apache.spark, or fail in barrier mode. Log once for diagnosis.
-          case e: Throwable =>
-            logger.debug(s"[Flare] Could not read TaskMetrics: ${e.getClass.getSimpleName}: ${e.getMessage}")
-        }
-
-        // SQL execution ID from local properties (captured context still has properties)
-        Option(capturedTaskContext.getLocalProperty("spark.sql.execution.id"))
-          .flatMap(s => scala.util.Try(s.toLong).toOption)
-          .foreach(id => span.setLong(Task.SqlExecutionId, id))
-
-        // Record OTEL metrics while span scope is still active → automatic exemplar linking.
-        // The SDK captures the current span's trace ID + span ID on each data point.
-        recordTaskMetrics(capturedTaskContext, durationMs, success)
-      } finally {
-        MdcEnricher.remove()
-        scope.close()
-        span.end()
-        taskState.remove()
-        taskStartNanos.remove()
+        // No TaskContext was available at task start. Nothing to record.
+        case _ => ()
       }
+    } finally {
+      taskState.remove()
+      taskMetricState.remove()
     }
+  }
+
+  /** True when FLARE_SLOW_TASK_MS is active and this task finished under the threshold. */
+  private def isSuppressedAsFast(durationMs: Long): Boolean =
+    config.slowTaskMs > 0 && durationMs >= 0 && durationMs < config.slowTaskMs
+
+  private def describeTaskSpan(
+    span:       Span,
+    tc:         TaskContext,
+    durationMs: Long,
+    success:    Boolean,
+    reason:     Option[String],
+  ): Unit = {
+    if (success) {
+      span.setStatus(StatusCode.OK)
+      span.setAttribute(Task.Result, "SUCCESS")
+    } else {
+      span.setStatus(StatusCode.ERROR, reason.getOrElse("Task failed"))
+      span.setAttribute(Task.Result, "FAILED")
+      reason.foreach(r => span.setAttribute(Error.Message, r))
+    }
+
+    if (durationMs >= 0) {
+      span.setLong(Task.DurationMs, durationMs)
+    }
+
+    // Task metrics from TaskMetrics (only fully populated at task end).
+    try {
+      val m = tc.taskMetrics()
+      span.setLong(Task.ShuffleReadBytes, m.shuffleReadMetrics.totalBytesRead)
+      span.setLong(Task.ShuffleWriteBytes, m.shuffleWriteMetrics.bytesWritten)
+      span.setLong(Task.PeakMemory, m.peakExecutionMemory)
+      span.setLong(Task.InputBytes, m.inputMetrics.bytesRead)
+      span.setLong(Task.OutputBytes, m.outputMetrics.bytesWritten)
+    } catch {
+      // TaskMetrics is private[spark] — may throw IllegalAccessError from outside
+      // org.apache.spark, or fail in barrier mode. Log once for diagnosis.
+      case e: Throwable =>
+        logger.debug(s"[Flare] Could not read TaskMetrics: ${e.getClass.getSimpleName}: ${e.getMessage}")
+    }
+
+    // SQL execution ID from local properties (captured context still has properties)
+    Option(tc.getLocalProperty("spark.sql.execution.id"))
+      .flatMap(s => scala.util.Try(s.toLong).toOption)
+      .foreach(id => span.setLong(Task.SqlExecutionId, id))
   }
 
   private def recordTaskMetrics(tc: TaskContext, durationMs: Long, success: Boolean): Unit = {
@@ -266,7 +298,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     logger.info(s"[Flare] Executor plugin shutdown (total spans created: ${spanCount.get()})")
 
     // End any in-flight task span on this thread (e.g. K8s SIGTERM during task execution)
-    Option(taskState.get()).flatten.foreach { case (span, scope, _) =>
+    Option(taskState.get()).flatten.foreach { case (span, scope) =>
       MdcEnricher.remove()
       span.setStatus(StatusCode.ERROR, "Executor shutdown before task completed")
       span.setAttribute(Task.Result, "SHUTDOWN")
@@ -274,6 +306,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       span.end()
       taskState.remove()
     }
+    taskMetricState.remove()
 
     // Force-flush TracerProvider and MeterProvider to push buffered spans/metrics
     // before JVM exits. The SDK classes live in the agent classloader — catch

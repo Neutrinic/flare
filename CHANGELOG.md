@@ -82,6 +82,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of `flare-spark-assembly-${FLARE_VERSION}.jar`; removed `FLARE_VERSION` build arg
 
 ### Fixed
+- **`FLARE_SLOW_TASK_MS` now actually suppresses spans** — it never has. The abandon path in
+  `FlareExecutorPlugin.endTask` ended with a `return` from inside a closure passed to `foreach`,
+  which in Scala compiles to a thrown `NonLocalReturnControl`. The enclosing `try`'s `finally`
+  therefore still ran and called `span.end()`, exporting the very span the filter had just
+  decided to drop. Tasks below the threshold were exported exactly as if the filter were unset,
+  with no error to indicate it. Two knock-on effects went with it: `scope.close()` ran twice, and
+  `spanCount.decrementAndGet()` released a `FLARE_MAX_SPANS_PER_TRACE` slot for a span that was
+  in fact exported, so the circuit breaker admitted more spans than its configured limit.
+  Verified against the dev stack: with `FLARE_SLOW_TASK_MS=500`, the same job dropped from 13
+  exported task spans to 2, the only two that exceeded the threshold ([#57])
+- **Task metrics are no longer dropped when the task span is suppressed** — every guard in
+  `FlareExecutorPlugin.onTaskStart()` (granularity, sampling, stage filters, and the
+  `FLARE_MAX_SPANS_PER_TRACE` circuit breaker) returned before any measurement state was armed,
+  so `flare.task.duration` and the shuffle counters saw nothing for those tasks. On a job that
+  tripped the breaker, or at the default `stages` granularity, the task histogram was empty or
+  badly undercounted — and a drop caused by span filtering read as a drop in cluster throughput.
+  Metric state is now armed independently of the span, so a suppressed span still yields a
+  measurement ([#53])
+- **Dangling exemplars on tail-filtered tasks** — a task suppressed by `FLARE_SLOW_TASK_MS` has
+  its span abandoned rather than ended, so it is never exported. Its metric was nonetheless
+  recorded while the span scope was still current, and the SDK's default `trace_based` exemplar
+  filter stamped the data point with that span's ID. Clicking the exemplar in Grafana opened a
+  trace that does not exist. The scope is now closed before recording in that path ([#52])
 - **Agent resource attributes** — register the Java
   `AutoConfigurationCustomizerProvider` through ServiceLoader so `flare.role` and
   `flare.version` are emitted. Version metadata now comes from an sbt-generated classpath
@@ -97,6 +120,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent test port collision** — the reserved OTLP collector port is released before the test
   JVM forks, so the stub collector now retries the bind and reports the real cause rather than
   surfacing a bare `BindException` ([#42])
+- **Dev stack: Mimir now stores exemplars** — `limits.max_global_exemplars_per_user` defaults to
+  `0`, meaning disabled, so every exemplar the SDK attached was accepted over OTLP and silently
+  discarded. The rest of the chain was correct — the executor plugin records inside the span
+  scope, the Mimir datasource declares `exemplarTraceIdDestinations`, the dashboard panel sets
+  `"exemplar": true` — so the only symptom was a panel with no exemplar dots, which is
+  indistinguishable from having no traffic ([#58])
 
 ### Documentation
 - **Resource attributes** — README documents `flare.role` and `flare.version`, how the role is
@@ -188,3 +217,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#42]: https://github.com/Neutrinic/flare/issues/42
 [#44]: https://github.com/Neutrinic/flare/issues/44
 [#47]: https://github.com/Neutrinic/flare/issues/47
+[#52]: https://github.com/Neutrinic/flare/issues/52
+[#53]: https://github.com/Neutrinic/flare/issues/53
+[#57]: https://github.com/Neutrinic/flare/issues/57
+[#58]: https://github.com/Neutrinic/flare/issues/58
