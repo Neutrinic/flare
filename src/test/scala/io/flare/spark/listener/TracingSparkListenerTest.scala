@@ -11,6 +11,7 @@ import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import munit.FunSuite
 import org.apache.spark.FlareTestHelpers
 import org.apache.spark.scheduler._
+import org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate
 
 import scala.collection.JavaConverters._
 
@@ -394,6 +395,135 @@ class TracingSparkListenerTest extends FunSuite {
       listener.describeSqlExecution(span, executionId, description, details, plan)
       span.end()
       exporter.getFinishedSpanItems.asScala.head.getAttributes
+    } finally provider.close()
+  }
+
+  /**
+   * Drives a SQL execution through start and then an AQE re-plan, and returns the attributes
+   * left on the span.
+   *
+   * Unlike SparkListenerSQLExecutionStart, SparkListenerSQLAdaptiveExecutionUpdate's constructor
+   * is identical on 3.3.4, 3.4.3, 3.5.1 and 4.0.0 — `(long, String, SparkPlanInfo)` — so the real
+   * event can be constructed and dispatched through onOtherEvent on every version we build.
+   * SparkPlanInfo is never read, so it is left null rather than dragging in a second fixture
+   * whose constructor is not stable.
+   */
+  def sqlAqeAttributes(
+    startPlan:   String,
+    aqePlans:    Seq[String],
+    executionId: Long        = 7L,
+    sqlConfig:   FlareConfig = config,
+  ): Attributes = {
+    val exporter = InMemorySpanExporter.create()
+    val provider = SdkTracerProvider.builder()
+      .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+      .build()
+    try {
+      val tracer   = provider.get("io.flare.spark.test")
+      val listener = new TracingSparkListener(tracer, sqlConfig, throwOnError = true)
+      val span     = tracer.spanBuilder(s"spark.sql.$executionId").startSpan()
+      listener.describeSqlExecution(span, executionId, "", "", startPlan)
+
+      SubmitMissingTasksAdviceHelper.activeSQLSpans.put(executionId, span)
+      try {
+        aqePlans.foreach { p =>
+          listener.onOtherEvent(
+            new SparkListenerSQLAdaptiveExecutionUpdate(executionId, p, null)
+          )
+        }
+      } finally SubmitMissingTasksAdviceHelper.activeSQLSpans.remove(executionId)
+
+      span.end()
+      exporter.getFinishedSpanItems.asScala.head.getAttributes
+    } finally provider.close()
+  }
+
+  // ── #54: spark.sql.plan must be the plan that ran, not the pre-AQE tree ─────
+
+  test("an AQE re-plan overwrites spark.sql.plan") {
+    val attrs = sqlAqeAttributes(
+      startPlan = "AdaptiveSparkPlan isFinalPlan=false",
+      aqePlans  = Seq("AdaptiveSparkPlan isFinalPlan=true"),
+    )
+    // The pre-AQE tree describes partitioning that never ran. The post-AQE tree is what executed.
+    assertEquals(attrs.get(Sql.Plan), "AdaptiveSparkPlan isFinalPlan=true")
+  }
+
+  test("the last AQE update wins when several arrive") {
+    val attrs = sqlAqeAttributes(
+      startPlan = "initial",
+      aqePlans  = Seq("replan-1", "replan-2", "final"),
+    )
+    assertEquals(attrs.get(Sql.Plan), "final")
+  }
+
+  test("spark.sql.plan is unchanged when AQE never re-plans") {
+    val attrs = sqlAqeAttributes(startPlan = "only plan", aqePlans = Nil)
+    assertEquals(attrs.get(Sql.Plan), "only plan")
+  }
+
+  test("the pre-AQE plan is dropped by default") {
+    val attrs = sqlAqeAttributes(startPlan = "initial", aqePlans = Seq("final"))
+    // Retaining it doubles the plan payload on every SQL span, so it is opt-in.
+    assertEquals(attrs.get(Sql.PlanInitial), null)
+    assertEquals(attrs.get(Sql.PlanInitialTruncated), null)
+  }
+
+  test("the pre-AQE plan is retained when FLARE_SQL_PLAN_INITIAL_MAX_CHARS allows it") {
+    val attrs = sqlAqeAttributes(
+      startPlan = "initial",
+      aqePlans  = Seq("final"),
+      sqlConfig = config.copy(sqlPlanInitialMaxChars = 4096),
+    )
+    // Both are needed: the AQE decision is only visible as the diff between them.
+    assertEquals(attrs.get(Sql.PlanInitial), "initial")
+    assertEquals(attrs.get(Sql.Plan), "final")
+  }
+
+  test("the pre-AQE plan is truncated and flagged independently of the final plan") {
+    val attrs = sqlAqeAttributes(
+      startPlan = "X" * 100,
+      aqePlans  = Seq("short"),
+      sqlConfig = config.copy(sqlPlanMaxChars = 4096, sqlPlanInitialMaxChars = 10),
+    )
+    assertEquals(attrs.get(Sql.PlanInitial).length, 10)
+    assertEquals(attrs.get(Sql.PlanInitialTruncated).booleanValue(), true)
+    assertEquals(attrs.get(Sql.Plan), "short")
+    assertEquals(attrs.get(Sql.PlanTruncated).booleanValue(), false)
+  }
+
+  test("an AQE update clears a truncation flag set by the pre-AQE plan") {
+    val attrs = sqlAqeAttributes(
+      startPlan = "X" * 100,
+      aqePlans  = Seq("short"),
+      sqlConfig = config.copy(sqlPlanMaxChars = 10),
+    )
+    // Attributes cannot be removed. Without an explicit false, the stale true from the initial
+    // plan would still be on the span, marking a complete plan as clipped.
+    assertEquals(attrs.get(Sql.Plan), "short")
+    assertEquals(attrs.get(Sql.PlanTruncated).booleanValue(), false)
+  }
+
+  test("an AQE update still flags truncation when the new plan is too long") {
+    val attrs = sqlAqeAttributes(
+      startPlan = "short",
+      aqePlans  = Seq("Y" * 100),
+      sqlConfig = config.copy(sqlPlanMaxChars = 10),
+    )
+    assertEquals(attrs.get(Sql.Plan).length, 10)
+    assertEquals(attrs.get(Sql.PlanTruncated).booleanValue(), true)
+  }
+
+  test("an AQE update for an unknown execution id is ignored") {
+    val exporter = InMemorySpanExporter.create()
+    val provider = SdkTracerProvider.builder()
+      .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+      .build()
+    try {
+      val listener = new TracingSparkListener(
+        provider.get("io.flare.spark.test"), config, throwOnError = true)
+      // No span registered for 999 — must not throw.
+      listener.onOtherEvent(new SparkListenerSQLAdaptiveExecutionUpdate(999L, "plan", null))
     } finally provider.close()
   }
 

@@ -38,6 +38,10 @@ final case class FlareConfig(
   sqlPlanMaxChars:        Int = FlareConfig.DefaultSqlPlanChars,
   sqlDetailsMaxChars:     Int = FlareConfig.DefaultSqlDetailsChars,
   sqlDescriptionMaxChars: Int = FlareConfig.DefaultSqlDescriptionChars,
+  // Cap for the retained pre-AQE plan. Defaults to 0 (dropped) because keeping it doubles the
+  // worst-case plan payload on every SQL span, and the post-AQE plan is the one that ran.
+  // Raise it when you want the AQE decision itself, recoverable as a diff against spark.sql.plan.
+  sqlPlanInitialMaxChars: Int = FlareConfig.DefaultSqlPlanInitialChars,
 ) {
   def tracesJobs:        Boolean = enabled
   def tracesStages:      Boolean = enabled && granularity != TraceGranularity.Jobs
@@ -99,6 +103,19 @@ object FlareConfig {
   val DefaultSqlPlanChars        = 4096
   val DefaultSqlDetailsChars     = 2048
   val DefaultSqlDescriptionChars = 1024
+
+  /**
+   * The pre-AQE plan is off by default.
+   *
+   * `spark.sql.plan` already carries the plan that ran. Retaining the initial tree as well
+   * doubles the worst-case plan payload on every SQL span, and for the common case — "what did
+   * this query actually do" — it answers nothing the primary attribute does not.
+   *
+   * Its value is the diff: what AQE decided. Skew splits, broadcast conversion and partition
+   * coalescing are only visible by comparing the two. That is a deliberate investigation, so it
+   * is opt-in via FLARE_SQL_PLAN_INITIAL_MAX_CHARS.
+   */
+  val DefaultSqlPlanInitialChars = 0
 
   /**
    * Read a config value from system properties first, then environment variables.
@@ -210,6 +227,7 @@ object FlareConfig {
       sqlPlanMaxChars        = charCap("FLARE_SQL_PLAN_MAX_CHARS", DefaultSqlPlanChars),
       sqlDetailsMaxChars     = charCap("FLARE_SQL_DETAILS_MAX_CHARS", DefaultSqlDetailsChars),
       sqlDescriptionMaxChars = charCap("FLARE_SQL_DESCRIPTION_MAX_CHARS", DefaultSqlDescriptionChars),
+      sqlPlanInitialMaxChars = charCap("FLARE_SQL_PLAN_INITIAL_MAX_CHARS", DefaultSqlPlanInitialChars),
     )
   }
 }

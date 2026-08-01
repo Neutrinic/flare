@@ -9,6 +9,7 @@ import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{
+  SparkListenerSQLAdaptiveExecutionUpdate,
   SparkListenerSQLExecutionEnd,
   SparkListenerSQLExecutionStart,
 }
@@ -263,6 +264,12 @@ class TracingSparkListener(
             SubmitMissingTasksAdviceHelper.activeSQLSpans.put(e.executionId, span)
           }
         }
+        // AQE re-plans after execution starts, so the tree captured at start is provisional.
+        // Every update carries the current plan; the last one to arrive is what ran.
+        case e: SparkListenerSQLAdaptiveExecutionUpdate => safeHandle("onSQLAdaptiveUpdate") {
+          Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.get(e.executionId))
+            .foreach(span => updateSqlPlan(span, e.physicalPlanDescription))
+        }
         case e: SparkListenerSQLExecutionEnd => safeHandle("onSQLEnd") {
           Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.remove(e.executionId))
             .foreach { span =>
@@ -327,12 +334,57 @@ class TracingSparkListener(
     setIfNonEmpty(span, Sql.Description, description, config.sqlDescriptionMaxChars)
     setIfNonEmpty(span, Sql.Details, details, config.sqlDetailsMaxChars)
 
-    val plan = Option(physicalPlanDescription).getOrElse("")
-    if (plan.nonEmpty && config.sqlPlanMaxChars > 0) {
-      span.setAttribute(Sql.Plan, plan.take(config.sqlPlanMaxChars))
+    // The plan is provisional at this point — AQE has not run. If it re-plans,
+    // SparkListenerSQLAdaptiveExecutionUpdate overwrites Sql.Plan with the tree that ran.
+    // If it never fires, this plan is final and the value stands.
+    setPlan(span, Sql.Plan, Sql.PlanTruncated, physicalPlanDescription, config.sqlPlanMaxChars)
+
+    // Retained separately so the AQE decision survives the overwrite. Off unless configured.
+    setPlan(
+      span,
+      Sql.PlanInitial,
+      Sql.PlanInitialTruncated,
+      physicalPlanDescription,
+      config.sqlPlanInitialMaxChars,
+    )
+  }
+
+  /**
+   * Replaces `spark.sql.plan` with a plan produced by AQE.
+   *
+   * Called once per SparkListenerSQLAdaptiveExecutionUpdate. Several may arrive for one
+   * execution; each overwrites the last, so only the final state is retained and the cost is
+   * bounded regardless of how many times AQE re-plans.
+   */
+  private[listener] def updateSqlPlan(span: Span, physicalPlanDescription: String): Unit =
+    setPlan(
+      span,
+      Sql.Plan,
+      Sql.PlanTruncated,
+      physicalPlanDescription,
+      config.sqlPlanMaxChars,
+      // The previous plan may have set the truncation flag. Attributes cannot be removed, so an
+      // overwrite that no longer truncates has to say so explicitly or the stale `true` stands.
+      clearTruncationFlag = true,
+    )
+
+  /** Sets a plan attribute and its truncation flag, honouring `maxChars` (0 drops both). */
+  private def setPlan(
+    span:                Span,
+    key:                 io.opentelemetry.api.common.AttributeKey[String],
+    truncatedKey:        io.opentelemetry.api.common.AttributeKey[java.lang.Boolean],
+    value:               String,
+    maxChars:            Int,
+    clearTruncationFlag: Boolean = false,
+  ): Unit = {
+    val plan = Option(value).getOrElse("")
+    if (plan.nonEmpty && maxChars > 0) {
+      span.setAttribute(key, plan.take(maxChars))
       // Flag truncation explicitly. A silently clipped plan reads exactly like a complete one,
       // which is worse than no plan at all when someone is diagnosing a slow join.
-      if (plan.length > config.sqlPlanMaxChars) span.setBool(Sql.PlanTruncated, true)
+      val truncated = plan.length > maxChars
+      if (truncated) span.setBool(truncatedKey, true)
+      else if (clearTruncationFlag) span.setBool(truncatedKey, false)
     }
   }
 
