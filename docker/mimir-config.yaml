@@ -44,3 +44,8 @@ store_gateway:
 
 limits:
   native_histograms_ingestion_enabled: true
+  # Exemplar storage is OFF by default in Mimir (0 = disabled). Without this, the exemplars the
+  # OTEL SDK attaches to flare.task.duration are accepted at ingest and silently discarded, so
+  # the dashboard's "exemplar": true and the Mimir datasource's exemplarTraceIdDestinations
+  # have nothing to render and the trace/metric correlation looks broken end to end.
+  max_global_exemplars_per_user: 100000
