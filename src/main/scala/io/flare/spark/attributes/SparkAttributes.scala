@@ -35,6 +35,22 @@ object SparkAttributes {
     val FailureReason   = AttributeKey.stringKey("spark.stage.failure_reason")
   }
 
+  /**
+   * Attributes on the `spark.sql.N` span, sourced from SparkListenerSQLExecutionStart.
+   *
+   * Fields are read by name rather than by position: Spark has both added fields
+   * (`modifiedConfigs`, `jobTags`) and inserted them ahead of `description`
+   * (`rootExecutionId` in 4.0) across the supported matrix.
+   */
+  object Sql {
+    val ExecutionId = AttributeKey.longKey("spark.sql.execution.id")
+    val Description = AttributeKey.stringKey("spark.sql.description")
+    val Details     = AttributeKey.stringKey("spark.sql.details")
+    // physicalPlanDescription — the formatted plan, truncated on the way in.
+    val Plan          = AttributeKey.stringKey("spark.sql.plan")
+    val PlanTruncated = AttributeKey.booleanKey("spark.sql.plan.truncated")
+  }
+
   object Task {
     val ExecutorId  = AttributeKey.stringKey("spark.task.executor.id")
     val Host        = AttributeKey.stringKey("spark.task.host")

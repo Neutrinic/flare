@@ -3,6 +3,7 @@ package io.flare.spark.listener
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.{FlareConfig, TraceGranularity}
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
+import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.trace.{SpanKind, StatusCode}
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -364,6 +365,121 @@ class TracingSparkListenerTest extends FunSuite {
       // Stage is child of job
       assertEquals(stgSpan.getParentSpanId, jobSpanData.getSpanId)
     }
+  }
+
+  /**
+   * Runs describeSqlExecution against a real span and returns the exported attributes.
+   *
+   * The listener's SQL branch deliberately is not driven end to end from here.
+   * SparkListenerSQLExecutionStart changes constructor shape across the supported matrix —
+   * 3.4 inserts `rootExecutionId` second, 4.0 appends `jobTags` and `jobGroupId` — so any
+   * fixture that compiles on 3.5 fails to compile on 3.3. Calling the method directly keeps
+   * this logic covered on every version we build.
+   */
+  def sqlAttributes(
+    description: String       = "",
+    details:     String       = "",
+    plan:        String       = "",
+    executionId: Long         = 7L,
+    sqlConfig:   FlareConfig  = config,
+  ): Attributes = {
+    val exporter = InMemorySpanExporter.create()
+    val provider = SdkTracerProvider.builder()
+      .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+      .build()
+    try {
+      val tracer   = provider.get("io.flare.spark.test")
+      val listener = new TracingSparkListener(tracer, sqlConfig, throwOnError = true)
+      val span     = tracer.spanBuilder(s"spark.sql.$executionId").startSpan()
+      listener.describeSqlExecution(span, executionId, description, details, plan)
+      span.end()
+      exporter.getFinishedSpanItems.asScala.head.getAttributes
+    } finally provider.close()
+  }
+
+  test("SQL execution metadata is attached to the spark.sql span") {
+    val attrs = sqlAttributes(
+      description = "count at PipelineJob.scala:42",
+      details     = "org.apache.spark.sql.Dataset.count(Dataset.scala:3125)",
+      plan        = "== Physical Plan ==\n*(1) HashAggregate(keys=[], functions=[count(1)])",
+    )
+    assertEquals(attrs.get(Sql.ExecutionId).longValue(), 7L)
+    assertEquals(attrs.get(Sql.Description), "count at PipelineJob.scala:42")
+    assertEquals(attrs.get(Sql.Details), "org.apache.spark.sql.Dataset.count(Dataset.scala:3125)")
+    assertEquals(
+      attrs.get(Sql.Plan),
+      "== Physical Plan ==\n*(1) HashAggregate(keys=[], functions=[count(1)])",
+    )
+    // A plan that fits must not claim to be truncated.
+    assertEquals(attrs.get(Sql.PlanTruncated), null)
+  }
+
+  test("empty and null SQL strings are omitted, not exported as empty attributes") {
+    val attrs = sqlAttributes(description = "", details = null, plan = null)
+    assertEquals(attrs.get(Sql.Description), null)
+    assertEquals(attrs.get(Sql.Details), null)
+    assertEquals(attrs.get(Sql.Plan), null)
+    assertEquals(attrs.get(Sql.PlanTruncated), null)
+    // The execution id is always meaningful, even when Spark supplies no strings at all.
+    assertEquals(attrs.get(Sql.ExecutionId).longValue(), 7L)
+  }
+
+  test("an oversized physical plan is truncated and flagged as such") {
+    val attrs = sqlAttributes(plan = "X" * (config.sqlPlanMaxChars + 500))
+    assertEquals(attrs.get(Sql.Plan).length, config.sqlPlanMaxChars)
+    assertEquals(attrs.get(Sql.PlanTruncated).booleanValue(), true)
+  }
+
+  test("a physical plan exactly at the cap is kept whole and not flagged") {
+    val attrs = sqlAttributes(plan = "X" * config.sqlPlanMaxChars)
+    assertEquals(attrs.get(Sql.Plan).length, config.sqlPlanMaxChars)
+    assertEquals(attrs.get(Sql.PlanTruncated), null)
+  }
+
+  test("description and details are capped independently of the plan") {
+    val attrs = sqlAttributes(
+      description = "d" * (config.sqlDescriptionMaxChars + 100),
+      details     = "s" * (config.sqlDetailsMaxChars + 100),
+    )
+    assertEquals(attrs.get(Sql.Description).length, config.sqlDescriptionMaxChars)
+    assertEquals(attrs.get(Sql.Details).length, config.sqlDetailsMaxChars)
+  }
+
+  test("configured caps override the defaults") {
+    val attrs = sqlAttributes(
+      description = "d" * 100,
+      details     = "s" * 100,
+      plan        = "X" * 100,
+      sqlConfig   = config.copy(
+        sqlPlanMaxChars        = 10,
+        sqlDetailsMaxChars     = 20,
+        sqlDescriptionMaxChars = 30,
+      ),
+    )
+    assertEquals(attrs.get(Sql.Plan).length, 10)
+    assertEquals(attrs.get(Sql.Details).length, 20)
+    assertEquals(attrs.get(Sql.Description).length, 30)
+    assertEquals(attrs.get(Sql.PlanTruncated).booleanValue(), true)
+  }
+
+  test("a cap of 0 drops the attribute rather than exporting an empty string") {
+    val attrs = sqlAttributes(
+      description = "d" * 100,
+      details     = "s" * 100,
+      plan        = "X" * 100,
+      sqlConfig   = config.copy(
+        sqlPlanMaxChars        = 0,
+        sqlDetailsMaxChars     = 0,
+        sqlDescriptionMaxChars = 0,
+      ),
+    )
+    assertEquals(attrs.get(Sql.Plan), null)
+    assertEquals(attrs.get(Sql.Details), null)
+    assertEquals(attrs.get(Sql.Description), null)
+    // No plan attribute means nothing to flag as truncated.
+    assertEquals(attrs.get(Sql.PlanTruncated), null)
+    // The execution id is never suppressed.
+    assertEquals(attrs.get(Sql.ExecutionId).longValue(), 7L)
   }
 
   test("non-SQL job is parented under app span") {

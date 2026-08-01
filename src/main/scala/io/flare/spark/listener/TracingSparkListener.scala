@@ -249,6 +249,16 @@ class TracingSparkListener(
               .setSpanKind(SpanKind.INTERNAL)
               .setParent(Context.current().`with`(parent))
               .startSpan()
+
+            // Fields are read by name, never positionally — see describeSqlExecution.
+            describeSqlExecution(
+              span,
+              e.executionId,
+              e.description,
+              e.details,
+              e.physicalPlanDescription,
+            )
+
             // Store in shared map so advice and onJobStart can parent jobs under SQL
             SubmitMissingTasksAdviceHelper.activeSQLSpans.put(e.executionId, span)
           }
@@ -287,4 +297,53 @@ class TracingSparkListener(
         logger.error(s"[Flare] Error handling $eventName: ${ex.getMessage}", ex)
         if (throwOnError) throw ex
     }
+
+  /**
+   * Applies SparkListenerSQLExecutionStart metadata to the `spark.sql.N` span.
+   *
+   * Takes loose values rather than the event itself, deliberately. The event's constructor is not
+   * source-compatible across the supported Spark matrix — 3.4 inserted `rootExecutionId` as the
+   * second parameter, and 4.0 appended `jobTags` and `jobGroupId`:
+   *
+   * {{{
+   * 3.3: (executionId, description, details, physicalPlanDescription, sparkPlanInfo, time, modifiedConfigs)
+   * 3.4: (executionId, rootExecutionId, description, ..., modifiedConfigs)
+   * 4.0: (executionId, rootExecutionId, description, ..., modifiedConfigs, jobTags, jobGroupId)
+   * }}}
+   *
+   * Reading fields by name at the single call site compiles everywhere; constructing one does
+   * not, so no shared test source set can build a fixture. Keeping the logic here means it stays
+   * directly testable without a Spark event at all.
+   */
+  private[listener] def describeSqlExecution(
+    span:                    Span,
+    executionId:             Long,
+    description:             String,
+    details:                 String,
+    physicalPlanDescription: String,
+  ): Unit = {
+    span.setLong(Sql.ExecutionId, executionId)
+    // Spark leaves these empty on some execution paths; an empty attribute is pure noise.
+    setIfNonEmpty(span, Sql.Description, description, config.sqlDescriptionMaxChars)
+    setIfNonEmpty(span, Sql.Details, details, config.sqlDetailsMaxChars)
+
+    val plan = Option(physicalPlanDescription).getOrElse("")
+    if (plan.nonEmpty && config.sqlPlanMaxChars > 0) {
+      span.setAttribute(Sql.Plan, plan.take(config.sqlPlanMaxChars))
+      // Flag truncation explicitly. A silently clipped plan reads exactly like a complete one,
+      // which is worse than no plan at all when someone is diagnosing a slow join.
+      if (plan.length > config.sqlPlanMaxChars) span.setBool(Sql.PlanTruncated, true)
+    }
+  }
+
+  /** Sets `key` only when Spark supplied a value and the cap allows it. `maxChars = 0` drops it. */
+  private def setIfNonEmpty(
+    span:     Span,
+    key:      io.opentelemetry.api.common.AttributeKey[String],
+    value:    String,
+    maxChars: Int,
+  ): Unit = {
+    val v = Option(value).getOrElse("")
+    if (v.nonEmpty && maxChars > 0) span.setAttribute(key, v.take(maxChars))
+  }
 }

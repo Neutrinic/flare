@@ -136,6 +136,7 @@ class FlareConfigTest extends FunSuite {
     "FLARE_ENABLED", "FLARE_TRACE_GRANULARITY", "FLARE_SAMPLING_RATIO",
     "FLARE_MAX_SPANS_PER_TRACE", "FLARE_SLOW_TASK_MS", "FLARE_RETRY_TASKS_ONLY",
     "FLARE_TASK_STAGES", "FLARE_TASK_STAGE_PATTERN", "FLARE_METRICS_ENABLED",
+    "FLARE_SQL_PLAN_MAX_CHARS", "FLARE_SQL_DETAILS_MAX_CHARS", "FLARE_SQL_DESCRIPTION_MAX_CHARS",
   )
 
   override def afterEach(context: AfterEach): Unit = {
@@ -202,6 +203,37 @@ class FlareConfigTest extends FunSuite {
     assert(config.taskStageIds.isEmpty)
     assert(config.taskStagePattern.isEmpty)
     assert(config.metricsEnabled)
+    assertEquals(config.sqlPlanMaxChars, 4096)
+    assertEquals(config.sqlDetailsMaxChars, 2048)
+    assertEquals(config.sqlDescriptionMaxChars, 1024)
+  }
+
+  test("load() parses the SQL truncation caps") {
+    sys.props("FLARE_SQL_PLAN_MAX_CHARS")        = "65536"
+    sys.props("FLARE_SQL_DETAILS_MAX_CHARS")     = "0"
+    sys.props("FLARE_SQL_DESCRIPTION_MAX_CHARS") = "256"
+    val config = FlareConfig.load()
+    assertEquals(config.sqlPlanMaxChars, 65536)
+    assertEquals(config.sqlDetailsMaxChars, 0)
+    assertEquals(config.sqlDescriptionMaxChars, 256)
+  }
+
+  test("load() throws on a negative SQL truncation cap") {
+    sys.props("FLARE_SQL_PLAN_MAX_CHARS") = "-1"
+    interceptMessage[IllegalArgumentException](
+      "Flare config error: FLARE_SQL_PLAN_MAX_CHARS must be >= 0, got -1"
+    ) {
+      FlareConfig.load()
+    }
+  }
+
+  test("load() throws on a non-integer SQL truncation cap") {
+    sys.props("FLARE_SQL_DETAILS_MAX_CHARS") = "4k"
+    interceptMessage[IllegalArgumentException](
+      "Flare config error: FLARE_SQL_DETAILS_MAX_CHARS '4k' is not an integer"
+    ) {
+      FlareConfig.load()
+    }
   }
 
   test("load() FLARE_METRICS_ENABLED=false disables metrics") {
