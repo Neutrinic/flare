@@ -15,6 +15,7 @@ import org.apache.spark.sql.execution.ui.{
 }
 import org.slf4j.LoggerFactory
 
+import java.util.concurrent.atomic.AtomicLong
 import scala.collection.concurrent.TrieMap
 
 /**
@@ -45,6 +46,12 @@ class TracingSparkListener(
   // Reverse index: stageId → jobId, built at onJobStart from jobStart.stageIds
   // Critical for correct parent attribution when multiple jobs run concurrently
   private val stageToJob: TrieMap[Int, Int] = TrieMap.empty
+
+  // stageId → summed scheduler delay across the stage's tasks, accumulated at onTaskEnd.
+  // Unlike every other stage attribute this one is not on StageInfo.taskMetrics: deriving it
+  // needs each task's wall clock, which only SparkListenerTaskEnd carries. One Long per
+  // in-flight stage.
+  private val stageSchedulerDelayMs: TrieMap[Int, AtomicLong] = TrieMap.empty
 
   // Set by whoever creates this listener (TracingSparkPlugin or ByteBuddy hook)
   @volatile private var applicationSpan: Option[Span] = None
@@ -193,8 +200,65 @@ class TracingSparkListener(
       logger.debug(s"[Flare] Stage $stageId submitted")
     }
 
+  /**
+   * Accumulates scheduler delay. No task span is created here — see the class comment.
+   *
+   * Scheduler delay is the one part of the stage breakdown Spark does not report. It has to be
+   * derived per task, because it needs the task's wall clock, which lives on TaskInfo rather
+   * than TaskMetrics.
+   */
+  override def onTaskEnd(event: SparkListenerTaskEnd): Unit =
+    if (config.tracesStages) safeHandle("onTaskEnd") {
+      val info = event.taskInfo
+      // taskMetrics is null when a task failed before it could report any, and duration throws
+      // outright on a task that never finished. Neither yields a delay worth deriving.
+      if (info != null && info.finished && event.taskMetrics != null) {
+        val m = event.taskMetrics
+        // TaskInfo.gettingResultTime is the instant the driver started fetching an indirect
+        // result, not an elapsed time, and stays 0 when the result came back inline.
+        val gettingResultMs =
+          if (info.gettingResultTime > 0) math.max(0L, info.finishTime - info.gettingResultTime)
+          else 0L
+        val delay = schedulerDelayMs(
+          durationMs                = info.duration,
+          executorRunTimeMs         = m.executorRunTime,
+          deserializeTimeMs         = m.executorDeserializeTime,
+          resultSerializationTimeMs = m.resultSerializationTime,
+          gettingResultTimeMs       = gettingResultMs,
+        )
+        stageSchedulerDelayMs.getOrElseUpdate(event.stageId, new AtomicLong()).addAndGet(delay)
+      }
+    }
+
+  /**
+   * The part of a task's wall clock that was not spent doing the task.
+   *
+   * Everything Spark measures about a task — deserializing it, running it, serializing the
+   * result, shipping that result back — is subtracted from the wall clock the driver observed.
+   * What remains is queueing: waiting for an executor slot, and the scheduler round trip.
+   *
+   * Clamped at zero per task, deliberately, and never on the sum. The driver's clock and the
+   * executor's are different clocks, so a fast task can report a run time a few ms longer than
+   * its own duration. Summing first would let those negatives cancel real delay elsewhere in
+   * the stage and quietly understate it.
+   */
+  private[listener] def schedulerDelayMs(
+    durationMs:                Long,
+    executorRunTimeMs:         Long,
+    deserializeTimeMs:         Long,
+    resultSerializationTimeMs: Long,
+    gettingResultTimeMs:       Long,
+  ): Long =
+    math.max(
+      0L,
+      durationMs - executorRunTimeMs - deserializeTimeMs - resultSerializationTimeMs - gettingResultTimeMs,
+    )
+
   override def onStageCompleted(event: SparkListenerStageCompleted): Unit = {
     val stageId = event.stageInfo.stageId
+    // Removed unconditionally: a stage whose span was never created still accumulated delay,
+    // and this is the only event that tells us the stage is over.
+    val schedulerDelay = stageSchedulerDelayMs.remove(stageId)
     activeStageSpans.remove(stageId).foreach { span =>
       safeHandle("onStageCompleted") {
         // Record task metrics as stage attributes
@@ -208,6 +272,13 @@ class TracingSparkListener(
           span.setLong(Stage.ShuffleReadBytes, m.shuffleReadMetrics.totalBytesRead)
           span.setLong(Stage.ShuffleWriteBytes, m.shuffleWriteMetrics.bytesWritten)
           span.setLong(Stage.MemorySpilled, m.memoryBytesSpilled)
+          span.setLong(Stage.DiskSpilled, m.diskBytesSpilled)
+
+          // The breakdown of a slow stage. Total duration says a stage was slow; these say why.
+          span.setLong(Stage.JvmGcTime, m.jvmGCTime)
+          span.setLong(Stage.ExecutorDeserializeTime, m.executorDeserializeTime)
+          span.setLong(Stage.ExecutorDeserializeCpuTime, m.executorDeserializeCpuTime / 1000000L) // ns → ms
+          span.setLong(Stage.ResultSerializationTime, m.resultSerializationTime)
 
           // Record OTEL stage-level metrics
           metrics.foreach { fm =>
@@ -223,6 +294,10 @@ class TracingSparkListener(
             if (shuffleWrite > 0) fm.stageShuffleWriteBytes.add(shuffleWrite, attrs)
           }
         }
+
+        // Only set when task ends were actually observed. A stage that reported none would
+        // otherwise export a zero, which reads as "no queueing" rather than "not measured".
+        schedulerDelay.foreach(d => span.setLong(Stage.SchedulerDelay, d.get()))
 
         event.stageInfo.failureReason match {
           case Some(reason) =>
@@ -293,6 +368,7 @@ class TracingSparkListener(
     sqlSpans.clear()
     applicationSpan.foreach(_.end())
     stageToJob.clear()
+    stageSchedulerDelayMs.clear()
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────────

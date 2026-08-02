@@ -32,7 +32,22 @@ object SparkAttributes {
     val ShuffleReadBytes  = AttributeKey.longKey("spark.stage.shuffle.read_bytes")
     val ShuffleWriteBytes = AttributeKey.longKey("spark.stage.shuffle.write_bytes")
     val MemorySpilled   = AttributeKey.longKey("spark.stage.memory.spilled_bytes")
+    val DiskSpilled     = AttributeKey.longKey("spark.stage.disk.spilled_bytes")
     val FailureReason   = AttributeKey.stringKey("spark.stage.failure_reason")
+
+    /**
+     * Where a slow stage's time actually went.
+     *
+     * Like ExecutorRunTime above, each of these is Spark's own sum across every task in the
+     * stage, so they are directly comparable with it — a stage whose GC time rivals its run
+     * time has its answer right here, and total duration alone never shows that.
+     */
+    val JvmGcTime                  = AttributeKey.longKey("spark.stage.jvm.gc_time_ms")
+    val ExecutorDeserializeTime    = AttributeKey.longKey("spark.stage.executor.deserialize_time_ms")
+    val ExecutorDeserializeCpuTime = AttributeKey.longKey("spark.stage.executor.deserialize_cpu_time_ms")
+    val ResultSerializationTime    = AttributeKey.longKey("spark.stage.result.serialization_time_ms")
+    // Derived rather than reported — see TracingSparkListener.schedulerDelayMs.
+    val SchedulerDelay             = AttributeKey.longKey("spark.stage.scheduler.delay_ms")
   }
 
   /**
