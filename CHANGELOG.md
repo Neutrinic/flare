@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Release workflow published every coordinate twice** — the matrix had a Scala axis, but
+  `ci-release` runs `+publishSigned` and the `+` cross-builds all of `crossScalaVersions`
+  regardless of any preceding `++`. Each of the 7 jobs therefore published the full Scala set for
+  its Spark version, so 13 uploads raced for 7 coordinates and the Central Portal rejected the
+  duplicates. Combined with `fail-fast: true` this cancelled healthy sibling jobs mid-upload. The
+  matrix is now the Spark axis alone — 4 jobs, disjoint coordinates — with `fail-fast: false`.
+  The set of published artifacts is unchanged ([#65])
+
 ## [1.1.0] - 2026-08-01
 
 ### Added
@@ -271,3 +280,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#57]: https://github.com/Neutrinic/flare/issues/57
 [#58]: https://github.com/Neutrinic/flare/issues/58
 [#61]: https://github.com/Neutrinic/flare/issues/61
+[#65]: https://github.com/Neutrinic/flare/issues/65

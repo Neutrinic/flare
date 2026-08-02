@@ -10,25 +10,20 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
-      fail-fast: true
+      # Coordinates are disjoint across jobs (see below), so a failure in one says
+      # nothing about the others. Cancelling a sibling mid-upload would leave a
+      # partial deployment on the Central Portal, which cannot be re-cut.
+      fail-fast: false
       matrix:
-        include:
-          - spark: "3.3.4"
-            scala: "2.12.18"
-          - spark: "3.3.4"
-            scala: "2.13.16"
-          - spark: "3.4.3"
-            scala: "2.12.18"
-          - spark: "3.4.3"
-            scala: "2.13.16"
-          - spark: "3.5.1"
-            scala: "2.12.18"
-          - spark: "3.5.1"
-            scala: "2.13.16"
-          - spark: "4.0.0"
-            scala: "2.13.16"
+        # Spark axis ONLY. `ci-release` runs `+publishSigned`, and the `+` cross-builds
+        # every entry in `crossScalaVersions` regardless of any preceding `++`. Adding a
+        # Scala axis therefore does not split the work — it makes each job publish the
+        # SAME coordinates, and concurrent jobs collide on the Central Portal with
+        # "currently being published in another deployment". Scala comes from
+        # `crossScalaVersions` in build.sbt, which already scopes Spark 4.0 to 2.13.
+        spark: ["3.3.4", "3.4.3", "3.5.1", "4.0.0"]
 
-    name: Publish Spark ${{ matrix.spark }} / Scala ${{ matrix.scala }}
+    name: Publish Spark ${{ matrix.spark }}
 
     steps:
       - uses: actions/checkout@v6
@@ -43,7 +38,7 @@ jobs:
       - uses: sbt/setup-sbt@v1
 
       - name: Publish to Maven Central
-        run: sbt -DsparkVersion=${{ matrix.spark }} ++${{ matrix.scala }} ci-release
+        run: sbt -DsparkVersion=${{ matrix.spark }} ci-release
         env:
           PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
           PGP_SECRET: ${{ secrets.PGP_SECRET }}
