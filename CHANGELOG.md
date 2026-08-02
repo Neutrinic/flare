@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-01
+
 ### Added
 - **Telemetry reference in the README** — every span attribute Flare emits, grouped by span type,
   and every metric instrument with its kind, unit and label set. None of this was documented
@@ -51,46 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Real-agent extension test** — a forked JVM runs the supported OpenTelemetry Java agent with
   Flare's assembled JAR, then verifies the packaged SPI descriptor, generated version metadata,
   and exported `flare.role` / `flare.version` resource attributes
-- **OTEL metrics instruments** — task-level `DoubleHistogram` for duration and throughput,
-  `LongCounter` for shuffle bytes, recorded in `FlareExecutorPlugin.endTask()` with automatic
-  exemplar linking (metrics recorded while span scope is active). Stage-level counters and
-  histograms recorded in `TracingSparkListener.onStageCompleted()` for executor run time,
-  input/output bytes, and shuffle bytes ([#10], [#11])
-- **`FLARE_METRICS_ENABLED`** — kill switch for OTEL metrics emission (default `true`).
-  When disabled, all instruments use a no-op meter with zero overhead
-- **`FlareMetrics`** — centralized holder for all OTEL metric instruments, constructed from
-  a `Meter` instance for testability. Factory method `FlareMetrics.create(enabled)` selects
-  real vs no-op meter
-- **`MetricAttributes`** — helper for building `Attributes` with correct Scala→Java Long
-  boxing for metric dimensional tags (`executor.id`, `stage.id`, `task.result`, `stage.name`)
-- **Per-stage traceparent injection** — `SubmitMissingTasksInstrumentation` hooks
-  `DAGScheduler.submitMissingTasks(stage, jobId)` via ByteBuddy to inject a per-stage
-  traceparent into `ActiveJob.properties` before tasks are created. Executor task spans now
-  nest under their specific stage span (`app → job → stage → task`). Captures ALL stages
-  including AQE (Adaptive Query Execution) sub-jobs that bypass `SparkContext.runJob`.
-  Job and stage spans are pre-created via reflection on DAGScheduler internals, then adopted
-  by `TracingSparkListener` when `onJobStart`/`onStageSubmitted` fire. Backward compatible
-  with SparkPlugin-only mode ([#26])
-- **ByteBuddy TaskRunner context restoration** — `TaskRunnerInstrumentationModule` hooks
-  `Executor$TaskRunner.run()` to extract `traceparent` from `TaskDescription.properties`
-  and make the parent OTEL context current for the entire task execution. Downstream
-  OTEL-instrumented libraries (JDBC, HTTP, gRPC) inside tasks now inherit the correct
-  parent context. Context-only — no span creation, `FlareExecutorPlugin` manages span
-  lifecycle as before ([#15])
-- **`LocalPropertyPropagator.extractFromProperties`** — overloaded extraction method taking
-  `java.util.Properties` directly for use in TaskRunner advice where `TaskContext` is null
-- **ByteBuddy SparkContext auto-registration** — `SparkContextInstrumentationModule` hooks
-  `SparkContext.<init>` constructor exit via ByteBuddy advice to auto-register
-  `TracingSparkListener` and create the application span without `spark.plugins` config.
-  True zero-config when using the OTEL agent extension ([#14])
-- **FlareDriverState** — shared state holder with `@volatile` + `synchronized` guard for
-  dedup between SparkPlugin (Phase 1) and ByteBuddy (Phase 2) paths. First path to
-  initialize wins; the other is a no-op
-- **InstrumentationModule SPI** — `META-INF/services/` registration for auto-discovery by
-  the OTEL Java agent. Module, TypeInstrumentation, and Advice written in Java for agent
-  classloader compatibility (Scala runtime not available in extension classloader)
-- **FlareDriverState tests** — 8 tests covering initialization, dedup, shutdown idempotency,
-  re-initialization, and concurrent initialization race safety
 
 ### Changed
 - **Removed five never-emitted attribute keys** — `spark.version`, `spark.task.executor.id`,
@@ -107,8 +69,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preserve consumers, but applications should validate dependency convergence when upgrading
 - **Startup diagnostics** — all live Scala initialization paths log the active trace granularity,
   sampling ratio, and maximum spans per trace after configuration validation
-- **Dockerfile stable JAR names** — `COPY flare-spark.jar` and `COPY flare-examples.jar`
-  instead of `flare-spark-assembly-${FLARE_VERSION}.jar`; removed `FLARE_VERSION` build arg
 
 ### Fixed
 - **`spark.sql.plan` is the plan that ran, not the pre-AQE tree** — `SparkListenerSQLExecutionStart`
@@ -179,6 +139,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   injection and `spark.task → spark.stage` parenting. Executors recover the correct parent from
   task properties through the plugin without needing the extension. Useful where a stable JAR
   path exists on the driver but not cluster-wide ([#42])
+
+## [1.0.0] - 2026-02-28
+
+### Added
+- **OTEL metrics instruments** — task-level `DoubleHistogram` for duration and throughput,
+  `LongCounter` for shuffle bytes, recorded in `FlareExecutorPlugin.endTask()` with automatic
+  exemplar linking (metrics recorded while span scope is active). Stage-level counters and
+  histograms recorded in `TracingSparkListener.onStageCompleted()` for executor run time,
+  input/output bytes, and shuffle bytes ([#10], [#11])
+- **`FLARE_METRICS_ENABLED`** — kill switch for OTEL metrics emission (default `true`).
+  When disabled, all instruments use a no-op meter with zero overhead
+- **`FlareMetrics`** — centralized holder for all OTEL metric instruments, constructed from
+  a `Meter` instance for testability. Factory method `FlareMetrics.create(enabled)` selects
+  real vs no-op meter
+- **`MetricAttributes`** — helper for building `Attributes` with correct Scala→Java Long
+  boxing for metric dimensional tags (`executor.id`, `stage.id`, `task.result`, `stage.name`)
+- **Per-stage traceparent injection** — `SubmitMissingTasksInstrumentation` hooks
+  `DAGScheduler.submitMissingTasks(stage, jobId)` via ByteBuddy to inject a per-stage
+  traceparent into `ActiveJob.properties` before tasks are created. Executor task spans now
+  nest under their specific stage span (`app → job → stage → task`). Captures ALL stages
+  including AQE (Adaptive Query Execution) sub-jobs that bypass `SparkContext.runJob`.
+  Job and stage spans are pre-created via reflection on DAGScheduler internals, then adopted
+  by `TracingSparkListener` when `onJobStart`/`onStageSubmitted` fire. Backward compatible
+  with SparkPlugin-only mode ([#26])
+- **ByteBuddy TaskRunner context restoration** — `TaskRunnerInstrumentationModule` hooks
+  `Executor$TaskRunner.run()` to extract `traceparent` from `TaskDescription.properties`
+  and make the parent OTEL context current for the entire task execution. Downstream
+  OTEL-instrumented libraries (JDBC, HTTP, gRPC) inside tasks now inherit the correct
+  parent context. Context-only — no span creation, `FlareExecutorPlugin` manages span
+  lifecycle as before ([#15])
+- **`LocalPropertyPropagator.extractFromProperties`** — overloaded extraction method taking
+  `java.util.Properties` directly for use in TaskRunner advice where `TaskContext` is null
+- **ByteBuddy SparkContext auto-registration** — `SparkContextInstrumentationModule` hooks
+  `SparkContext.<init>` constructor exit via ByteBuddy advice to auto-register
+  `TracingSparkListener` and create the application span without `spark.plugins` config.
+  True zero-config when using the OTEL agent extension ([#14])
+- **FlareDriverState** — shared state holder with `@volatile` + `synchronized` guard for
+  dedup between SparkPlugin (Phase 1) and ByteBuddy (Phase 2) paths. First path to
+  initialize wins; the other is a no-op
+- **InstrumentationModule SPI** — `META-INF/services/` registration for auto-discovery by
+  the OTEL Java agent. Module, TypeInstrumentation, and Advice written in Java for agent
+  classloader compatibility (Scala runtime not available in extension classloader)
+- **FlareDriverState tests** — 8 tests covering initialization, dedup, shutdown idempotency,
+  re-initialization, and concurrent initialization race safety
+
+### Changed
+- **Dockerfile stable JAR names** — `COPY flare-spark.jar` and `COPY flare-examples.jar`
+  instead of `flare-spark-assembly-${FLARE_VERSION}.jar`; removed `FLARE_VERSION` build arg
 
 ## [0.2.0] - 2026-02-27
 
