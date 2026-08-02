@@ -209,6 +209,132 @@ if you run large elastic clusters.
 
 > **Note:** When a Spark job fails, exception messages are recorded as span attributes. Spark exceptions sometimes include snippets of the data being processed (e.g., parse errors, type mismatches). Ensure your telemetry backend is secured appropriately if your jobs handle sensitive data.
 
+## Telemetry Reference
+
+Everything below is what Flare actually emits. Attributes marked *conditional* are absent rather
+than zero when the underlying value was never observed — a missing attribute means "not measured",
+which is different from a measured zero.
+
+### `spark.application` — SpanKind SERVER, trace root
+
+Opened when `SparkContext` initialises, closed at `SparkContext.stop()`.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `spark.application.id` | string | `SparkContext.applicationId` |
+| `spark.application.name` | string | `SparkContext.appName` |
+| `spark.master.url` | string | `SparkContext.master` |
+| `flare.version` | string | Flare build version |
+| `flare.trace.granularity` | string | Effective `FLARE_TRACE_GRANULARITY` |
+
+### `spark.sql.N` — SpanKind INTERNAL, child of `spark.application`
+
+One per `SparkListenerSQLExecutionStart`. `N` is the execution id.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `spark.sql.execution.id` | long | Matches the `N` in the span name |
+| `spark.sql.description` | string | Conditional — omitted when Spark reports it empty. Capped by `FLARE_SQL_DESCRIPTION_MAX_CHARS` |
+| `spark.sql.details` | string | Conditional — the call-site stack. Capped by `FLARE_SQL_DETAILS_MAX_CHARS` |
+| `spark.sql.plan` | string | The physical plan **that ran**, post-AQE. Capped by `FLARE_SQL_PLAN_MAX_CHARS` |
+| `spark.sql.plan.truncated` | bool | Conditional — set only when the cap clipped the plan |
+| `spark.sql.plan.initial` | string | Conditional — the pre-AQE plan. Off unless `FLARE_SQL_PLAN_INITIAL_MAX_CHARS > 0` |
+| `spark.sql.plan.initial.truncated` | bool | Conditional — as above, for the initial plan |
+
+### `spark.job.N` — SpanKind INTERNAL, child of `spark.sql.N` or `spark.application`
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `spark.job.id` | long | |
+| `spark.job.stage.count` | long | Number of stages the job was planned with |
+| `spark.job.description` | string | Conditional — from `spark.job.description` local property |
+| `spark.job.result` | string | `SUCCESS` or `FAILED` |
+| `error.message` | string | Conditional — present only on `FAILED` |
+
+### `spark.stage.N` — SpanKind INTERNAL, child of `spark.job.N`
+
+Metrics below are Spark's own sums across every task in the stage, so they are directly comparable
+with each other. All are set at `onStageCompleted` from `StageInfo.taskMetrics`.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `spark.stage.id` | long | |
+| `spark.stage.attempt.id` | long | |
+| `spark.stage.name` | string | Spark's `RDD.creationSite` — the same string the Spark UI shows |
+| `spark.stage.task.count` | long | |
+| `spark.stage.executor.run_time_ms` | long | |
+| `spark.stage.executor.cpu_time_ms` | long | Converted from Spark's nanoseconds |
+| `spark.stage.jvm.gc_time_ms` | long | GC time rivalling run time is the answer to "why is this stage slow" |
+| `spark.stage.executor.deserialize_time_ms` | long | |
+| `spark.stage.executor.deserialize_cpu_time_ms` | long | Converted from nanoseconds |
+| `spark.stage.result.serialization_time_ms` | long | |
+| `spark.stage.scheduler.delay_ms` | long | Conditional — derived, see below |
+| `spark.stage.input.bytes` / `.records` | long | |
+| `spark.stage.output.bytes` / `.records` | long | |
+| `spark.stage.shuffle.read_bytes` | long | |
+| `spark.stage.shuffle.write_bytes` | long | |
+| `spark.stage.memory.spilled_bytes` | long | |
+| `spark.stage.disk.spilled_bytes` | long | |
+| `spark.stage.failure_reason` | string | Conditional — first 500 chars |
+
+`spark.stage.scheduler.delay_ms` is the only stage attribute Spark does not report. It is derived
+per task as `duration − executorRunTime − deserializeTime − resultSerializationTime −
+resultFetchTime` and summed over the stage, matching Spark's own `AppStatusUtils.schedulerDelay`.
+The clamp at zero is applied per task, never to the sum, because driver and executor clocks differ
+and a fast task can report more run time than its own wall clock. The attribute is **omitted** when
+no task ends were observed — a `0` there would read as "no queueing" rather than "not measured".
+
+### `spark.task.executor` — SpanKind INTERNAL, child of `spark.stage.N`, emitted on the executor JVM
+
+Subject to `FLARE_TRACE_GRANULARITY`, `FLARE_SLOW_TASK_MS`, `FLARE_RETRY_TASKS_ONLY` and
+`FLARE_MAX_SPANS_PER_TRACE`. This span is built from `TaskContext`, so driver-only `TaskInfo`
+fields (host, locality, speculative) are not available to it.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `spark.task.partition.id` | long | |
+| `spark.task.attempt.id` | long | `> 0` means a retry |
+| `spark.stage.id` | long | Conditional — only under `FLARE_TRACE_GRANULARITY=all`. The parent span already identifies the stage; this repeats it so you can filter without a join |
+| `spark.task.sql.execution_id` | long | Conditional — present when the task belongs to a SQL execution |
+| `spark.task.result` | string | `SUCCESS`, `FAILED`, or `SHUTDOWN` if the JVM went down mid-task |
+| `error.message` | string | Conditional — present only on `FAILED` |
+| `spark.task.duration_ms` | long | Wall clock on the executor thread |
+| `spark.task.input.bytes` / `output.bytes` | long | |
+| `spark.task.shuffle.read_bytes` / `write_bytes` | long | |
+| `spark.task.peak_memory_bytes` | long | |
+
+The four byte counts and peak memory come from `TaskContext.taskMetrics()`, which is
+`private[spark]` and can throw from outside `org.apache.spark` or in barrier mode. Flare logs at
+debug and emits the span without them rather than failing the task, so all five are absent together
+when that happens.
+
+### Metrics
+
+Nine instruments, all under the `io.flare.spark` meter, disabled wholesale by
+`FLARE_METRICS_ENABLED=false`.
+
+| Instrument | Kind | Unit | Labels |
+|------------|------|------|--------|
+| `flare.task.duration` | histogram | `ms` | `executor.id`, `stage.id`, `task.result` |
+| `flare.task.records_throughput` | histogram | `{records}/s` | `executor.id`, `stage.id`, `task.result` |
+| `flare.task.shuffle.read_bytes` | counter | `By` | `executor.id`, `stage.id`, `task.result` |
+| `flare.task.shuffle.write_bytes` | counter | `By` | `executor.id`, `stage.id`, `task.result` |
+| `flare.stage.executor.run_time` | histogram | `ms` | `stage.id`, `stage.name` |
+| `flare.stage.input.bytes` | counter | `By` | `stage.id`, `stage.name` |
+| `flare.stage.output.bytes` | counter | `By` | `stage.id`, `stage.name` |
+| `flare.stage.shuffle.read_bytes` | counter | `By` | `stage.id`, `stage.name` |
+| `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.id`, `stage.name` |
+
+The counters are only incremented for non-zero values, so a stage that read nothing produces no
+`flare.stage.input.bytes` series rather than a flat zero one.
+
+`flare.task.*` are recorded on the executor while the task span's scope is still open, so the SDK's
+default `trace_based` exemplar filter attaches an exemplar linking each measurement back to its
+trace. Under `FLARE_SLOW_TASK_MS` the metric is recorded *after* the suppressed span's scope closes,
+so a fast task still contributes to the histogram but carries no exemplar pointing at a trace that
+was never exported. Note that some backends drop exemplars by default — Mimir's
+`max_global_exemplars_per_user` is `0` unless you set it.
+
 ## OTEL Agent Compatibility
 
 Flare is an OTEL Java agent **extension** — not a standalone library. It is loaded by the agent's `AgentClassLoader` and shares the agent's ByteBuddy and SDK classes at runtime. This means the agent version matters.

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Telemetry reference in the README** — every span attribute Flare emits, grouped by span type,
+  and every metric instrument with its kind, unit and label set. None of this was documented
+  before: the only way to learn that `spark.sql.plan` or `spark.stage.scheduler.delay_ms` existed
+  was to read `SparkAttributes.scala`. Attributes that are conditional are marked as such, since a
+  missing attribute means "not measured" and is not the same as a measured zero ([#61])
 - **Stage timing breakdown** — `spark.stage.jvm.gc_time_ms`,
   `spark.stage.executor.deserialize_time_ms`, `spark.stage.executor.deserialize_cpu_time_ms`,
   `spark.stage.result.serialization_time_ms`, `spark.stage.disk.spilled_bytes` and
@@ -88,6 +93,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-initialization, and concurrent initialization race safety
 
 ### Changed
+- **Removed five never-emitted attribute keys** — `spark.version`, `spark.task.executor.id`,
+  `spark.task.host`, `spark.task.locality` and `spark.task.speculative` were declared in
+  `SparkAttributes` but never set on any span, so no consumer can have been reading them. The four
+  task keys are `TaskInfo` fields that only the driver sees, while `spark.task.executor` is built
+  from `TaskContext` on the executor, so they were never reachable from that call site. `error.type`
+  is also unset today but is retained, as [#46] will set it ([#61])
 - **OpenTelemetry baseline** — Java agent 2.30.0, API/SDK 1.64.0, and
   `byte-buddy-dep` 1.18.11
 - **Consumer dependency update** — `opentelemetry-api` and `opentelemetry-context` move from
@@ -244,9 +255,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#42]: https://github.com/Neutrinic/flare/issues/42
 [#44]: https://github.com/Neutrinic/flare/issues/44
 [#45]: https://github.com/Neutrinic/flare/issues/45
+[#46]: https://github.com/Neutrinic/flare/issues/46
 [#47]: https://github.com/Neutrinic/flare/issues/47
 [#52]: https://github.com/Neutrinic/flare/issues/52
 [#53]: https://github.com/Neutrinic/flare/issues/53
 [#54]: https://github.com/Neutrinic/flare/issues/54
 [#57]: https://github.com/Neutrinic/flare/issues/57
 [#58]: https://github.com/Neutrinic/flare/issues/58
+[#61]: https://github.com/Neutrinic/flare/issues/61

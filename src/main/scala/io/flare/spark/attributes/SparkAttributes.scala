@@ -5,10 +5,9 @@ import io.opentelemetry.api.common.AttributeKey
 object SparkAttributes {
 
   object Application {
-    val Id      = AttributeKey.stringKey("spark.application.id")
-    val Name    = AttributeKey.stringKey("spark.application.name")
-    val Master  = AttributeKey.stringKey("spark.master.url")
-    val Version = AttributeKey.stringKey("spark.version")
+    val Id     = AttributeKey.stringKey("spark.application.id")
+    val Name   = AttributeKey.stringKey("spark.application.name")
+    val Master = AttributeKey.stringKey("spark.master.url")
   }
 
   object Job {
@@ -73,14 +72,16 @@ object SparkAttributes {
     val PlanInitialTruncated = AttributeKey.booleanKey("spark.sql.plan.initial.truncated")
   }
 
+  /**
+   * Attributes on the `spark.task.executor` span, which is created on the EXECUTOR JVM from
+   * `TaskContext`. That is the constraint on what can live here: host, locality and speculative
+   * are `TaskInfo` fields that only the driver ever sees, so they are not available at this
+   * span's call site.
+   */
   object Task {
-    val ExecutorId  = AttributeKey.stringKey("spark.task.executor.id")
-    val Host        = AttributeKey.stringKey("spark.task.host")
     val PartitionId = AttributeKey.longKey("spark.task.partition.id")
     val AttemptId   = AttributeKey.longKey("spark.task.attempt.id")
-    val Speculative = AttributeKey.booleanKey("spark.task.speculative")
     val Result      = AttributeKey.stringKey("spark.task.result")
-    val Locality    = AttributeKey.stringKey("spark.task.locality")
     // v0.2 — task-level metrics (recorded at task end from TaskMetrics)
     val ShuffleReadBytes  = AttributeKey.longKey("spark.task.shuffle.read_bytes")
     val ShuffleWriteBytes = AttributeKey.longKey("spark.task.shuffle.write_bytes")
@@ -93,6 +94,7 @@ object SparkAttributes {
 
   // OTEL semantic conventions
   object Error {
+    // Not yet set anywhere — see #46, which pairs it with Span.recordException.
     val Type    = AttributeKey.stringKey("error.type")
     val Message = AttributeKey.stringKey("error.message")
   }
