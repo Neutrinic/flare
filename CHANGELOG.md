@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Stage timing breakdown** — `spark.stage.jvm.gc_time_ms`,
+  `spark.stage.executor.deserialize_time_ms`, `spark.stage.executor.deserialize_cpu_time_ms`,
+  `spark.stage.result.serialization_time_ms`, `spark.stage.disk.spilled_bytes` and
+  `spark.stage.scheduler.delay_ms`. Total stage duration says a stage was slow; these say why,
+  and GC time in particular is often the whole answer. All are sums across the stage's tasks, so
+  they are directly comparable with the existing `spark.stage.executor.run_time_ms`.
+  Scheduler delay is the only one Spark does not report: it is derived per task as the wall clock
+  left after deserialization, run time, result serialization and result fetch, then summed.
+  It is clamped at zero per task rather than on the sum, because the driver and executor clocks
+  are different clocks and a fast task can report slightly more run time than its own duration —
+  summing first would let that cancel real queueing measured elsewhere in the stage. The
+  attribute is omitted entirely, rather than exported as `0`, for a stage that reported no task
+  ends, so "not measured" never reads as "no queueing" ([#45])
 - **SQL execution metadata on `spark.sql.N` spans** — the span previously carried no attributes
   at all. It now records `spark.sql.execution.id`, `spark.sql.description`, `spark.sql.details`
   and `spark.sql.plan` (the formatted physical plan), all sourced from
@@ -216,6 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#26]: https://github.com/Neutrinic/flare/issues/26
 [#42]: https://github.com/Neutrinic/flare/issues/42
 [#44]: https://github.com/Neutrinic/flare/issues/44
+[#45]: https://github.com/Neutrinic/flare/issues/45
 [#47]: https://github.com/Neutrinic/flare/issues/47
 [#52]: https://github.com/Neutrinic/flare/issues/52
 [#53]: https://github.com/Neutrinic/flare/issues/53

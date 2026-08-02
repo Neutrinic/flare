@@ -9,7 +9,8 @@ import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import munit.FunSuite
-import org.apache.spark.FlareTestHelpers
+import org.apache.spark.{FlareTestHelpers, Success, TaskResultLost}
+import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.scheduler._
 
 import scala.collection.JavaConverters._
@@ -201,6 +202,166 @@ class TracingSparkListenerTest extends FunSuite {
       assert(attrs.get(Stage.ShuffleReadBytes) != null, "shuffleReadBytes attribute missing")
       assert(attrs.get(Stage.ShuffleWriteBytes) != null, "shuffleWriteBytes attribute missing")
     }
+  }
+
+  // ── Stage timing breakdown (#45) ────────────────────────────────────────────
+
+  /**
+   * Runs one stage end to end with the given per-task events and stage-level TaskMetrics,
+   * and returns the attributes left on its span.
+   */
+  def stageAttributes(
+    stageMetrics: TaskMetrics,
+    taskEnds:     Seq[SparkListenerTaskEnd] = Nil,
+  ): Attributes = {
+    var attrs: Attributes = Attributes.empty()
+    withListener { (listener, exporter) =>
+      listener.onJobStart(makeJobStart(0, Seq(0)))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      taskEnds.foreach(listener.onTaskEnd)
+      listener.onStageCompleted(SparkListenerStageCompleted(
+        FlareTestHelpers.makeStageInfo(0, "stage-0", taskMetrics = stageMetrics)
+      ))
+      listener.onJobEnd(makeJobEnd(0, succeeded = true))
+      listener.shutdown()
+      attrs = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.stage.0").get.getAttributes
+    }
+    attrs
+  }
+
+  def makeTaskEnd(
+    taskId:              Long,
+    durationMs:          Long,
+    runTimeMs:           Long = 0L,
+    deserializeMs:       Long = 0L,
+    serializeMs:         Long = 0L,
+    gettingResultTimeMs: Long = 0L,
+    stageId:             Int  = 0,
+  ): SparkListenerTaskEnd =
+    SparkListenerTaskEnd(
+      stageId        = stageId,
+      stageAttemptId = 0,
+      taskType       = "ResultTask",
+      reason         = Success,
+      taskInfo       = FlareTestHelpers.finishedTaskInfo(taskId, durationMs, gettingResultTimeMs),
+      taskExecutorMetrics = FlareTestHelpers.emptyExecutorMetrics(),
+      taskMetrics = FlareTestHelpers.taskMetrics(
+        executorRunTime         = runTimeMs,
+        executorDeserializeTime = deserializeMs,
+        resultSerializationTime = serializeMs,
+      ),
+    )
+
+  test("stage span records the timing breakdown and disk spill") {
+    val attrs = stageAttributes(FlareTestHelpers.taskMetrics(
+      jvmGcTime                  = 420L,
+      executorDeserializeTime    = 35L,
+      executorDeserializeCpuTime = 12000000L, // ns
+      resultSerializationTime    = 7L,
+      memoryBytesSpilled         = 2048L,
+      diskBytesSpilled           = 4096L,
+    ))
+
+    assertEquals(attrs.get(Stage.JvmGcTime).longValue(), 420L)
+    assertEquals(attrs.get(Stage.ExecutorDeserializeTime).longValue(), 35L)
+    assertEquals(attrs.get(Stage.ResultSerializationTime).longValue(), 7L)
+    assertEquals(attrs.get(Stage.MemorySpilled).longValue(), 2048L)
+    assertEquals(attrs.get(Stage.DiskSpilled).longValue(), 4096L)
+  }
+
+  test("deserialize CPU time is converted from nanoseconds, like executor CPU time") {
+    val attrs = stageAttributes(
+      FlareTestHelpers.taskMetrics(executorDeserializeCpuTime = 12345000000L)
+    )
+    assertEquals(attrs.get(Stage.ExecutorDeserializeCpuTime).longValue(), 12345L)
+  }
+
+  test("scheduler delay is the wall clock left over after the measured work") {
+    // 500ms wall clock, of which 300 ran, 20 deserialized and 5 serialized → 175 queued.
+    val attrs = stageAttributes(
+      FlareTestHelpers.emptyTaskMetrics(),
+      Seq(makeTaskEnd(1L, durationMs = 500L, runTimeMs = 300L, deserializeMs = 20L, serializeMs = 5L)),
+    )
+    assertEquals(attrs.get(Stage.SchedulerDelay).longValue(), 175L)
+  }
+
+  test("scheduler delay sums across the stage's tasks") {
+    val attrs = stageAttributes(
+      FlareTestHelpers.emptyTaskMetrics(),
+      Seq(
+        makeTaskEnd(1L, durationMs = 500L, runTimeMs = 300L),
+        makeTaskEnd(2L, durationMs = 200L, runTimeMs = 150L),
+      ),
+    )
+    assertEquals(attrs.get(Stage.SchedulerDelay).longValue(), 250L)
+  }
+
+  test("result fetch time is not counted as scheduler delay") {
+    val attrs = stageAttributes(
+      FlareTestHelpers.emptyTaskMetrics(),
+      Seq(makeTaskEnd(1L, durationMs = 500L, runTimeMs = 300L, gettingResultTimeMs = 120L)),
+    )
+    assertEquals(attrs.get(Stage.SchedulerDelay).longValue(), 80L)
+  }
+
+  test("a task whose reported work exceeds its wall clock contributes zero, not a negative") {
+    // Driver and executor clocks are not the same clock; run time can overshoot duration.
+    val attrs = stageAttributes(
+      FlareTestHelpers.emptyTaskMetrics(),
+      Seq(
+        makeTaskEnd(1L, durationMs = 100L, runTimeMs = 150L), // would be -50
+        makeTaskEnd(2L, durationMs = 500L, runTimeMs = 300L), // 200
+      ),
+    )
+    // Clamped per task: a skewed task must not cancel real delay measured elsewhere.
+    assertEquals(attrs.get(Stage.SchedulerDelay).longValue(), 200L)
+  }
+
+  test("scheduler delay is absent, not zero, when no task ends were observed") {
+    val attrs = stageAttributes(FlareTestHelpers.emptyTaskMetrics())
+    assert(attrs.get(Stage.SchedulerDelay) == null)
+  }
+
+  test("scheduler delay is attributed to the task's own stage") {
+    withListener { (listener, exporter) =>
+      listener.onJobStart(makeJobStart(0, Seq(0, 1)))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      listener.onStageSubmitted(makeStageSubmitted(1))
+
+      listener.onTaskEnd(makeTaskEnd(1L, durationMs = 500L, runTimeMs = 300L, stageId = 0))
+      listener.onTaskEnd(makeTaskEnd(2L, durationMs = 900L, runTimeMs = 300L, stageId = 1))
+
+      Seq(0, 1).foreach { id =>
+        listener.onStageCompleted(SparkListenerStageCompleted(
+          FlareTestHelpers.makeStageInfo(id, s"stage-$id", taskMetrics = FlareTestHelpers.emptyTaskMetrics())
+        ))
+      }
+      listener.onJobEnd(makeJobEnd(0, succeeded = true))
+      listener.shutdown()
+
+      val spans = exporter.getFinishedSpanItems.asScala
+      assertEquals(spans.find(_.getName == "spark.stage.0").get.getAttributes.get(Stage.SchedulerDelay).longValue(), 200L)
+      assertEquals(spans.find(_.getName == "spark.stage.1").get.getAttributes.get(Stage.SchedulerDelay).longValue(), 600L)
+    }
+  }
+
+  test("a task that failed before reporting metrics is skipped rather than throwing") {
+    val noMetrics = SparkListenerTaskEnd(
+      stageId             = 0,
+      stageAttemptId      = 0,
+      taskType            = "ResultTask",
+      reason              = TaskResultLost,
+      taskInfo            = FlareTestHelpers.finishedTaskInfo(1L, durationMs = 500L),
+      taskExecutorMetrics = FlareTestHelpers.emptyExecutorMetrics(),
+      taskMetrics         = null,
+    )
+    // throwOnError = true in withListener, so a NPE here would fail the test. The healthy task
+    // that follows proves the metric-less one was skipped rather than aborting the stage.
+    val attrs = stageAttributes(
+      FlareTestHelpers.emptyTaskMetrics(),
+      Seq(noMetrics, makeTaskEnd(2L, durationMs = 500L, runTimeMs = 300L)),
+    )
+    assertEquals(attrs.get(Stage.SchedulerDelay).longValue(), 200L)
   }
 
   test("stage span records failure reason on failed stage") {
