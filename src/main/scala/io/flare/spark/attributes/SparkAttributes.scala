@@ -47,8 +47,15 @@ object SparkAttributes {
     val Description = AttributeKey.stringKey("spark.sql.description")
     val Details     = AttributeKey.stringKey("spark.sql.details")
     // physicalPlanDescription — the formatted plan, truncated on the way in.
+    // Holds the LATEST plan seen: the tree from SparkListenerSQLExecutionStart until AQE
+    // re-plans, then each SparkListenerSQLAdaptiveExecutionUpdate overwrites it. So this is
+    // the plan that ran, not the pre-AQE tree that always reports isFinalPlan=false.
     val Plan          = AttributeKey.stringKey("spark.sql.plan")
     val PlanTruncated = AttributeKey.booleanKey("spark.sql.plan.truncated")
+    // The pre-AQE tree, retained separately so the AQE decision is recoverable as a diff.
+    // Off by default — see FLARE_SQL_PLAN_INITIAL_MAX_CHARS.
+    val PlanInitial          = AttributeKey.stringKey("spark.sql.plan.initial")
+    val PlanInitialTruncated = AttributeKey.booleanKey("spark.sql.plan.initial.truncated")
   }
 
   object Task {

@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **SQL execution metadata on `spark.sql.N` spans** — the span previously carried no attributes
   at all. It now records `spark.sql.execution.id`, `spark.sql.description`, `spark.sql.details`
-  and `spark.sql.plan` (the formatted physical plan), all sourced from
+  and `spark.sql.plan` (the formatted physical plan that ran, see [#54]), sourced from
   `SparkListenerSQLExecutionStart`. `spark.sql.description` is Spark's own query label, e.g.
   `count at PipelineJob.scala:43`, which identifies a query far better than the stage names
   derived from `RDD.creationSite`.
@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clipped plan sets `spark.sql.plan.truncated=true`, so a partial plan is never mistaken for a
   complete one. Empty or absent values are omitted rather than exported as empty attributes.
   Per-operator metrics from `sparkPlanInfo` are not included ([#44], tracked in [#47])
+- **`FLARE_SQL_PLAN_INITIAL_MAX_CHARS`** — retains the pre-AQE plan as `spark.sql.plan.initial`,
+  with its own truncation flag `spark.sql.plan.initial.truncated`. Off by default (`0`) because
+  it doubles the worst-case plan payload on every SQL span and `spark.sql.plan` already carries
+  the plan that ran. Its value is the diff: skew splits, broadcast conversion and partition
+  coalescing are only visible by comparing the two trees ([#54])
 - **`FLARE_SQL_PLAN_MAX_CHARS` / `FLARE_SQL_DETAILS_MAX_CHARS` /
   `FLARE_SQL_DESCRIPTION_MAX_CHARS`** — the SQL truncation caps above are now configurable rather
   than compiled in, so a deployment whose collector accepts larger payloads can keep the whole
@@ -82,6 +87,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of `flare-spark-assembly-${FLARE_VERSION}.jar`; removed `FLARE_VERSION` build arg
 
 ### Fixed
+- **`spark.sql.plan` is the plan that ran, not the pre-AQE tree** — `SparkListenerSQLExecutionStart`
+  fires before Adaptive Query Execution re-plans, so the captured tree always ended
+  `isFinalPlan=false` and described a query that in general never executed. Observed in the dev
+  stack: a plan claiming `hashpartitioning(region, tier, 200)` on a trace whose stage spans had
+  a task count of 1-2. `SparkListenerSQLAdaptiveExecutionUpdate` is now handled and overwrites the
+  attribute, so the last plan AQE produced is the one retained. Several updates per execution each
+  overwrite the last, so the cost is bounded however many times AQE re-plans. The truncation flag
+  is recomputed on overwrite — OTEL attributes cannot be removed, so a shorter replacement plan
+  explicitly clears a `spark.sql.plan.truncated=true` left by its predecessor ([#54])
 - **`FLARE_SLOW_TASK_MS` now actually suppresses spans** — it never has. The abandon path in
   `FlareExecutorPlugin.endTask` ended with a `return` from inside a closure passed to `foreach`,
   which in Scala compiles to a thrown `NonLocalReturnControl`. The enclosing `try`'s `finally`
@@ -219,5 +233,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#47]: https://github.com/Neutrinic/flare/issues/47
 [#52]: https://github.com/Neutrinic/flare/issues/52
 [#53]: https://github.com/Neutrinic/flare/issues/53
+[#54]: https://github.com/Neutrinic/flare/issues/54
 [#57]: https://github.com/Neutrinic/flare/issues/57
 [#58]: https://github.com/Neutrinic/flare/issues/58

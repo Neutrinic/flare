@@ -168,6 +168,7 @@ available even when a cluster-wide one is not — notebooks and `spark-shell` in
 | `FLARE_SQL_PLAN_MAX_CHARS` | `4096` | Cap on `spark.sql.plan`; `0` drops the attribute |
 | `FLARE_SQL_DETAILS_MAX_CHARS` | `2048` | Cap on `spark.sql.details`; `0` drops the attribute |
 | `FLARE_SQL_DESCRIPTION_MAX_CHARS` | `1024` | Cap on `spark.sql.description`; `0` drops the attribute |
+| `FLARE_SQL_PLAN_INITIAL_MAX_CHARS` | `0` (dropped) | Cap on `spark.sql.plan.initial`, the pre-AQE plan |
 | `FLARE_ENABLED` | `true` | Kill switch |
 
 Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables. System properties take
@@ -179,6 +180,14 @@ of kilobytes, which is enough to push an OTLP batch past a collector's message l
 whole batch rather than just the plan. Raise `FLARE_SQL_PLAN_MAX_CHARS` if your collector accepts
 larger payloads. When a plan is clipped, `spark.sql.plan.truncated=true` is set alongside it, so a
 partial plan never reads as a complete one.
+
+`spark.sql.plan` holds the plan that ran. Spark reports the physical plan when the execution
+starts, which is before Adaptive Query Execution re-plans, so that first tree always ends
+`isFinalPlan=false` and can describe a partitioning that never happened. Each AQE re-plan
+overwrites the attribute, leaving the final tree. Set `FLARE_SQL_PLAN_INITIAL_MAX_CHARS` above `0`
+to also retain the pre-AQE tree as `spark.sql.plan.initial` — the AQE decision (skew splits,
+broadcast conversion, partition coalescing) is only visible by diffing the two. It is off by
+default because it doubles the worst-case plan payload on every SQL span.
 
 ### Resource Attributes
 

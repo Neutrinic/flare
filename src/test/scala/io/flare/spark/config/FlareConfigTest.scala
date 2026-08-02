@@ -137,6 +137,7 @@ class FlareConfigTest extends FunSuite {
     "FLARE_MAX_SPANS_PER_TRACE", "FLARE_SLOW_TASK_MS", "FLARE_RETRY_TASKS_ONLY",
     "FLARE_TASK_STAGES", "FLARE_TASK_STAGE_PATTERN", "FLARE_METRICS_ENABLED",
     "FLARE_SQL_PLAN_MAX_CHARS", "FLARE_SQL_DETAILS_MAX_CHARS", "FLARE_SQL_DESCRIPTION_MAX_CHARS",
+    "FLARE_SQL_PLAN_INITIAL_MAX_CHARS",
   )
 
   override def afterEach(context: AfterEach): Unit = {
@@ -206,6 +207,23 @@ class FlareConfigTest extends FunSuite {
     assertEquals(config.sqlPlanMaxChars, 4096)
     assertEquals(config.sqlDetailsMaxChars, 2048)
     assertEquals(config.sqlDescriptionMaxChars, 1024)
+    // The pre-AQE plan is opt-in: it doubles the plan payload and spark.sql.plan already
+    // carries the plan that ran.
+    assertEquals(config.sqlPlanInitialMaxChars, 0)
+  }
+
+  test("load() parses FLARE_SQL_PLAN_INITIAL_MAX_CHARS") {
+    sys.props("FLARE_SQL_PLAN_INITIAL_MAX_CHARS") = "8192"
+    assertEquals(FlareConfig.load().sqlPlanInitialMaxChars, 8192)
+  }
+
+  test("load() throws on a negative FLARE_SQL_PLAN_INITIAL_MAX_CHARS") {
+    sys.props("FLARE_SQL_PLAN_INITIAL_MAX_CHARS") = "-5"
+    interceptMessage[IllegalArgumentException](
+      "Flare config error: FLARE_SQL_PLAN_INITIAL_MAX_CHARS must be >= 0, got -5"
+    ) {
+      FlareConfig.load()
+    }
   }
 
   test("load() parses the SQL truncation caps") {
