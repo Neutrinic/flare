@@ -96,7 +96,7 @@ Download the JAR matching your Spark version from
 
 ```bash
 spark-submit \
-  --packages io.github.neutrinic:flare-spark-3-5_2.13:1.0.0 \
+  --packages io.github.neutrinic:flare-spark-3-5_2.13:1.1.0 \
   --conf "spark.plugins=io.flare.spark.plugin.FlareSparkPlugin" \
   --conf "spark.driver.extraJavaOptions=\
     -javaagent:/opt/flare/opentelemetry-javaagent.jar \
@@ -114,13 +114,13 @@ spark-submit \
 Pick the artifact matching your Spark version:
 
 ```
-io.github.neutrinic:flare-spark-3-3_2.12:1.0.0   # Spark 3.3, Scala 2.12
-io.github.neutrinic:flare-spark-3-3_2.13:1.0.0   # Spark 3.3, Scala 2.13
-io.github.neutrinic:flare-spark-3-4_2.12:1.0.0   # Spark 3.4, Scala 2.12
-io.github.neutrinic:flare-spark-3-4_2.13:1.0.0   # Spark 3.4, Scala 2.13
-io.github.neutrinic:flare-spark-3-5_2.12:1.0.0   # Spark 3.5, Scala 2.12
-io.github.neutrinic:flare-spark-3-5_2.13:1.0.0   # Spark 3.5, Scala 2.13
-io.github.neutrinic:flare-spark-4-0_2.13:1.0.0   # Spark 4.0, Scala 2.13
+io.github.neutrinic:flare-spark-3-3_2.12:1.1.0   # Spark 3.3, Scala 2.12
+io.github.neutrinic:flare-spark-3-3_2.13:1.1.0   # Spark 3.3, Scala 2.13
+io.github.neutrinic:flare-spark-3-4_2.12:1.1.0   # Spark 3.4, Scala 2.12
+io.github.neutrinic:flare-spark-3-4_2.13:1.1.0   # Spark 3.4, Scala 2.13
+io.github.neutrinic:flare-spark-3-5_2.12:1.1.0   # Spark 3.5, Scala 2.12
+io.github.neutrinic:flare-spark-3-5_2.13:1.1.0   # Spark 3.5, Scala 2.13
+io.github.neutrinic:flare-spark-4-0_2.13:1.1.0   # Spark 4.0, Scala 2.13
 ```
 
 The OTEL Java agent JAR (`opentelemetry-javaagent.jar`) must still be placed on every node — `--packages` handles only Flare and its dependencies.
