@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duplicates. Combined with `fail-fast: true` this cancelled healthy sibling jobs mid-upload. The
   matrix is now the Spark axis alone — 4 jobs, disjoint coordinates — with `fail-fast: false`.
   The set of published artifacts is unchanged ([#65])
+- **Security scan was disabled and took hours when it ran** — GitHub auto-disabled the Security
+  workflow for inactivity, so nothing had been scanned since 2026-05-18. When it did run it took
+  1.5–6 hours (one run hit GitHub's 6-hour ceiling and was cancelled), because
+  `dependencyCheckNvdApi` paged the NVD API through ~300k CVEs into an embedded H2 database.
+  It now uses the NVD bulk data feed instead, and no longer runs on pushes to main — the scan is
+  advisory and gates nothing, so per-merge runs produced a report nobody was blocked by. Added
+  `concurrency`, `timeout-minutes` and an sbt cache ([#67])
 
 ## [1.1.0] - 2026-08-01
 
@@ -281,3 +288,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#58]: https://github.com/Neutrinic/flare/issues/58
 [#61]: https://github.com/Neutrinic/flare/issues/61
 [#65]: https://github.com/Neutrinic/flare/issues/65
+[#67]: https://github.com/Neutrinic/flare/issues/67

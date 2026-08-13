@@ -50,9 +50,27 @@ dependencyCheckFormats := {
   Seq(Format.HTML, Format.JSON)
 }
 dependencyCheckNvdApi := {
+  import net.nmoncho.sbt.dependencycheck.settings.NvdApiSettings.DataFeed
   val key = sys.env.getOrElse("NVD_API_KEY", "")
-  if (key.nonEmpty) NvdApiSettings(apiKey = key, requestDelay = Some(java.time.Duration.ofSeconds(4)))
-  else NvdApiSettings()
+
+  // Prefer the bulk data feed over the NVD API. Paging the API walks ~300k CVEs at
+  // 2000 per request and inserts each one into the embedded H2 database — that build,
+  // not the network, is what pushed scans past 3 hours (one hit GitHub's 6-hour
+  // ceiling and was cancelled). The feed is prebuilt gzipped per-year archives over
+  // plain HTTP (~25MB/year), needs no API key and has no rate limit. {0} is
+  // substituted with the year.
+  //
+  // The API key still applies to incremental "modified" lookups; requestDelay only
+  // matters on that path now.
+  NvdApiSettings(
+    apiKey = key,
+    requestDelay = Some(java.time.Duration.ofSeconds(1)),
+    dataFeed = DataFeed(
+      // sbt's `url(...)` helper parses via URI and rejects the `{0}` placeholder,
+      // so construct the URL directly.
+      url = Some(new java.net.URL("https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{0}.json.gz"))
+    )
+  )
 }
 
 // Spark version to build against (override with -DsparkVersion=3.5.1)
@@ -186,6 +204,13 @@ lazy val examples = (project in file("examples"))
 
     // No cross-compilation for examples — Scala 2.13 only
     crossScalaVersions := Seq(scala213),
+
+    // The OWASP settings above are bare, so they scope to `root` only — `examples` was
+    // running the scan with plugin DEFAULTS: `provided` included (all ~150 Spark jars)
+    // and no NVD data feed. `dependencyCheck` aggregates, so that ran on every scan and
+    // dominated its cost. examples is `publish / skip`, so nothing here reaches a user
+    // and there is nothing to scan.
+    dependencyCheckSkip := true,
 
     // No tests in examples
     Test / test := {},

@@ -1,15 +1,28 @@
 name: Security
 
+# Advisory only — weekly and on demand, never on PRs or pushes.
+#
+# This scan does not gate anything (see continue-on-error below), so running it per
+# push to main only spent CI time on a report nobody was blocked by.
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: '0 8 * * 1'  # Monday 8am UTC
   workflow_dispatch:
 
+# Each run re-scans from scratch, so a queue of runs on the same ref is pure waste —
+# only the newest result is meaningful.
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dependency-check:
     runs-on: ubuntu-latest
+    # Runs land in ~7 minutes on the bulk data feed configured in build.sbt. Generous
+    # headroom, but low enough that a hung NVD fetch fails quickly instead of burning
+    # the budget — the old NVD-API path once ran 6h05m and was cancelled at GitHub's
+    # ceiling, which reads as an infra failure rather than a scan problem.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v6
@@ -18,14 +31,23 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: sbt
 
       - uses: sbt/setup-sbt@v1
 
+      # Advisory, never blocking. dependency-check identifies dependencies by guessing
+      # CPEs from jar evidence, which misfires often enough that gating merges on it
+      # costs more than it catches. The report is still published below.
       - name: OWASP Dependency Check
         continue-on-error: true
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: sbt dependencyCheck
+
+      # No NVD cache on purpose. The bulk data feed gets a cold run down to ~7 minutes,
+      # and the database lands inside the coursier cache
+      # (.../org/owasp/dependency-check-utils/<v>/data/<v>/odc.mv.db) rather than a
+      # home-directory path — awkward to cache and not worth it for the time saved.
 
       - name: Upload report
         if: always()
