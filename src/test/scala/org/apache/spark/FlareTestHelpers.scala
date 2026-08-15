@@ -80,6 +80,26 @@ object FlareTestHelpers {
 
   def jobFailed(exception: Exception): JobResult = JobFailed(exception)
 
+  /**
+   * An ExceptionFailure as Spark builds one on a real task failure.
+   *
+   * The `(Throwable, Seq[AccumulableInfo])` convenience constructor is private[spark] AND its
+   * signature has moved across versions, so the primary apply is used instead with
+   * `exceptionWrapper = None` — that parameter is a private[spark] type, which is why this has
+   * to live in this package at all. The remaining parameters take their defaults.
+   */
+  def exceptionFailure(t: Throwable): ExceptionFailure = {
+    val writer = new java.io.StringWriter()
+    t.printStackTrace(new java.io.PrintWriter(writer))
+    ExceptionFailure(
+      className      = t.getClass.getName,
+      description    = t.getMessage,
+      stackTrace     = t.getStackTrace,
+      fullStackTrace = writer.toString,
+      exceptionWrapper = None,
+    )
+  }
+
   def makeStageInfo(
     stageId:     Int,
     name:        String,

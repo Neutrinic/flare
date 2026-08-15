@@ -1,6 +1,9 @@
 package io.flare.spark.plugin
 
+import io.flare.spark.attributes.SparkAttributes.{Error, Task}
 import io.opentelemetry.api.GlobalOpenTelemetry
+import io.opentelemetry.api.common.AttributeKey
+import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.metrics.SdkMeterProvider
 import io.opentelemetry.sdk.testing.exporter.{InMemoryMetricReader, InMemorySpanExporter}
@@ -161,6 +164,82 @@ class FlareExecutorPluginTest extends FunSuite {
 
     assertEquals(run.exportedTraceIds, Set.empty[String])
     assertEquals(run.durationCount, 3L)
+  }
+
+  // The executor is the only place Spark exposes the failure as structured fields rather than a
+  // formatted string, so this is where the full detail has to survive onto the span.
+  test("a failed task span carries the exception class, message and stack trace") {
+    sys.props("FLARE_TRACE_GRANULARITY") = "all"
+    val spanExporter = InMemorySpanExporter.create()
+    val sdk = OpenTelemetrySdk.builder()
+      .setTracerProvider(
+        SdkTracerProvider.builder()
+          .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+          .build()
+      )
+      .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(InMemoryMetricReader.create()).build())
+      .buildAndRegisterGlobal()
+
+    try {
+      val plugin = new FlareExecutorPlugin()
+      plugin.init(StubPluginContext, java.util.Collections.emptyMap[String, String]())
+
+      FlareTestHelpers.bindEmptyTaskContext()
+      plugin.onTaskStart()
+      plugin.onTaskFailed(
+        FlareTestHelpers.exceptionFailure(new IllegalArgumentException("negative partition")),
+      )
+      FlareTestHelpers.unbindTaskContext()
+
+      val span = spanExporter.getFinishedSpanItems.asScala.find(_.getName == "spark.task.executor").get
+
+      assertEquals(span.getStatus.getStatusCode, StatusCode.ERROR)
+      assertEquals(span.getAttributes.get(Task.Result), "FAILED")
+      assertEquals(span.getAttributes.get(Error.Type), "java.lang.IllegalArgumentException")
+      // description, not toString — toString would be "java.lang.IllegalArgumentException: ..."
+      assertEquals(span.getAttributes.get(Error.Message), "negative partition")
+
+      val exEvent = span.getEvents.asScala.find(_.getName == "exception").get
+      assert(
+        exEvent.getAttributes.get(AttributeKey.stringKey("exception.stacktrace"))
+          .contains("java.lang.IllegalArgumentException"),
+      )
+    } finally {
+      sdk.close()
+      sys.props.remove("FLARE_TRACE_GRANULARITY")
+    }
+  }
+
+  test("a non-exception task failure records the Spark reason class as error.type") {
+    sys.props("FLARE_TRACE_GRANULARITY") = "all"
+    val spanExporter = InMemorySpanExporter.create()
+    val sdk = OpenTelemetrySdk.builder()
+      .setTracerProvider(
+        SdkTracerProvider.builder()
+          .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+          .build()
+      )
+      .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(InMemoryMetricReader.create()).build())
+      .buildAndRegisterGlobal()
+
+    try {
+      val plugin = new FlareExecutorPlugin()
+      plugin.init(StubPluginContext, java.util.Collections.emptyMap[String, String]())
+
+      FlareTestHelpers.bindEmptyTaskContext()
+      plugin.onTaskStart()
+      plugin.onTaskFailed(org.apache.spark.TaskResultLost)
+      FlareTestHelpers.unbindTaskContext()
+
+      val span = spanExporter.getFinishedSpanItems.asScala.find(_.getName == "spark.task.executor").get
+
+      assertEquals(span.getAttributes.get(Error.Type), "org.apache.spark.TaskResultLost")
+      // No user exception, so no stack trace to attach.
+      assert(span.getEvents.asScala.forall(_.getName != "exception"))
+    } finally {
+      sdk.close()
+      sys.props.remove("FLARE_TRACE_GRANULARITY")
+    }
   }
 
   test("a failed task is measured even when its span is suppressed") {

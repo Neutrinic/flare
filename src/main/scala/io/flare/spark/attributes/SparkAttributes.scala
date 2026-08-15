@@ -92,9 +92,11 @@ object SparkAttributes {
     val SqlExecutionId    = AttributeKey.longKey("spark.task.sql.execution_id")
   }
 
-  // OTEL semantic conventions
+  // OTEL semantic conventions. Set on failed job, stage and task spans via
+  // io.flare.spark.attributes.FailureDetail, which also emits the `exception` span event.
   object Error {
-    // Not yet set anywhere — see #46, which pairs it with Span.recordException.
+    // Absent rather than guessed when Spark only gave us a formatted string with no
+    // recognisable exception class — see FailureDetail.fromReasonString.
     val Type    = AttributeKey.stringKey("error.type")
     val Message = AttributeKey.stringKey("error.message")
   }

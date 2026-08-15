@@ -3,7 +3,7 @@ package io.flare.spark.listener
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.{FlareConfig, TraceGranularity}
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
-import io.opentelemetry.api.common.Attributes
+import io.opentelemetry.api.common.{AttributeKey, Attributes}
 import io.opentelemetry.api.trace.{SpanKind, StatusCode}
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -178,6 +178,69 @@ class TracingSparkListenerTest extends FunSuite {
         jobSpan.getAttributes.get(Job.Result),
         "FAILED",
       )
+    }
+  }
+
+  test("failed job span carries error.type and an exception event with a stack trace") {
+    withListener { (listener, exporter) =>
+      listener.onJobStart(makeJobStart(0, Seq(0)))
+      listener.onJobEnd(makeJobEnd(0, succeeded = false))
+      listener.shutdown()
+
+      val jobSpan = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.job.0").get
+
+      // The exception class, so failures group. makeJobEnd fails with a RuntimeException.
+      assertEquals(jobSpan.getAttributes.get(Error.Type), "java.lang.RuntimeException")
+      assertEquals(jobSpan.getAttributes.get(Error.Message), "boom")
+
+      // The stack trace, so a non-zero error rate does not send you to the executor logs.
+      val events = jobSpan.getEvents.asScala
+      val exEvent = events.find(_.getName == "exception").get
+      assertEquals(
+        exEvent.getAttributes.get(AttributeKey.stringKey("exception.type")),
+        "java.lang.RuntimeException",
+      )
+      assert(
+        exEvent.getAttributes.get(AttributeKey.stringKey("exception.stacktrace"))
+          .contains("java.lang.RuntimeException"),
+      )
+    }
+  }
+
+  test("failed stage span sets error.type when the reason names an exception class") {
+    withListener { (listener, exporter) =>
+      listener.onJobStart(makeJobStart(0, Seq(0)))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+
+      val info = FlareTestHelpers.makeStageInfo(0, "stage-0")
+      info.failureReason = Some(
+        "Job aborted due to stage failure: Lost task 0.0 in stage 0.0: " +
+          "java.lang.ArithmeticException: / by zero",
+      )
+      listener.onStageCompleted(SparkListenerStageCompleted(info))
+      listener.shutdown()
+
+      val stageSpan = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.stage.0").get
+
+      assertEquals(stageSpan.getStatus.getStatusCode, StatusCode.ERROR)
+      assertEquals(stageSpan.getAttributes.get(Error.Type), "java.lang.ArithmeticException")
+    }
+  }
+
+  // Spark gives the stage a formatted string only, so error.type must stay absent rather than
+  // become a guess — "OOM" names no class.
+  test("failed stage span omits error.type when the reason names no exception class") {
+    withListener { (listener, exporter) =>
+      listener.onJobStart(makeJobStart(0, Seq(0)))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      listener.onStageCompleted(makeStageCompleted(0, failed = true))
+      listener.shutdown()
+
+      val stageSpan = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.stage.0").get
+
+      assertEquals(stageSpan.getStatus.getStatusCode, StatusCode.ERROR)
+      assertEquals(stageSpan.getAttributes.get(Error.Type), null)
+      assertEquals(stageSpan.getAttributes.get(Stage.FailureReason), "OOM")
     }
   }
 

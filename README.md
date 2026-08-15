@@ -249,7 +249,8 @@ One per `SparkListenerSQLExecutionStart`. `N` is the execution id.
 | `spark.job.stage.count` | long | Number of stages the job was planned with |
 | `spark.job.description` | string | Conditional — from `spark.job.description` local property |
 | `spark.job.result` | string | `SUCCESS` or `FAILED` |
-| `error.message` | string | Conditional — present only on `FAILED` |
+| `error.type` | string | Conditional — the exception class, e.g. `java.lang.ArithmeticException` |
+| `error.message` | string | Conditional — present only on `FAILED`, first 500 chars |
 
 ### `spark.stage.N` — SpanKind INTERNAL, child of `spark.job.N`
 
@@ -276,6 +277,8 @@ with each other. All are set at `onStageCompleted` from `StageInfo.taskMetrics`.
 | `spark.stage.memory.spilled_bytes` | long | |
 | `spark.stage.disk.spilled_bytes` | long | |
 | `spark.stage.failure_reason` | string | Conditional — first 500 chars |
+| `error.type` | string | Conditional — see the failure note below; **omitted** more often here than on job or task spans |
+| `error.message` | string | Conditional — present only on failure, first 500 chars |
 
 `spark.stage.scheduler.delay_ms` is the only stage attribute Spark does not report. It is derived
 per task as `duration − executorRunTime − deserializeTime − resultSerializationTime −
@@ -297,11 +300,33 @@ fields (host, locality, speculative) are not available to it.
 | `spark.stage.id` | long | Conditional — only under `FLARE_TRACE_GRANULARITY=all`. The parent span already identifies the stage; this repeats it so you can filter without a join |
 | `spark.task.sql.execution_id` | long | Conditional — present when the task belongs to a SQL execution |
 | `spark.task.result` | string | `SUCCESS`, `FAILED`, or `SHUTDOWN` if the JVM went down mid-task |
-| `error.message` | string | Conditional — present only on `FAILED` |
+| `error.type` | string | Conditional — exception class for a user exception, otherwise the Spark failure reason class, e.g. `org.apache.spark.TaskResultLost` |
+| `error.message` | string | Conditional — present only on `FAILED`, first 500 chars |
 | `spark.task.duration_ms` | long | Wall clock on the executor thread |
 | `spark.task.input.bytes` / `output.bytes` | long | |
 | `spark.task.shuffle.read_bytes` / `write_bytes` | long | |
 | `spark.task.peak_memory_bytes` | long | |
+
+### Failures — `error.type`, `error.message` and the `exception` event
+
+A failed job, stage or task span carries `error.type` and `error.message`, and status `ERROR`.
+Where a stack trace is available it is attached as an OTEL `exception` span event with
+`exception.type`, `exception.message` and `exception.stacktrace` (capped at 8000 chars).
+
+Spark reports failures three different ways, which is why the detail differs by span:
+
+| Span | Source | `error.type` | `exception` event |
+|------|--------|--------------|-------------------|
+| `spark.job.N` | live `Throwable` from `JobFailed` | Exception class | Yes — full driver-side stack trace |
+| `spark.stage.N` | formatted string only | Recovered by pattern; **omitted** if none matches | No |
+| `spark.task.executor` | `TaskFailedReason` | `ExceptionFailure.className`, else the reason class | Yes, for `ExceptionFailure` |
+
+`error.type` is the key you group failures by, so it is left **unset** rather than guessed. On a
+stage span Spark hands Flare only a formatted string such as `Job aborted due to stage failure: …
+java.lang.ArithmeticException: / by zero`; the class is recovered from that text when it is
+unambiguous, and omitted otherwise. A missing `error.type` means "not recoverable here", not "no
+error" — `error.message` and `spark.stage.failure_reason` are still populated. The task span for
+the same failure carries the structured version.
 
 The four byte counts and peak memory come from `TaskContext.taskMetrics()`, which is
 `private[spark]` and can throw from outside `org.apache.spark` or in barrier mode. Flare logs at
