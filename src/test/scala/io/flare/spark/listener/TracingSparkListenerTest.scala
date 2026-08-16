@@ -4,7 +4,7 @@ import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.{FlareConfig, TraceGranularity}
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
 import io.opentelemetry.api.common.{AttributeKey, Attributes}
-import io.opentelemetry.api.trace.{SpanKind, StatusCode}
+import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode}
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
@@ -68,13 +68,21 @@ class TracingSparkListenerTest extends FunSuite {
 
   // ── Event helpers using FlareTestHelpers for private[spark] access ──────────
 
-  def makeJobStart(jobId: Int, stageIds: Seq[Int]): SparkListenerJobStart =
+  def makeJobStart(
+    jobId:        Int,
+    stageIds:     Seq[Int],
+    sqlExecution: Option[Long] = None,
+  ): SparkListenerJobStart = {
+    val props = new java.util.Properties()
+    // Spark sets this local property on every job belonging to a SQL execution.
+    sqlExecution.foreach(id => props.setProperty("spark.sql.execution.id", id.toString))
     SparkListenerJobStart(
       jobId      = jobId,
       time       = System.currentTimeMillis(),
       stageInfos = stageIds.map(id => FlareTestHelpers.makeStageInfo(id, s"stage-$id")),
-      properties = new java.util.Properties(),
+      properties = props,
     )
+  }
 
   def makeJobEnd(jobId: Int, succeeded: Boolean): SparkListenerJobEnd =
     SparkListenerJobEnd(
@@ -178,6 +186,65 @@ class TracingSparkListenerTest extends FunSuite {
         jobSpan.getAttributes.get(Job.Result),
         "FAILED",
       )
+    }
+  }
+
+  // #48. Spark's own stage name is useless for async subquery / broadcast stages — it resolves
+  // inside a Spark thread pool — and StageInfo.details cannot rescue it, because that stack was
+  // captured on the pool thread and contains no user frame. The SQL execution names the code.
+  test("stage span carries the SQL execution's description when the job belongs to one") {
+    withListener { (listener, exporter) =>
+      // Seeds the description through the portable seam. SparkListenerSQLExecutionStart cannot
+      // be constructed across the whole matrix (see sqlAttributes), and the SQL span itself is
+      // not under test here — only the description this records for stages to pick up — so a
+      // no-op span is enough.
+      listener.describeSqlExecution(
+        Span.getInvalid, 7L, "show at SkewedJob.scala:48", "", "",
+      )
+
+      listener.onJobStart(makeJobStart(0, Seq(0), sqlExecution = Some(7L)))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      listener.onStageCompleted(makeStageCompleted(0))
+      listener.shutdown()
+
+      val stage = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.stage.0").get
+
+      assertEquals(stage.getAttributes.get(Stage.SqlDescription), "show at SkewedJob.scala:48")
+      assertEquals(stage.getAttributes.get(Stage.SqlExecutionId).longValue(), 7L)
+      // Spark's own name is untouched, so anything correlating with the Spark UI still matches.
+      assertEquals(stage.getAttributes.get(Stage.Name), "stage-0")
+    }
+  }
+
+  test("stage span omits the SQL attributes for a job outside any SQL execution") {
+    withListener { (listener, exporter) =>
+      listener.onJobStart(makeJobStart(0, Seq(0)))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      listener.onStageCompleted(makeStageCompleted(0))
+      listener.shutdown()
+
+      val stage = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.stage.0").get
+
+      assertEquals(stage.getAttributes.get(Stage.SqlDescription), null)
+      assertEquals(stage.getAttributes.get(Stage.SqlExecutionId), null)
+    }
+  }
+
+  // The id is what a stage is joined on, so it must survive even when Spark reports no
+  // description — otherwise a stage silently loses its link to the query.
+  test("stage span still carries the SQL execution id when the description is empty") {
+    withListener { (listener, exporter) =>
+      listener.describeSqlExecution(Span.getInvalid, 9L, "", "", "")
+
+      listener.onJobStart(makeJobStart(1, Seq(3), sqlExecution = Some(9L)))
+      listener.onStageSubmitted(makeStageSubmitted(3))
+      listener.onStageCompleted(makeStageCompleted(3))
+      listener.shutdown()
+
+      val stage = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.stage.3").get
+
+      assertEquals(stage.getAttributes.get(Stage.SqlExecutionId).longValue(), 9L)
+      assertEquals(stage.getAttributes.get(Stage.SqlDescription), null)
     }
   }
 

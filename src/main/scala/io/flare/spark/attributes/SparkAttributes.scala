@@ -21,6 +21,14 @@ object SparkAttributes {
     val Id              = AttributeKey.longKey("spark.stage.id")
     val AttemptId       = AttributeKey.longKey("spark.stage.attempt.id")
     val Name            = AttributeKey.stringKey("spark.stage.name")
+    // Spark's own name for a stage is derived from RDD.creationSite, and for async subquery or
+    // broadcast execution that resolves inside a Spark thread pool — e.g.
+    // `$anonfun$withThreadLocalCaptured$2 at CompletableFuture.java:1768`, which identifies
+    // nothing. The stack in StageInfo.details cannot rescue it: it was captured on the pool
+    // thread, so it holds no user frame at all. The SQL execution the stage belongs to does
+    // name the user code, so it is copied down here. See #48.
+    val SqlDescription  = AttributeKey.stringKey("spark.stage.sql.description")
+    val SqlExecutionId  = AttributeKey.longKey("spark.stage.sql.execution_id")
     val TaskCount       = AttributeKey.longKey("spark.stage.task.count")
     val ExecutorRunTime = AttributeKey.longKey("spark.stage.executor.run_time_ms")
     val ExecutorCpuTime = AttributeKey.longKey("spark.stage.executor.cpu_time_ms")

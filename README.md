@@ -265,7 +265,9 @@ with each other. All are set at `onStageCompleted` from `StageInfo.taskMetrics`.
 |-----------|------|-------------|
 | `spark.stage.id` | long | |
 | `spark.stage.attempt.id` | long | |
-| `spark.stage.name` | string | Spark's `RDD.creationSite` — the same string the Spark UI shows |
+| `spark.stage.name` | string | Spark's `RDD.creationSite` — the same string the Spark UI shows. Frequently useless for async stages; see below |
+| `spark.stage.sql.execution_id` | long | Conditional — present when the stage's job belongs to a SQL execution |
+| `spark.stage.sql.description` | string | Conditional — the SQL execution's description, e.g. `show at SkewedJob.scala:48`. This is the attribute that names user code when `spark.stage.name` cannot |
 | `spark.stage.task.count` | long | |
 | `spark.stage.executor.run_time_ms` | long | |
 | `spark.stage.executor.cpu_time_ms` | long | Converted from Spark's nanoseconds |
@@ -283,6 +285,22 @@ with each other. All are set at `onStageCompleted` from `StageInfo.taskMetrics`.
 | `spark.stage.failure_reason` | string | Conditional — first 500 chars |
 | `error.type` | string | Conditional — see the failure note below; **omitted** more often here than on job or task spans |
 | `error.message` | string | Conditional — present only on failure, first 500 chars |
+
+**Why `spark.stage.name` is often useless, and what to use instead.** Spark derives it from
+`RDD.creationSite`. For an async subquery or broadcast, the RDD is created on a Spark thread-pool
+thread, so the name resolves to something like
+`$anonfun$withThreadLocalCaptured$2 at CompletableFuture.java:1768` — the Spark UI shows the same
+string. In one four-stage `SkewedJob` run, three of the four stages looked like that.
+
+`StageInfo.details` cannot recover it either: that stack was captured on the same pool thread and
+contains no user frame at all, only `org.apache.spark.*` and `java.base/*`. The stages whose names
+*are* useful are the only ones whose stacks contain user code, so walking the stack adds nothing
+where it is needed.
+
+`spark.stage.sql.description` is the answer: for any stage under a SQL execution, Spark's own
+execution description names the user code exactly. `spark.stage.name` is left untouched so
+Spark UI correlation still works. A pure-RDD stage belonging to no SQL execution gets neither
+attribute — there is no source for the information in that case.
 
 `spark.stage.scheduler.delay_ms` is the only stage attribute Spark does not report. It is derived
 per task as `duration − executorRunTime − deserializeTime − resultSerializationTime −
