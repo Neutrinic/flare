@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **README badges and a Dependabot config** — Maven Central version, CI status and licence badges;
+  Dependabot watching GitHub Actions and the `docker/Dockerfile` base image weekly. Dependabot has
+  no sbt ecosystem, so the OpenTelemetry dependencies are still a manual bump ([#70])
 - **Structured exception detail on failed spans** — failed job, stage and task spans now carry
   `error.type` (the exception class) alongside the existing `error.message`, and attach an OTEL
   `exception` span event with `exception.stacktrace` wherever a stack trace is available. Failure
@@ -301,3 +304,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#61]: https://github.com/Neutrinic/flare/issues/61
 [#65]: https://github.com/Neutrinic/flare/issues/65
 [#67]: https://github.com/Neutrinic/flare/issues/67
+[#70]: https://github.com/Neutrinic/flare/issues/70

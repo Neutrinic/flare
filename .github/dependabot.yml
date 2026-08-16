@@ -1,0 +1,23 @@
+version: 2
+
+# Scope note: Dependabot has no sbt/Scala ecosystem, so it cannot see project/Dependencies.scala.
+# The OpenTelemetry compile-scope jars remain a manual bump; the weekly OWASP scan
+# (.github/workflows/security.yml) is the only automated look at them.
+#
+# docker/docker-compose.yml is deliberately left out. Its grafana/* image tags are pinned on
+# purpose so the dev stack is reproducible, and Dependabot would file a PR against every pin.
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # These move together and are all low-risk, so one PR beats five.
+      actions:
+        patterns: ["*"]
+
+  # docker/Dockerfile pins ubi-minimal by patch version, which otherwise drifts silently.
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
