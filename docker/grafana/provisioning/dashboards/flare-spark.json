@@ -10,20 +10,33 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "title": "Application Overview",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           },
           "mappings": [],
@@ -31,20 +44,34 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "title": "Total Jobs",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(traces_spanmetrics_calls_total{span_name=~\"spark.job.*\"}[$__range]))",
           "refId": "A",
           "instant": true
@@ -52,14 +79,22 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           },
           "mappings": [],
@@ -67,20 +102,34 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "title": "Total Stages",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(traces_spanmetrics_calls_total{span_name=~\"spark.stage.*\"}[$__range]))",
           "refId": "A",
           "instant": true
@@ -88,14 +137,22 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null }
+              {
+                "color": "blue",
+                "value": null
+              }
             ]
           },
           "mappings": [],
@@ -103,20 +160,34 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
       "id": 3,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "title": "Total Tasks",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_task_duration_count[$__range]))",
           "refId": "A",
           "instant": true
@@ -124,16 +195,30 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.01 },
-              { "color": "red", "value": 0.05 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
             ]
           },
           "unit": "percentunit",
@@ -142,64 +227,114 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
       "id": 4,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
       "title": "Task Error Rate",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_task_duration_count{task_result=\"FAILED\"}[$__range])) / sum(max_over_time(flare_task_duration_count[$__range])) or vector(0)",
           "refId": "A",
           "instant": true
         }
       ]
     },
-
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
       "id": 101,
       "title": "Task Duration Distribution",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "scheme", "schemeName": "Oranges" },
+          "color": {
+            "mode": "scheme",
+            "schemeName": "Oranges"
+          },
           "custom": {
             "fillOpacity": 80,
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "scaleDistribution": { "type": "linear" }
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 15, "x": 0, "y": 6 },
+      "gridPos": {
+        "h": 10,
+        "w": 15,
+        "x": 0,
+        "y": 6
+      },
       "id": 10,
       "options": {
         "calculate": false,
         "cellGap": 1,
-        "color": { "mode": "scheme", "scheme": "Oranges" },
-        "exemplars": { "color": "rgba(255,0,255,0.7)" },
-        "filterValues": { "le": 1e-9 },
-        "tooltip": { "show": true, "yHistogram": true },
-        "yAxis": { "unit": "ms" }
+        "color": {
+          "mode": "scheme",
+          "scheme": "Oranges"
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-09
+        },
+        "tooltip": {
+          "show": true,
+          "yHistogram": true
+        },
+        "yAxis": {
+          "unit": "ms"
+        }
       },
       "title": "Task Duration by Stage (heatmap)",
-      "description": "Task execution time distribution. Purple dots are exemplars \u2014 click to open the trace in Tempo.",
+      "description": "Task execution time distribution. Purple dots are exemplars — click to open the trace in Tempo.",
       "type": "heatmap",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(flare_task_duration_bucket) by (le, stage_id)",
           "refId": "A",
           "format": "heatmap",
@@ -209,16 +344,30 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1000 },
-              { "color": "red", "value": 5000 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1000
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
             ]
           },
           "unit": "ms",
@@ -226,13 +375,24 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 9, "x": 15, "y": 6 },
+      "gridPos": {
+        "h": 10,
+        "w": 9,
+        "x": 15,
+        "y": 6
+      },
       "id": 11,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "orientation": "horizontal"
       },
@@ -240,21 +400,30 @@
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "histogram_quantile(0.50, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le))",
           "refId": "A",
           "instant": true,
           "legendFormat": "p50"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "histogram_quantile(0.95, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le))",
           "refId": "B",
           "instant": true,
           "legendFormat": "p95"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "histogram_quantile(0.99, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le))",
           "refId": "C",
           "instant": true,
@@ -262,19 +431,28 @@
         }
       ]
     },
-
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
       "id": 102,
       "title": "Shuffle I/O",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -282,18 +460,32 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "lineWidth": 1,
-            "scaleDistribution": { "type": "linear" },
-            "thresholdsStyle": { "mode": "off" }
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "unit": "decbytes",
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
       "id": 20,
       "options": {
         "barRadius": 0.1,
@@ -302,33 +494,57 @@
         "orientation": "horizontal",
         "showValue": "auto",
         "stacking": "none",
-        "tooltip": { "mode": "single" },
-        "xTickLabelRotation": 0
+        "tooltip": {
+          "mode": "single"
+        },
+        "xTickLabelRotation": -45,
+        "xField": "Field"
       },
       "title": "Shuffle by Stage",
       "type": "barchart",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_task_shuffle_read_bytes[$__range])) by (stage_id)",
           "refId": "A",
           "instant": true,
-          "legendFormat": "Read \u2014 stage {{stage_id}}"
+          "legendFormat": "Read — stage {{stage_id}}"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_task_shuffle_write_bytes[$__range])) by (stage_id)",
           "refId": "B",
           "instant": true,
-          "legendFormat": "Write \u2014 stage {{stage_id}}"
+          "legendFormat": "Write — stage {{stage_id}}"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ]
+          }
         }
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -336,18 +552,32 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "lineWidth": 1,
-            "scaleDistribution": { "type": "linear" },
-            "thresholdsStyle": { "mode": "off" }
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "unit": "decbytes",
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
       "id": 21,
       "options": {
         "barRadius": 0.1,
@@ -356,88 +586,180 @@
         "orientation": "horizontal",
         "showValue": "auto",
         "stacking": "none",
-        "tooltip": { "mode": "single" },
-        "xTickLabelRotation": 0
+        "tooltip": {
+          "mode": "single"
+        },
+        "xTickLabelRotation": -45,
+        "xField": "Field"
       },
-      "title": "Shuffle by Executor (skew detection)",
-      "description": "Uneven bars indicate data skew across executors.",
+      "title": "Shuffle by Executor",
+      "description": "Raw shuffle bytes per executor. This is volume, not skew — see the Task Duration Skew panel for the imbalance ratio.",
       "type": "barchart",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_task_shuffle_read_bytes[$__range])) by (executor_id)",
           "refId": "A",
           "instant": true,
-          "legendFormat": "Read \u2014 executor {{executor_id}}"
+          "legendFormat": "Read — executor {{executor_id}}"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_task_shuffle_write_bytes[$__range])) by (executor_id)",
           "refId": "B",
           "instant": true,
-          "legendFormat": "Write \u2014 executor {{executor_id}}"
+          "legendFormat": "Write — executor {{executor_id}}"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ]
+          }
         }
       ]
     },
-
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
       "id": 103,
       "title": "Stage Summary",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
           "custom": {
             "align": "auto",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Executor Run Time p95" },
-            "properties": [{ "id": "unit", "value": "ms" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Executor Run Time p95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Input" },
-            "properties": [{ "id": "unit", "value": "decbytes" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Input"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "decbytes"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Output" },
-            "properties": [{ "id": "unit", "value": "decbytes" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Output"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "decbytes"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Shuffle Read" },
-            "properties": [{ "id": "unit", "value": "decbytes" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Shuffle Read"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "decbytes"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Shuffle Write" },
-            "properties": [{ "id": "unit", "value": "decbytes" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Shuffle Write"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "decbytes"
+              }
+            ]
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 26 },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
       "id": 30,
       "options": {
         "cellHeight": "sm",
-        "footer": { "countRows": false, "reducer": ["sum"], "show": false },
+        "footer": {
+          "countRows": false,
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
         "showHeader": true,
-        "sortBy": [{ "displayName": "stage_id", "desc": false }]
+        "sortBy": [
+          {
+            "displayName": "stage_id",
+            "desc": false
+          }
+        ]
       },
       "title": "Stage Metrics",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "histogram_quantile(0.95, sum(max_over_time(flare_stage_executor_run_time_bucket[$__range])) by (le, stage_id, stage_name))",
           "refId": "A",
           "instant": true,
@@ -445,7 +767,10 @@
           "format": "table"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_stage_input_bytes[$__range])) by (stage_id, stage_name)",
           "refId": "B",
           "instant": true,
@@ -453,7 +778,10 @@
           "format": "table"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_stage_shuffle_read_bytes[$__range])) by (stage_id, stage_name)",
           "refId": "C",
           "instant": true,
@@ -461,7 +789,10 @@
           "format": "table"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_stage_shuffle_write_bytes[$__range])) by (stage_id, stage_name)",
           "refId": "D",
           "instant": true,
@@ -477,7 +808,9 @@
         {
           "id": "organize",
           "options": {
-            "excludeByName": { "Time": true },
+            "excludeByName": {
+              "Time": true
+            },
             "renameByName": {
               "Value #A": "Executor Run Time p95",
               "Value #B": "Input",
@@ -488,19 +821,28 @@
         }
       ]
     },
-
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
       "id": 104,
       "title": "Executor Skew",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -508,18 +850,32 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "lineWidth": 1,
-            "scaleDistribution": { "type": "linear" },
-            "thresholdsStyle": { "mode": "off" }
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "unit": "ms",
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 35 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 35
+      },
       "id": 40,
       "options": {
         "barRadius": 0.1,
@@ -528,27 +884,48 @@
         "orientation": "vertical",
         "showValue": "auto",
         "stacking": "none",
-        "tooltip": { "mode": "single" },
-        "xTickLabelRotation": 0
+        "tooltip": {
+          "mode": "single"
+        },
+        "xTickLabelRotation": -45,
+        "xField": "Field"
       },
       "title": "Avg Task Duration by Executor",
       "description": "Uneven bars indicate compute skew across executors.",
       "type": "barchart",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_task_duration_sum[$__range])) by (executor_id) / sum(max_over_time(flare_task_duration_count[$__range])) by (executor_id)",
           "refId": "A",
           "instant": true,
           "legendFormat": "executor {{executor_id}}"
         }
+      ],
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ]
+          }
+        }
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
@@ -556,17 +933,31 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "lineWidth": 1,
-            "scaleDistribution": { "type": "linear" },
-            "thresholdsStyle": { "mode": "off" }
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "green", "value": null }]
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 35 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 35
+      },
       "id": 41,
       "options": {
         "barRadius": 0.1,
@@ -575,33 +966,131 @@
         "orientation": "vertical",
         "showValue": "auto",
         "stacking": "none",
-        "tooltip": { "mode": "single" },
-        "xTickLabelRotation": 0
+        "tooltip": {
+          "mode": "single"
+        },
+        "xTickLabelRotation": -45,
+        "xField": "Field"
       },
       "title": "Task Count by Executor",
       "description": "Uneven distribution indicates scheduling imbalance.",
       "type": "barchart",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "mimir" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
           "expr": "sum(max_over_time(flare_task_duration_count[$__range])) by (executor_id)",
           "refId": "A",
           "instant": true,
           "legendFormat": "executor {{executor_id}}"
         }
+      ],
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ]
+          }
+        }
       ]
     },
-
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "Task Duration Skew (p99 / p50)",
+      "description": "Ratio of the 99th-percentile task duration to the median, over every individual task observation in the histogram. 1.0 means uniform; higher means a tail of stragglers. Computed from flare_task_duration_bucket because that is the only task metric with per-task granularity — the shuffle byte counters are pre-aggregated per (executor_id, stage_id), so a ratio over them cannot see partition-level imbalance.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "unit": "none",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "histogram_quantile(0.99, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le)) / histogram_quantile(0.50, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le))",
+          "instant": true,
+          "legendFormat": "skew"
+        }
+      ]
+    },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
       "id": 105,
       "title": "Logs",
       "type": "row"
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 44 },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
       "id": 50,
       "options": {
         "showTime": true,
@@ -618,28 +1107,49 @@
       "type": "logs",
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "loki" },
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
           "expr": "{service_name=~\"flare-driver|flare-executor\"} |= ``",
           "refId": "A"
         }
       ]
     },
-
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 54 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
       "id": 106,
       "title": "Traces",
       "type": "row"
     },
     {
-      "datasource": { "type": "datasource", "uid": "-- Dashboard --" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 55 },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
       "id": 51,
       "options": {
-        "code": { "language": "plaintext", "showLineNumbers": false },
-        "content": "### [Open Tempo Explore \u2192](/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22%7Bresource.service.name%20%3D%20%5C%22flare-driver%5C%22%7D%22%7D%5D%7D%7D&orgId=1)\n\nSearch for Spark application traces in Grafana Explore.",
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false
+        },
+        "content": "### [Open Tempo Explore →](/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22%7Bresource.service.name%20%3D%20%5C%22flare-driver%5C%22%7D%22%7D%5D%7D%7D&orgId=1)\n\nSearch for Spark application traces in Grafana Explore.",
         "mode": "markdown"
       },
       "title": "Recent Spark Traces",
@@ -648,12 +1158,21 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["flare", "spark", "otel"],
-  "templating": { "list": [] },
-  "time": { "from": "now-1h", "to": "now" },
+  "tags": [
+    "flare",
+    "spark",
+    "otel"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Flare \u2014 Spark Observability",
+  "title": "Flare — Spark Observability",
   "uid": "flare-spark-overview",
   "version": 1
 }
