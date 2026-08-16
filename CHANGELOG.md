@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   therefore never exercised in the dev stack ([#46])
 
 ### Fixed
+- **Dev-stack dashboard: bar charts bucketed on time, and the skew panel did not measure skew** —
+  the bar charts were already instant queries, but had no transformation and no `xField`, so the
+  `Time` field of an instant frame became the x-axis and every panel drew one year-wide `2026`
+  bucket. A `reduce`/`lastNotNull` transformation with `xField: Field` makes them categorical,
+  keeping the `max_over_time(…[$__range])` wrapper that stops them blanking after a bursty job.
+  The "skew detection" panel plotted raw per-executor shuffle bytes, which cannot distinguish a
+  healthy job from a broken one; it is now honestly labelled, and a new **Task Duration Skew
+  (p99/p50)** stat measures the imbalance. Dev-stack only — no impact on the published artifact
+  ([#50])
 - **Release workflow published every coordinate twice** — the matrix had a Scala axis, but
   `ci-release` runs `+publishSigned` and the `+` cross-builds all of `crossScalaVersions`
   regardless of any preceding `++`. Each of the 7 jobs therefore published the full Scala set for
@@ -294,6 +303,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#42]: https://github.com/Neutrinic/flare/issues/42
 [#44]: https://github.com/Neutrinic/flare/issues/44
 [#45]: https://github.com/Neutrinic/flare/issues/45
+[#50]: https://github.com/Neutrinic/flare/issues/50
 [#46]: https://github.com/Neutrinic/flare/issues/46
 [#47]: https://github.com/Neutrinic/flare/issues/47
 [#52]: https://github.com/Neutrinic/flare/issues/52
