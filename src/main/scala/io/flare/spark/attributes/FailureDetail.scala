@@ -50,6 +50,20 @@ object FailureDetail {
   private val FqcnPattern =
     """\b([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)+(?:Exception|Error|Throwable))\b""".r
 
+  /**
+   * Where the root cause starts in a Spark stage failure message.
+   *
+   * The naive read — first class name in the string — reports the *wrapper*, because Spark
+   * composes these as `org.apache.spark.SparkException: Job aborted due to stage failure: …
+   * most recent failure: … java.lang.ArithmeticException: / by zero`. That would put
+   * `SparkException` on essentially every failed stage, which is confidently wrong and worse
+   * than omitting the attribute.
+   *
+   * Both anchors are formatting conventions rather than API: `most recent failure:` is
+   * DAGScheduler's, `Caused by:` is the JVM's. Tried in that order, most specific first.
+   */
+  private val RootCauseAnchors = Seq("most recent failure:", "Caused by:")
+
   /** From a live exception — the job path, and the only one with a real stack trace object. */
   def fromThrowable(t: Throwable): FailureDetail =
     FailureDetail(
@@ -91,10 +105,27 @@ object FailureDetail {
    */
   def fromReasonString(reason: String): FailureDetail =
     FailureDetail(
-      errorType  = FqcnPattern.findFirstMatchIn(reason).map(_.group(1)),
+      errorType  = rootCauseClass(reason),
       message    = reason,
       stackTrace = None,
     )
+
+  /**
+   * The root cause class in a formatted failure message, or None when nothing matches.
+   *
+   * Searches after the last occurrence of the most specific anchor present, so a wrapping
+   * `SparkException` before the anchor cannot win. Falls back to scanning the whole string when
+   * no anchor is there — in that case the first match is the best available guess, and the
+   * suffix requirement in [[FqcnPattern]] is the only thing keeping it honest.
+   */
+  private def rootCauseClass(reason: String): Option[String] = {
+    val searchFrom = RootCauseAnchors
+      .map(anchor => reason.lastIndexOf(anchor))
+      .find(_ >= 0)
+      .getOrElse(0)
+
+    FqcnPattern.findFirstMatchIn(reason.substring(searchFrom)).map(_.group(1))
+  }
 
   /** Applies the detail to a span: status, attributes, and an `exception` event if we have one. */
   def record(span: Span, detail: FailureDetail): Unit = {

@@ -322,11 +322,25 @@ Spark reports failures three different ways, which is why the detail differs by 
 | `spark.task.executor` | `TaskFailedReason` | `ExceptionFailure.className`, else the reason class | Yes, for `ExceptionFailure` |
 
 `error.type` is the key you group failures by, so it is left **unset** rather than guessed. On a
-stage span Spark hands Flare only a formatted string such as `Job aborted due to stage failure: …
-java.lang.ArithmeticException: / by zero`; the class is recovered from that text when it is
-unambiguous, and omitted otherwise. A missing `error.type` means "not recoverable here", not "no
-error" — `error.message` and `spark.stage.failure_reason` are still populated. The task span for
-the same failure carries the structured version.
+stage span Spark hands Flare only a formatted string, and that string names the wrapper before it
+names the cause:
+
+```
+org.apache.spark.SparkException: Job aborted due to stage failure: Task 0 in stage 1.0
+failed 4 times, most recent failure: Lost task 0.3 in stage 1.0 (TID 7) (executor 1):
+java.lang.ArithmeticException: / by zero
+```
+
+Reading the first class name here would report `SparkException` for practically every failed
+stage. Flare instead searches after the last `most recent failure:` — or `Caused by:` when that is
+absent, taking the innermost — so the reported type is `java.lang.ArithmeticException`. When
+neither anchor is present it falls back to the first fully-qualified name ending in `Exception`,
+`Error` or `Throwable`, and when nothing matches the attribute is omitted.
+
+A missing `error.type` means "not recoverable here", not "no error" — `error.message` and
+`spark.stage.failure_reason` are still populated. Under `FLARE_TRACE_GRANULARITY=tasks` or `all`
+the task span for the same failure carries the structured version, read from
+`ExceptionFailure`'s own fields rather than from text.
 
 The four byte counts and peak memory come from `TaskContext.taskMetrics()`, which is
 `private[spark]` and can throw from outside `org.apache.spark` or in barrier mode. Flare logs at

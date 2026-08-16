@@ -55,6 +55,47 @@ class FailureDetailTest extends FunSuite {
 
   // The point of leaving errorType unset: error.type is the grouping key, so a guess is worse
   // than an absence. "OOM" and similar free text must not become an error type.
+  // The shape Spark actually produces: the root cause is wrapped, so the FIRST class name in the
+  // string is the wrapper. Naively taking the first match reports SparkException for everything.
+  test("fromReasonString picks the root cause, not the wrapping SparkException") {
+    val reason =
+      "org.apache.spark.SparkException: Job aborted due to stage failure: Task 0 in stage 1.0 " +
+        "failed 4 times, most recent failure: Lost task 0.3 in stage 1.0 (TID 7) (executor 1): " +
+        "java.lang.ArithmeticException: / by zero\n" +
+        "\tat io.flare.examples.FailingJob$.$anonfun$main$1(FailingJob.scala:47)\n" +
+        "Driver stacktrace:\n" +
+        "\tat org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2785)"
+
+    assertEquals(
+      FailureDetail.fromReasonString(reason).errorType,
+      Some("java.lang.ArithmeticException"),
+    )
+  }
+
+  test("fromReasonString falls back to 'Caused by:' when there is no 'most recent failure:'") {
+    val reason =
+      "org.apache.spark.SparkException: Task serialization failed\n" +
+        "Caused by: java.io.NotSerializableException: io.flare.examples.Widget"
+
+    assertEquals(
+      FailureDetail.fromReasonString(reason).errorType,
+      Some("java.io.NotSerializableException"),
+    )
+  }
+
+  // Nested causes: the LAST "Caused by:" is the innermost, which is the one worth grouping on.
+  test("fromReasonString takes the innermost cause when causes are nested") {
+    val reason =
+      "org.apache.spark.SparkException: Job aborted\n" +
+        "Caused by: java.lang.RuntimeException: wrapper\n" +
+        "Caused by: java.lang.IllegalStateException: root"
+
+    assertEquals(
+      FailureDetail.fromReasonString(reason).errorType,
+      Some("java.lang.IllegalStateException"),
+    )
+  }
+
   test("fromReasonString leaves errorType unset when nothing matches confidently") {
     assertEquals(FailureDetail.fromReasonString("OOM").errorType, None)
     assertEquals(FailureDetail.fromReasonString("executor lost").errorType, None)
