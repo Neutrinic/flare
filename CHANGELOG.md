@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Structured exception detail on failed spans** — failed job, stage and task spans now carry
+  `error.type` (the exception class) alongside the existing `error.message`, and attach an OTEL
+  `exception` span event with `exception.stacktrace` wherever a stack trace is available. Failure
+  handling was previously string-only, so a non-zero error rate still meant grepping executor
+  logs. The executor path reads `ExceptionFailure`'s `className` / `description` / `fullStackTrace`
+  fields rather than its `toString`, so nothing is parsed back out of a formatted string.
+  `error.type` is **omitted rather than guessed** on stage spans, where Spark supplies only a
+  formatted message — it is the grouping key, so a wrong value is worse than an absent one.
+  Adds a `FailingJob` example, since every other example succeeds and the failure path was
+  therefore never exercised in the dev stack ([#46])
+
 ### Fixed
 - **Release workflow published every coordinate twice** — the matrix had a Scala axis, but
   `ci-release` runs `+publishSigned` and the `+` cross-builds all of `crossScalaVersions`

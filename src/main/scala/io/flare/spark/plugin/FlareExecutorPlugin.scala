@@ -2,6 +2,7 @@ package io.flare.spark.plugin
 
 import io.flare.spark.BuildInfo
 import io.flare.spark.SpanCompat._
+import io.flare.spark.attributes.FailureDetail
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.{FlareConfig, TraceGranularity}
 import io.flare.spark.metrics.{FlareMetrics, MetricAttributes}
@@ -160,12 +161,15 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       s"traceId=${span.getSpanContext.getTraceId}, spanCount=$currentCount")
   }
 
-  override def onTaskSucceeded(): Unit = endTask(success = true, reason = None)
+  override def onTaskSucceeded(): Unit = endTask(success = true, failure = None)
 
+  // The TaskFailedReason is carried through rather than stringified here: ExceptionFailure holds
+  // the class name, description and full stack trace as separate fields, and toString throws that
+  // structure away. This is the only failure path in Flare with that detail available.
   override def onTaskFailed(failureReason: TaskFailedReason): Unit =
-    endTask(success = false, reason = Some(failureReason.toString))
+    endTask(success = false, failure = Option(failureReason))
 
-  private def endTask(success: Boolean, reason: Option[String]): Unit = {
+  private def endTask(success: Boolean, failure: Option[TaskFailedReason]): Unit = {
     val metricState = Option(taskMetricState.get()).flatten
     val durationMs  = metricState
       .map { case (_, startNanos) => (System.nanoTime() - startNanos) / 1000000L }
@@ -178,7 +182,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
         // a span that really will be exported.
         case (Some((span, scope)), Some((tc, _))) if !isSuppressedAsFast(durationMs) =>
           try {
-            describeTaskSpan(span, tc, durationMs, success, reason)
+            describeTaskSpan(span, tc, durationMs, success, failure)
             recordTaskMetrics(tc, durationMs, success)
           } finally {
             MdcEnricher.remove()
@@ -231,15 +235,20 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     tc:         TaskContext,
     durationMs: Long,
     success:    Boolean,
-    reason:     Option[String],
+    failure:    Option[TaskFailedReason],
   ): Unit = {
     if (success) {
       span.setStatus(StatusCode.OK)
       span.setAttribute(Task.Result, "SUCCESS")
     } else {
-      span.setStatus(StatusCode.ERROR, reason.getOrElse("Task failed"))
       span.setAttribute(Task.Result, "FAILED")
-      reason.foreach(r => span.setAttribute(Error.Message, r))
+      FailureDetail.record(
+        span,
+        failure.map(FailureDetail.fromTaskFailure).getOrElse(
+          // onTaskFailed is contractually given a reason, so this is defensive only.
+          FailureDetail(errorType = None, message = "Task failed", stackTrace = None)
+        ),
+      )
     }
 
     if (durationMs >= 0) {

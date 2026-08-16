@@ -1,12 +1,14 @@
 package io.flare.spark.listener
 
 import io.flare.spark.SpanCompat._
+import io.flare.spark.attributes.FailureDetail
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.FlareConfig
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
 import io.flare.spark.metrics.{FlareMetrics, MetricAttributes}
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
+import org.apache.spark.FlareJobResultAccess
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{
   SparkListenerSQLAdaptiveExecutionUpdate,
@@ -150,9 +152,15 @@ class TracingSparkListener(
             span.setStatus(StatusCode.OK)
             span.setAttribute(Job.Result, "SUCCESS")
           case failed =>
-            span.setStatus(StatusCode.ERROR, failed.toString)
             span.setAttribute(Job.Result, "FAILED")
-            span.setAttribute(Error.Message, failed.toString)
+            // The job is the one place Spark hands us a live Throwable, so it is the one place
+            // the span can carry a real stack trace. Falling back to toString keeps a job whose
+            // result is not a JobFailed from losing its failure message entirely.
+            val detail = FlareJobResultAccess
+              .failureException(failed)
+              .map(FailureDetail.fromThrowable)
+              .getOrElse(FailureDetail.fromReasonString(failed.toString))
+            FailureDetail.record(span, detail)
         }
         span.end()
         logger.debug(s"[Flare] Job ${event.jobId} ended")
@@ -301,7 +309,10 @@ class TracingSparkListener(
 
         event.stageInfo.failureReason match {
           case Some(reason) =>
-            span.setStatus(StatusCode.ERROR, reason)
+            // Spark only ever gives the stage a formatted string here — no Throwable, no
+            // structured fields — so error.type is recovered by pattern and left unset when
+            // nothing matches. Task spans carry the structured version of the same failure.
+            FailureDetail.record(span, FailureDetail.fromReasonString(reason))
             span.setAttribute(Stage.FailureReason, reason.take(500)) // cap length
           case None =>
             span.setStatus(StatusCode.OK)
