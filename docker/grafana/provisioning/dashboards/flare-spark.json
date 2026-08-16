@@ -497,8 +497,15 @@
         "tooltip": {
           "mode": "single"
         },
-        "xTickLabelRotation": -45,
-        "xField": "Field"
+        "xTickLabelRotation": 0,
+        "xField": "Field",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "xTickLabelSpacing": 100
       },
       "title": "Shuffle by Stage",
       "type": "barchart",
@@ -589,8 +596,15 @@
         "tooltip": {
           "mode": "single"
         },
-        "xTickLabelRotation": -45,
-        "xField": "Field"
+        "xTickLabelRotation": 0,
+        "xField": "Field",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "xTickLabelSpacing": 100
       },
       "title": "Shuffle by Executor",
       "description": "Raw shuffle bytes per executor. This is volume, not skew — see the Task Duration Skew panel for the imbalance ratio.",
@@ -887,8 +901,15 @@
         "tooltip": {
           "mode": "single"
         },
-        "xTickLabelRotation": -45,
-        "xField": "Field"
+        "xTickLabelRotation": 0,
+        "xField": "Field",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "xTickLabelSpacing": 100
       },
       "title": "Avg Task Duration by Executor",
       "description": "Uneven bars indicate compute skew across executors.",
@@ -969,8 +990,15 @@
         "tooltip": {
           "mode": "single"
         },
-        "xTickLabelRotation": -45,
-        "xField": "Field"
+        "xTickLabelRotation": 0,
+        "xField": "Field",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "xTickLabelSpacing": 100
       },
       "title": "Task Count by Executor",
       "description": "Uneven distribution indicates scheduling imbalance.",
