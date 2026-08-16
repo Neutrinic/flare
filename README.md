@@ -1,5 +1,9 @@
 # Flare
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.neutrinic/flare-spark-3-5_2.13?label=maven%20central)](https://central.sonatype.com/artifact/io.github.neutrinic/flare-spark-3-5_2.13)
+[![CI](https://github.com/Neutrinic/flare/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Neutrinic/flare/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 Full-stack OpenTelemetry observability for Apache Spark — traces, metrics, and logs correlated across driver and executor JVMs.
 
 ![Dashboard](screenshots/dashboard.png)
