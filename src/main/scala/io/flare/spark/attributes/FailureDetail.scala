@@ -64,6 +64,24 @@ object FailureDetail {
    */
   private val RootCauseAnchors = Seq("most recent failure:", "Caused by:")
 
+  /**
+   * A Spark error class, e.g. `[DIVIDE_BY_ZERO]` or `[CANNOT_PARSE.INVALID_FORMAT]`.
+   *
+   * Spark 3.4+ formats many failures as an error class rather than an exception trace, and those
+   * messages contain no class name at all:
+   *
+   * {{{
+   * [DIVIDE_BY_ZERO] Division by zero. Use `try_divide` to tolerate divisor being 0 …
+   * == SQL (line 1, position 1) ==
+   * id div divisor
+   * }}}
+   *
+   * Observed on a real Spark 4.0 stage failure, where the FQCN search correctly found nothing.
+   * The error class is a deliberately stable, low-cardinality identifier — a better grouping key
+   * than an exception class, not a worse one — so it is used when no class name is available.
+   */
+  private val ErrorClassPattern = """^\s*\[([A-Z][A-Z0-9_]*(?:\.[A-Z][A-Z0-9_]*)*)\]""".r
+
   /** From a live exception — the job path, and the only one with a real stack trace object. */
   def fromThrowable(t: Throwable): FailureDetail =
     FailureDetail(
@@ -124,7 +142,13 @@ object FailureDetail {
       .find(_ >= 0)
       .getOrElse(0)
 
-    FqcnPattern.findFirstMatchIn(reason.substring(searchFrom)).map(_.group(1))
+    FqcnPattern
+      .findFirstMatchIn(reason.substring(searchFrom))
+      .map(_.group(1))
+      // No class name anywhere — fall back to Spark's own error class if the message leads with
+      // one. Checked against the whole string, since the error class prefixes the message rather
+      // than following any of the anchors.
+      .orElse(ErrorClassPattern.findFirstMatchIn(reason).map(_.group(1)))
   }
 
   /** Applies the detail to a span: status, attributes, and an `exception` event if we have one. */

@@ -335,7 +335,21 @@ Reading the first class name here would report `SparkException` for practically 
 stage. Flare instead searches after the last `most recent failure:` — or `Caused by:` when that is
 absent, taking the innermost — so the reported type is `java.lang.ArithmeticException`. When
 neither anchor is present it falls back to the first fully-qualified name ending in `Exception`,
-`Error` or `Throwable`, and when nothing matches the attribute is omitted.
+`Error` or `Throwable`.
+
+Spark 3.4+ also formats many failures as an **error class** with no exception name anywhere in the
+text:
+
+```
+[DIVIDE_BY_ZERO] Division by zero. Use `try_divide` to tolerate divisor being 0 …
+== SQL (line 1, position 1) ==
+id div divisor
+```
+
+When no class name is found, that leading error class is used instead — so this stage reports
+`error.type = DIVIDE_BY_ZERO`. Spark error classes are stable, low-cardinality identifiers, which
+makes them a good grouping key rather than a lesser one. An exception class still wins when both
+are present. Only when neither is available is the attribute omitted.
 
 A missing `error.type` means "not recoverable here", not "no error" — `error.message` and
 `spark.stage.failure_reason` are still populated. Under `FLARE_TRACE_GRANULARITY=tasks` or `all`

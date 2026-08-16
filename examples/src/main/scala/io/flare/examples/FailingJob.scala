@@ -1,6 +1,7 @@
 package io.flare.examples
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
 
 /**
  * Deliberate task failure — the exercise for Flare's failure path.
@@ -10,8 +11,8 @@ import org.apache.spark.sql.SparkSession
  * task fails while the rest of the stage completes normally.
  *
  * What to look for in Grafana:
- *   - the `spark.task.executor` span for the failing partition is red, with
- *     `error.type = java.lang.ArithmeticException` and the message on `error.message`
+ *   - the `spark.task.executor` span for the failing partition is red, with `error.type` set to
+ *     the arithmetic exception class and the message on `error.message`
  *   - that span has an `exception` event carrying `exception.stacktrace` — the whole point is
  *     that a non-zero error rate no longer means grepping executor logs
  *   - the enclosing `spark.stage.N` and `spark.job.N` spans are also red. The stage's
@@ -21,12 +22,15 @@ import org.apache.spark.sql.SparkSession
  * Spark retries a failed task before giving up on the stage, so expect several failed task spans
  * for the same partition. That is real Spark behaviour, not double reporting.
  *
- * Unlike the other examples this one uses `Dataset.map` rather than staying on the DataFrame API.
- * That is deliberate: a column expression like `id / divisor` yields null on divide-by-zero
- * instead of throwing unless ANSI mode is on, and under ANSI the class is
- * `org.apache.spark.SparkArithmeticException`, which varies across the support matrix. A plain
- * Scala closure throws `java.lang.ArithmeticException` on every version, which is what makes this
- * a stable demonstration of `error.type`.
+ * Stays on the DataFrame API like the other examples. That is not stylistic: the dev stack image
+ * runs Spark 4.0 while these examples are built against 3.5, and `Dataset.map` needs
+ * `SparkSession.implicits`, whose signature changed in 4.0 — it fails with `NoSuchMethodError`
+ * under that skew. Integer division under ANSI mode throws inside the task with no such
+ * dependency.
+ *
+ * ANSI is set explicitly because it is off by default before Spark 4.0. The exception class is
+ * `org.apache.spark.SparkArithmeticException` on Spark 3.4+ (a subclass of
+ * `java.lang.ArithmeticException`), which is what `error.type` will show.
  *
  * The job exits non-zero. That is the point; do not "fix" it.
  */
@@ -36,21 +40,25 @@ object FailingJob {
       .appName("Flare Example — Deliberate Failure")
       .getOrCreate()
 
-    import spark.implicits._
+    // Off by default before 4.0; without it division by zero yields null instead of throwing.
+    spark.conf.set("spark.sql.ansi.enabled", "true")
 
     println("=== Flare Failing Job ===")
     println("One partition divides by zero. This job is EXPECTED to fail.")
 
     // divisor is 0 only for ids below 1000, which all land on the first of 8 partitions.
-    // Computed per row so the compiler cannot fold it into a constant.
-    val doomed = spark.range(0, 100000, 1, numPartitions = 8).map { id =>
-      val divisor = if (id < 1000) 0L else 7L
-      id / divisor // java.lang.ArithmeticException: / by zero, on the executor thread
-    }
+    val data = spark.range(0, 100000, 1, numPartitions = 8).select(
+      col("id"),
+      when(col("id") < 1000, lit(0)).otherwise(lit(7)).alias("divisor"),
+    )
+
+    // `div` is integer division, which throws under ANSI. `/` returns a double and would give
+    // Infinity rather than failing.
+    val doomed = data.select(expr("id div divisor").alias("ratio"))
 
     try {
-      println("\n--- Running (expect ArithmeticException on partition 0) ---")
-      println(s"count = ${doomed.count()}")
+      println("\n--- Running (expect an arithmetic exception on partition 0) ---")
+      println(s"count = ${doomed.filter(col("ratio") >= 0L).count()}")
       println("\nUNEXPECTED: the job succeeded. The failure path was NOT exercised.")
       spark.stop()
       sys.exit(2)

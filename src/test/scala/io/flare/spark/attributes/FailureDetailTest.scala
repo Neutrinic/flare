@@ -96,6 +96,37 @@ class FailureDetailTest extends FunSuite {
     )
   }
 
+  // Verbatim from a Spark 4.0 stage failureReason in the dev stack (FailingJob). Spark 3.4+
+  // formats many failures as an error class with NO class name anywhere in the text, so without
+  // this fallback error.type is empty on exactly the failures the default granularity shows.
+  test("fromReasonString uses the Spark error class when the message names no exception") {
+    val reason =
+      "[DIVIDE_BY_ZERO] Division by zero. Use `try_divide` to tolerate divisor being 0 and " +
+        "return NULL instead. If necessary set \"spark.sql.ansi.enabled\" to \"false\" to bypass " +
+        "this error. SQLSTATE: 22012\n== SQL (line 1, position 1) ==\nid div divisor\n^^^^^^^^^^^^^^\n"
+
+    assertEquals(FailureDetail.fromReasonString(reason).errorType, Some("DIVIDE_BY_ZERO"))
+  }
+
+  test("fromReasonString handles a dotted Spark error sub-class") {
+    assertEquals(
+      FailureDetail.fromReasonString("[CANNOT_PARSE.INVALID_FORMAT] bad input").errorType,
+      Some("CANNOT_PARSE.INVALID_FORMAT"),
+    )
+  }
+
+  // A real class name is more precise than the error class, so it still wins when both appear.
+  test("fromReasonString prefers an exception class over a leading error class") {
+    val reason =
+      "[DIVIDE_BY_ZERO] Division by zero, most recent failure: Lost task 0.0: " +
+        "org.apache.spark.SparkArithmeticException: / by zero"
+
+    assertEquals(
+      FailureDetail.fromReasonString(reason).errorType,
+      Some("org.apache.spark.SparkArithmeticException"),
+    )
+  }
+
   test("fromReasonString leaves errorType unset when nothing matches confidently") {
     assertEquals(FailureDetail.fromReasonString("OOM").errorType, None)
     assertEquals(FailureDetail.fromReasonString("executor lost").errorType, None)
