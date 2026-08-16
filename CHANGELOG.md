@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`spark.stage.sql.description` and `spark.stage.sql.execution_id` on stage spans** — Spark
+  derives `spark.stage.name` from `RDD.creationSite`, which for async subquery and broadcast
+  stages resolves inside a Spark thread pool and yields
+  `$anonfun$withThreadLocalCaptured$2 at CompletableFuture.java:1768`. Three of four stages in a
+  `SkewedJob` run looked like that. Walking `StageInfo.details` for a user frame — the originally
+  proposed fix — cannot work: that stack was captured on the pool thread and contains no user
+  frame at all, so it only ever resolves for stages whose names were already fine. The SQL
+  execution the stage belongs to *does* name the user code, so it is propagated down.
+  `spark.stage.name` is unchanged, so Spark UI correlation is unaffected, and a pure-RDD stage
+  outside any SQL execution gets neither attribute rather than a guess ([#48])
 - **README badges and a Dependabot config** — Maven Central version, CI status and licence badges;
   Dependabot watching GitHub Actions and the `docker/Dockerfile` base image weekly. Dependabot has
   no sbt ecosystem, so the OpenTelemetry dependencies are still a manual bump ([#70])
@@ -303,6 +313,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#42]: https://github.com/Neutrinic/flare/issues/42
 [#44]: https://github.com/Neutrinic/flare/issues/44
 [#45]: https://github.com/Neutrinic/flare/issues/45
+[#48]: https://github.com/Neutrinic/flare/issues/48
 [#50]: https://github.com/Neutrinic/flare/issues/50
 [#46]: https://github.com/Neutrinic/flare/issues/46
 [#47]: https://github.com/Neutrinic/flare/issues/47

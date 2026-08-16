@@ -49,6 +49,13 @@ class TracingSparkListener(
   // Critical for correct parent attribution when multiple jobs run concurrently
   private val stageToJob: TrieMap[Int, Int] = TrieMap.empty
 
+  // stageId → SQL execution id, and that execution's description. Both built at onJobStart,
+  // which is the only event carrying the spark.sql.execution.id property alongside the stage
+  // list. Lets a stage span name the user code that a Spark-generated stage name cannot —
+  // see #48 and Stage.SqlDescription.
+  private val stageToSql:      TrieMap[Int, Long]    = TrieMap.empty
+  private val sqlDescriptions: TrieMap[Long, String] = TrieMap.empty
+
   // stageId → summed scheduler delay across the stage's tasks, accumulated at onTaskEnd.
   // Unlike every other stage attribute this one is not on StageInfo.taskMetrics: deriving it
   // needs each task's wall clock, which only SparkListenerTaskEnd carries. One Long per
@@ -96,9 +103,7 @@ class TracingSparkListener(
           // No pre-created span yet. Create one and store it in the helper's map
           // via putIfAbsent. If the advice races us and stores first, we discard ours.
           // Parent under SQL span if this job was triggered by a SQL execution.
-          val sqlParent = Option(event.properties)
-            .flatMap(p => Option(p.getProperty("spark.sql.execution.id")))
-            .flatMap(id => try Some(id.toLong) catch { case _: NumberFormatException => None })
+          val sqlParent = sqlExecutionIdOf(event.properties)
             .flatMap(id => Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.get(id)))
 
           val parentContext = sqlParent.orElse(applicationSpan)
@@ -133,13 +138,26 @@ class TracingSparkListener(
         stageToJob.put(stageId, event.jobId)
       }
 
+      // Same for the SQL execution, when this job belongs to one. Read from the job's
+      // properties rather than the span, because the description is what stages need and
+      // the span does not carry it back.
+      sqlExecutionIdOf(event.properties).foreach { execId =>
+        event.stageIds.foreach(stageId => stageToSql.put(stageId, execId))
+      }
+
       logger.debug(s"[Flare] Job ${event.jobId} started, stages: ${event.stageIds.mkString(",")}")
     }
 
   override def onJobEnd(event: SparkListenerJobEnd): Unit = {
     // Always clean up stageToJob, even if the job span was missed.
     // This prevents unbounded growth if onJobStart was lost due to listener registration timing.
-    stageToJob.foreach { case (stageId, jId) => if (jId == event.jobId) stageToJob.remove(stageId) }
+    // stageToSql is keyed the same way and is dropped with it, so the two cannot diverge.
+    stageToJob.foreach { case (stageId, jId) =>
+      if (jId == event.jobId) {
+        stageToJob.remove(stageId)
+        stageToSql.remove(stageId)
+      }
+    }
 
     // Clean up pre-created job span from the helper's map
     SubmitMissingTasksAdviceHelper.removeJobSpan(event.jobId)
@@ -203,6 +221,18 @@ class TracingSparkListener(
       span.setLong(Stage.AttemptId, event.stageInfo.attemptNumber().toLong)
       span.setAttribute(Stage.Name, event.stageInfo.name)
       span.setLong(Stage.TaskCount, event.stageInfo.numTasks.toLong)
+
+      // Spark's own stage name is kept above exactly as-is, so anything correlating with the
+      // Spark UI still matches. These are additive: for an async subquery or broadcast stage,
+      // stageInfo.name resolves inside a Spark thread pool and names nothing useful, and
+      // stageInfo.details cannot rescue it because that stack was captured on the pool thread
+      // and holds no user frame at all. The SQL execution does name the user code.
+      stageToSql.get(stageId).foreach { execId =>
+        span.setLong(Stage.SqlExecutionId, execId)
+        sqlDescriptions.get(execId).foreach { desc =>
+          setIfNonEmpty(span, Stage.SqlDescription, desc, config.sqlDescriptionMaxChars)
+        }
+      }
 
       activeStageSpans.put(stageId, span)
       logger.debug(s"[Flare] Stage $stageId submitted")
@@ -362,10 +392,25 @@ class TracingSparkListener(
               span.setStatus(StatusCode.OK)
               span.end()
             }
+          // Removed unconditionally: an execution whose span was never created still recorded
+          // a description, and this is the only event that says the execution is over.
+          sqlDescriptions.remove(e.executionId)
         }
         case _ =>
       }
     }
+
+  /**
+   * The SQL execution id a job belongs to, if any.
+   *
+   * `spark.sql.execution.id` is a local property Spark sets on the job's properties. It is
+   * absent for a pure-RDD job, and a non-numeric value would be a Spark bug rather than
+   * something to propagate, so both fall back to None.
+   */
+  private def sqlExecutionIdOf(properties: java.util.Properties): Option[Long] =
+    Option(properties)
+      .flatMap(p => Option(p.getProperty("spark.sql.execution.id")))
+      .flatMap(id => try Some(id.toLong) catch { case _: NumberFormatException => None })
 
   // ── Cleanup ───────────────────────────────────────────────────────────────────
 
@@ -379,6 +424,8 @@ class TracingSparkListener(
     sqlSpans.clear()
     applicationSpan.foreach(_.end())
     stageToJob.clear()
+    stageToSql.clear()
+    sqlDescriptions.clear()
     stageSchedulerDelayMs.clear()
   }
 
@@ -419,6 +466,13 @@ class TracingSparkListener(
     span.setLong(Sql.ExecutionId, executionId)
     // Spark leaves these empty on some execution paths; an empty attribute is pure noise.
     setIfNonEmpty(span, Sql.Description, description, config.sqlDescriptionMaxChars)
+
+    // Also retained off-span so stage spans can carry it (#48). It has to be kept separately
+    // because an OTEL Span is write-only — an attribute cannot be read back off one. Stored
+    // here rather than at the event, so the single place that knows both id and description
+    // owns it, and so tests can reach it without constructing a SQL event whose constructor
+    // is not source-compatible across the matrix.
+    Option(description).filter(_.nonEmpty).foreach(sqlDescriptions.put(executionId, _))
     setIfNonEmpty(span, Sql.Details, details, config.sqlDetailsMaxChars)
 
     // The plan is provisional at this point — AQE has not run. If it re-plans,
