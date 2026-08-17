@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`spark.sql.plan.fingerprint`** — a 16-hex-character hash of the physical plan's shape, so the
+  same query groups across executions and across applications, which the Spark UI structurally
+  cannot do. Catalyst expression ids, `plan_id=` and `[codegen id : N]` are stripped before
+  hashing. That normalisation buys nothing for `spark-submit` batch — Catalyst's id counter is
+  JVM-global and monotonic, so a fresh JVM replays identical ids and two runs are byte-identical —
+  but is essential in a long-lived JVM, where one query shape gets different ids on its 2nd
+  execution than its 50th and raw hashing fragments it into unusable cardinality.
+  Emitted **independently of the plan character caps, including when they are `0`** and no plan
+  text is exported: Tempo's limit is per trace rather than per span, so a large plan overflows it
+  after roughly 50 SQL executions and raising the cap makes that worse, not better. It is computed
+  from the full plan, so differently-capped deployments still group a query identically.
+  AQE runtime statistics (`Statistics(sizeInBytes=…, rowCount=…)`) are stripped too, for a
+  sharper reason: they track the data rather than the query, so leaving them in would fingerprint
+  the same query differently on a busy day than a quiet one.
+  `spark.sql.plan.initial.fingerprint` is left on the pre-AQE tree, so the pair reads as "shape as
+  planned" vs "shape as executed". It is **not** a signal that AQE optimised anything — the final
+  tree always gains `== Final Plan ==` and `QueryStage` wrappers, so the two differ for
+  essentially every AQE query; the initial one is the more stable grouping key ([#55])
 - **`spark.stage.sql.description` and `spark.stage.sql.execution_id` on stage spans** — Spark
   derives `spark.stage.name` from `RDD.creationSite`, which for async subquery and broadcast
   stages resolves inside a Spark thread pool and yields
@@ -315,6 +333,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#45]: https://github.com/Neutrinic/flare/issues/45
 [#48]: https://github.com/Neutrinic/flare/issues/48
 [#50]: https://github.com/Neutrinic/flare/issues/50
+[#55]: https://github.com/Neutrinic/flare/issues/55
 [#46]: https://github.com/Neutrinic/flare/issues/46
 [#47]: https://github.com/Neutrinic/flare/issues/47
 [#52]: https://github.com/Neutrinic/flare/issues/52

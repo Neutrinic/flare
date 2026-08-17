@@ -193,6 +193,48 @@ to also retain the pre-AQE tree as `spark.sql.plan.initial` — the AQE decision
 broadcast conversion, partition coalescing) is only visible by diffing the two. It is off by
 default because it doubles the worst-case plan payload on every SQL span.
 
+**`spark.sql.plan.fingerprint`** hashes the plan's *shape* into 16 hex characters, so the same
+query groups across executions and across applications — something the Spark UI cannot do, having
+no cross-application view. Catalyst expression ids (`#133`, `#522L`), `plan_id=142` and
+`[codegen id : 1]` are stripped before hashing, because they vary without the shape changing.
+
+That normalisation is not needed for `spark-submit` batch: Catalyst's id counter is JVM-global and
+monotonic, so a fresh JVM replays identical ids and the raw plans of two runs are byte-identical.
+It matters in a long-lived JVM — Thrift server, notebook, streaming — where one query shape gets
+different ids on its 2nd execution than its 50th, and raw hashing would fragment it into unusable
+cardinality.
+
+AQE **runtime statistics** are stripped for a different and more important reason. Once AQE
+materialises query stages, the final plan carries what it observed:
+
+```
+ResultQueryStage (11), Statistics(sizeInBytes=8.0 EiB)
++- ShuffleQueryStage (9), Statistics(sizeInBytes=32.0 B, rowCount=2)
+```
+
+Those numbers track the *data*, not the query, so leaving them in would fingerprint the same
+query differently on a busy day than a quiet one — defeating the grouping entirely.
+
+The fingerprint is emitted **independently of the character caps, including when they are `0`**
+and no plan text is exported at all. That is deliberate: Tempo's binding limit is `max_bytes_per_trace`
+(5 MB on the pinned 2.6.1) — per *trace*, not per span — so a 100 kB plan overflows it after
+roughly 50 SQL executions in one application, and raising the cap makes that worse rather than
+better. 16 bytes of grouping is the right lever there.
+
+Because the caps do not reach it, the fingerprint is computed from the full plan, so two
+deployments with different caps still group the same query identically.
+
+`spark.sql.plan.initial.fingerprint` is set from the pre-AQE tree and left alone by re-plans, so
+the pair is **"shape as planned" versus "shape as executed"**. It is emitted even when
+`spark.sql.plan.initial` itself is off.
+
+Do **not** read the two differing as "AQE made an optimisation". Under AQE the final tree always
+gains a `== Final Plan ==` section and `QueryStage` wrappers, so the two differ for essentially
+every AQE-enabled query — all three executions in a `PipelineJob` run differ. Of the two,
+`spark.sql.plan.initial.fingerprint` is the more stable grouping key, since it predates both the
+query stages and their statistics; `spark.sql.plan.fingerprint` additionally reflects the
+decisions AQE actually made, which can legitimately vary between runs of the same query.
+
 ### Resource Attributes
 
 Flare adds two attributes to the OTEL `Resource`, so they appear on every span, metric and log
@@ -244,6 +286,8 @@ One per `SparkListenerSQLExecutionStart`. `N` is the execution id.
 | `spark.sql.plan.truncated` | bool | Conditional — set only when the cap clipped the plan |
 | `spark.sql.plan.initial` | string | Conditional — the pre-AQE plan. Off unless `FLARE_SQL_PLAN_INITIAL_MAX_CHARS > 0` |
 | `spark.sql.plan.initial.truncated` | bool | Conditional — as above, for the initial plan |
+| `spark.sql.plan.fingerprint` | string | 16 hex chars. Hash of the plan's *shape*. Always emitted when a plan exists, **including when the caps are `0`** |
+| `spark.sql.plan.initial.fingerprint` | string | As above for the pre-AQE plan. The more stable of the two — see below |
 
 ### `spark.job.N` — SpanKind INTERNAL, child of `spark.sql.N` or `spark.application`
 
