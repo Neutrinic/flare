@@ -1,7 +1,7 @@
 package io.flare.spark.listener
 
 import io.flare.spark.SpanCompat._
-import io.flare.spark.attributes.FailureDetail
+import io.flare.spark.attributes.{FailureDetail, PlanFingerprint}
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.FlareConfig
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
@@ -480,6 +480,27 @@ class TracingSparkListener(
     // If it never fires, this plan is final and the value stands.
     setPlan(span, Sql.Plan, Sql.PlanTruncated, physicalPlanDescription, config.sqlPlanMaxChars)
 
+    // Fingerprints hash the FULL plan and ignore the character caps entirely, so the same query
+    // groups identically across deployments configured differently — and still groups at all
+    // when the caps are 0 and no plan text is exported.
+    //
+    // Both keys get the same value here because at execution start the plan IS the initial plan.
+    // If AQE re-plans, updateSqlPlan moves Sql.PlanFingerprint on and this one stays put, so the
+    // pair ends up as "shape as planned" vs "shape as executed".
+    //
+    // Do NOT read the two differing as "AQE made an optimisation": under AQE the final tree
+    // always gains == Final Plan == and QueryStage wrappers, so they differ for essentially
+    // every AQE-enabled query. Measured in the dev stack — all three PipelineJob executions
+    // differed. The initial fingerprint is the more stable grouping key of the two, since it
+    // predates both the query stages and their runtime statistics.
+    //
+    // Deliberately not gated on sqlPlanInitialMaxChars: that flag controls the initial plan TEXT,
+    // and the whole point here is getting the grouping key without the payload.
+    PlanFingerprint.of(physicalPlanDescription).foreach { fp =>
+      span.setAttribute(Sql.PlanFingerprint, fp)
+      span.setAttribute(Sql.PlanInitialFingerprint, fp)
+    }
+
     // Retained separately so the AQE decision survives the overwrite. Off unless configured.
     setPlan(
       span,
@@ -497,7 +518,7 @@ class TracingSparkListener(
    * execution; each overwrites the last, so only the final state is retained and the cost is
    * bounded regardless of how many times AQE re-plans.
    */
-  private[listener] def updateSqlPlan(span: Span, physicalPlanDescription: String): Unit =
+  private[listener] def updateSqlPlan(span: Span, physicalPlanDescription: String): Unit = {
     setPlan(
       span,
       Sql.Plan,
@@ -508,6 +529,13 @@ class TracingSparkListener(
       // overwrite that no longer truncates has to say so explicitly or the stale `true` stands.
       clearTruncationFlag = true,
     )
+
+    // Overwrites the running fingerprint, leaving Sql.PlanInitialFingerprint on the pre-AQE tree.
+    // The two differing is then a cheap boolean for "AQE re-planned this query", without holding
+    // or diffing two large plan strings.
+    PlanFingerprint.of(physicalPlanDescription)
+      .foreach(span.setAttribute(Sql.PlanFingerprint, _))
+  }
 
   /** Sets a plan attribute and its truncation flag, honouring `maxChars` (0 drops both). */
   private def setPlan(

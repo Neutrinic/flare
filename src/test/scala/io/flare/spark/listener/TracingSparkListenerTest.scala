@@ -818,6 +818,67 @@ class TracingSparkListenerTest extends FunSuite {
     } finally provider.close()
   }
 
+  // #55. The fingerprint exists so the same query groups across executions and applications,
+  // which the Spark UI structurally cannot do.
+  test("SQL span carries a plan fingerprint, and the initial fingerprint matches it at start") {
+    val attrs = sqlAttributes(plan = "*(1) Project [k#12]\n+- Scan [plan_id=41]")
+
+    val fp = attrs.get(Sql.PlanFingerprint)
+    assert(fp != null && fp.nonEmpty, "expected a plan fingerprint")
+    // At execution start the plan IS the initial plan, so the two must agree.
+    assertEquals(attrs.get(Sql.PlanInitialFingerprint), fp)
+  }
+
+  // The point of a 16-byte fingerprint is grouping WITHOUT plan text. Tempo's limit is per
+  // trace, so a deployment that sets the cap to 0 to stay under it must still get grouping.
+  test("plan fingerprint is emitted even when the plan text is disabled") {
+    val attrs = sqlAttributes(
+      plan      = "*(1) Project [k#12]",
+      sqlConfig = config.copy(sqlPlanMaxChars = 0, sqlPlanInitialMaxChars = 0),
+    )
+
+    assertEquals(attrs.get(Sql.Plan), null)
+    assertEquals(attrs.get(Sql.PlanInitial), null)
+    assert(attrs.get(Sql.PlanFingerprint) != null, "fingerprint must survive a zero plan cap")
+    assert(attrs.get(Sql.PlanInitialFingerprint) != null)
+  }
+
+  // Truncation must not reach the fingerprint, or the same query groups differently between
+  // two deployments configured with different caps.
+  test("plan fingerprint ignores the character cap") {
+    val plan    = "*(1) Project [k#12]\n+- Scan parquet [k#12, v#13]"
+    val full    = sqlAttributes(plan = plan)
+    val clipped = sqlAttributes(plan = plan, sqlConfig = config.copy(sqlPlanMaxChars = 10))
+
+    assertEquals(clipped.get(Sql.PlanTruncated), java.lang.Boolean.TRUE)
+    assertEquals(clipped.get(Sql.PlanFingerprint), full.get(Sql.PlanFingerprint))
+  }
+
+  // The pair is "shape as planned" vs "shape as executed". NOT a boolean for whether AQE
+  // optimised anything: in practice the final tree always gains == Final Plan == and QueryStage
+  // wrappers, so the two differ for essentially every AQE query (measured in the dev stack).
+  test("an AQE re-plan moves the plan fingerprint but not the initial one") {
+    val attrs = sqlAqeAttributes(
+      startPlan = "AdaptiveSparkPlan isFinalPlan=false\n+- SortMergeJoin [k#1], [k#2], Inner",
+      aqePlans  = Seq("AdaptiveSparkPlan isFinalPlan=true\n+- BroadcastHashJoin [k#1], [k#2], Inner"),
+    )
+
+    val current = attrs.get(Sql.PlanFingerprint)
+    val initial = attrs.get(Sql.PlanInitialFingerprint)
+    assert(current != null && initial != null)
+    assertNotEquals(current, initial, "a broadcast conversion must change the fingerprint")
+  }
+
+  // An AQE update that only renumbers ids must NOT look like a re-plan.
+  test("an AQE update that only renumbers ids leaves both fingerprints equal") {
+    val attrs = sqlAqeAttributes(
+      startPlan = "SortMergeJoin [k#1], [k#2], Inner [plan_id=41]",
+      aqePlans  = Seq("SortMergeJoin [k#8842], [k#8843], Inner [plan_id=2317]"),
+    )
+
+    assertEquals(attrs.get(Sql.PlanFingerprint), attrs.get(Sql.PlanInitialFingerprint))
+  }
+
   test("SQL execution metadata is attached to the spark.sql span") {
     val attrs = sqlAttributes(
       description = "count at PipelineJob.scala:42",
