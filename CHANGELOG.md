@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`sql.description` on stage metrics** — `stage.name` is Spark's own `StageInfo.name`, which for
+  async subquery and broadcast stages resolves inside a Spark thread pool and reads
+  `$anonfun$withThreadLocalCaptured$2 at CompletableFuture.java:1768`. The dev dashboard groups on
+  it, so most rows identified nothing. [#48] fixed the span surface; metrics are a separate
+  surface and were untouched. `stage.name` is left exactly as-is for Spark UI parity, and the SQL
+  execution's own label is added alongside it.
+  Adding it costs **zero** additional series: every series already carries `instance`
+  (`service.instance.id`, a per-JVM UUID), and a stage within a JVM has exactly one description,
+  so the new tag is functionally determined by labels already present. Verified against Mimir —
+  grouping by `(stage_id, instance)`, `(…, stage_name)` and `(…, sql_description)` all yield the
+  same series count. Omitted rather than blank for a pure-RDD stage outside any query ([#75])
 - **`spark.sql.plan.fingerprint`** — a 16-hex-character hash of the physical plan's shape, so the
   same query groups across executions and across applications, which the Spark UI structurally
   cannot do. Catalyst expression ids, `plan_id=` and `[codegen id : N]` are stripped before
@@ -51,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   therefore never exercised in the dev stack ([#46])
 
 ### Fixed
+- **Dev-stack Stage Metrics table merged stages across application runs** — it grouped by
+  `(stage_id, stage_name)` only. Stage ids restart per application, so stage 4 of one run was
+  silently summed into stage 4 of another; the two were distinguishable only by `instance`, which
+  the query dropped. Now grouped by `instance` as well, and the new `sql_description` tag is
+  surfaced as a "Query" column ([#75])
 - **Dev-stack dashboard: bar charts bucketed on time, and the skew panel did not measure skew** —
   the bar charts were already instant queries, but had no transformation and no `xField`, so the
   `Time` field of an instant frame became the x-axis and every panel drew one year-wide `2026`
@@ -333,6 +349,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#45]: https://github.com/Neutrinic/flare/issues/45
 [#48]: https://github.com/Neutrinic/flare/issues/48
 [#50]: https://github.com/Neutrinic/flare/issues/50
+[#75]: https://github.com/Neutrinic/flare/issues/75
 [#55]: https://github.com/Neutrinic/flare/issues/55
 [#46]: https://github.com/Neutrinic/flare/issues/46
 [#47]: https://github.com/Neutrinic/flare/issues/47

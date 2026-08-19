@@ -57,7 +57,7 @@ class FlareMetricsTest extends FunSuite {
 
   test("stage metrics record correctly") {
     withMetrics { (metrics, reader) =>
-      val attrs = MetricAttributes.forStage(7, "shuffle read")
+      val attrs = MetricAttributes.forStage(7, "shuffle read", None)
       metrics.stageExecutorRunTime.record(3500.0, attrs)
       metrics.stageInputBytes.add(1048576L, attrs)
       metrics.stageShuffleReadBytes.add(512000L, attrs)
@@ -100,11 +100,37 @@ class FlareMetricsTest extends FunSuite {
   }
 
   test("MetricAttributes.forStage includes correct keys") {
-    val attrs = MetricAttributes.forStage(7, "shuffle read")
+    val attrs = MetricAttributes.forStage(7, "shuffle read", None)
     val attrMap = new java.util.HashMap[String, Any]()
     attrs.forEach((k, v) => attrMap.put(k.getKey, v))
 
     assertEquals(attrMap.get("stage.id"), 7L: java.lang.Long)
     assertEquals(attrMap.get("stage.name"), "shuffle read")
+  }
+
+  // #75. Spark's own stage name is useless for async subquery / broadcast stages, and the
+  // dashboard groups on it. sql.description carries the query label instead.
+  test("MetricAttributes.forStage carries sql.description when the stage is part of a query") {
+    val attrs = MetricAttributes.forStage(
+      4, "$anonfun$withThreadLocalCaptured$2", Some("show at PipelineJob.scala:58"),
+    )
+    val attrMap = new java.util.HashMap[String, Any]()
+    attrs.forEach((k, v) => attrMap.put(k.getKey, v))
+
+    assertEquals(attrMap.get("sql.description"), "show at PipelineJob.scala:58")
+    // Spark's own name is untouched, so Spark UI correlation still works.
+    assertEquals(attrMap.get("stage.name"), "$anonfun$withThreadLocalCaptured$2")
+  }
+
+  // A pure-RDD stage has no description. Omitted rather than blank, so "no query" never reads
+  // as "a query with an empty label".
+  test("MetricAttributes.forStage omits sql.description for a stage outside any query") {
+    val attrMap = new java.util.HashMap[String, Any]()
+    MetricAttributes.forStage(7, "shuffle read", None).forEach((k, v) => attrMap.put(k.getKey, v))
+    assertEquals(attrMap.get("sql.description"), null)
+
+    val blank = new java.util.HashMap[String, Any]()
+    MetricAttributes.forStage(7, "shuffle read", Some("")).forEach((k, v) => blank.put(k.getKey, v))
+    assertEquals(blank.get("sql.description"), null)
   }
 }
