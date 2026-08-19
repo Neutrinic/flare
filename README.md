@@ -438,11 +438,11 @@ Nine instruments, all under the `io.flare.spark` meter, disabled wholesale by
 | `flare.task.records_throughput` | histogram | `{records}/s` | `executor.id`, `stage.id`, `task.result` |
 | `flare.task.shuffle.read_bytes` | counter | `By` | `executor.id`, `stage.id`, `task.result` |
 | `flare.task.shuffle.write_bytes` | counter | `By` | `executor.id`, `stage.id`, `task.result` |
-| `flare.stage.executor.run_time` | histogram | `ms` | `stage.id`, `stage.name` |
-| `flare.stage.input.bytes` | counter | `By` | `stage.id`, `stage.name` |
-| `flare.stage.output.bytes` | counter | `By` | `stage.id`, `stage.name` |
-| `flare.stage.shuffle.read_bytes` | counter | `By` | `stage.id`, `stage.name` |
-| `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.id`, `stage.name` |
+| `flare.stage.executor.run_time` | histogram | `ms` | `stage.id`, `stage.name`, `sql.description` |
+| `flare.stage.input.bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
+| `flare.stage.output.bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
+| `flare.stage.shuffle.read_bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
+| `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
 
 The counters are only incremented for non-zero values, so a stage that read nothing produces no
 `flare.stage.input.bytes` series rather than a flat zero one.

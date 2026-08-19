@@ -774,7 +774,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "histogram_quantile(0.95, sum(max_over_time(flare_stage_executor_run_time_bucket[$__range])) by (le, stage_id, stage_name))",
+          "expr": "histogram_quantile(0.95, sum(max_over_time(flare_stage_executor_run_time_bucket[$__range])) by (le, stage_id, stage_name, sql_description, instance))",
           "refId": "A",
           "instant": true,
           "legendFormat": "Executor Run Time p95",
@@ -785,7 +785,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(max_over_time(flare_stage_input_bytes[$__range])) by (stage_id, stage_name)",
+          "expr": "sum(max_over_time(flare_stage_input_bytes[$__range])) by (stage_id, stage_name, sql_description, instance)",
           "refId": "B",
           "instant": true,
           "legendFormat": "Input",
@@ -796,7 +796,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(max_over_time(flare_stage_shuffle_read_bytes[$__range])) by (stage_id, stage_name)",
+          "expr": "sum(max_over_time(flare_stage_shuffle_read_bytes[$__range])) by (stage_id, stage_name, sql_description, instance)",
           "refId": "C",
           "instant": true,
           "legendFormat": "Shuffle Read",
@@ -807,7 +807,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(max_over_time(flare_stage_shuffle_write_bytes[$__range])) by (stage_id, stage_name)",
+          "expr": "sum(max_over_time(flare_stage_shuffle_write_bytes[$__range])) by (stage_id, stage_name, sql_description, instance)",
           "refId": "D",
           "instant": true,
           "legendFormat": "Shuffle Write",
@@ -823,17 +823,30 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "Time": true,
+              "instance": true
             },
             "renameByName": {
               "Value #A": "Executor Run Time p95",
               "Value #B": "Input",
               "Value #C": "Shuffle Read",
-              "Value #D": "Shuffle Write"
+              "Value #D": "Shuffle Write",
+              "sql_description": "Query",
+              "stage_name": "Stage Name (Spark)"
+            },
+            "indexByName": {
+              "stage_id": 0,
+              "sql_description": 1,
+              "stage_name": 2,
+              "Value #A": 3,
+              "Value #B": 4,
+              "Value #C": 5,
+              "Value #D": 6
             }
           }
         }
-      ]
+      ],
+      "description": "Grouped by instance (per-JVM UUID) as well as stage_id, because stage ids restart per application — without it, stage 4 of one run is summed into stage 4 of another. The Query column is sql.description; Stage Name is Spark’s own value, which for async subquery and broadcast stages reads $anonfun$withThreadLocalCaptured$2."
     },
     {
       "collapsed": false,

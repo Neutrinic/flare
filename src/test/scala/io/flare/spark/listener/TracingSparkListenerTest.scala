@@ -3,9 +3,11 @@ package io.flare.spark.listener
 import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.{FlareConfig, TraceGranularity}
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
+import io.flare.spark.metrics.FlareMetrics
 import io.opentelemetry.api.common.{AttributeKey, Attributes}
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode}
-import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
+import io.opentelemetry.sdk.metrics.SdkMeterProvider
+import io.opentelemetry.sdk.testing.exporter.{InMemoryMetricReader, InMemorySpanExporter}
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 import munit.FunSuite
@@ -107,6 +109,37 @@ class TracingSparkListenerTest extends FunSuite {
     SparkListenerStageCompleted(info)
   }
 
+  /**
+   * Drives the listener with metrics wired up and returns the tags on the stage instruments.
+   *
+   * The MetricAttributes unit tests only prove the builder works. This proves the listener
+   * actually resolves the SQL description at onStageCompleted and passes it through — the wiring
+   * is where #75 could silently no-op, since the lookup depends on stageToSql still being
+   * populated at that point in the event sequence.
+   */
+  def stageMetricTags(sqlExecution: Option[Long], description: Option[String]): Map[String, String] = {
+    val exporter = InMemorySpanExporter.create()
+    val reader   = InMemoryMetricReader.create()
+    val tp = SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(exporter)).build()
+    val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
+    try {
+      val listener = new TracingSparkListener(
+        tp.get("t"), config, Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true,
+      )
+      description.foreach(d => listener.describeSqlExecution(Span.getInvalid, sqlExecution.get, d, "", ""))
+      listener.onJobStart(makeJobStart(0, Seq(0), sqlExecution = sqlExecution))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      listener.onStageCompleted(makeStageCompletedWithMetrics(0))
+
+      reader.collectAllMetrics().asScala
+        .filter(_.getName == "flare.stage.executor.run_time")
+        .flatMap(_.getHistogramData.getPoints.asScala)
+        .flatMap(_.getAttributes.asMap.asScala)
+        .map { case (k, v) => k.getKey -> v.toString }
+        .toMap
+    } finally { tp.close(); mp.close() }
+  }
+
   // ── Tests ───────────────────────────────────────────────────────────────────
 
   test("job span is created as child of application span") {
@@ -192,6 +225,22 @@ class TracingSparkListenerTest extends FunSuite {
   // #48. Spark's own stage name is useless for async subquery / broadcast stages — it resolves
   // inside a Spark thread pool — and StageInfo.details cannot rescue it, because that stack was
   // captured on the pool thread and contains no user frame. The SQL execution names the code.
+  // #75 — the metric surface, which #48 did not touch. The dashboard groups on these tags.
+  test("stage metrics carry sql.description when the stage belongs to a SQL execution") {
+    val tags = stageMetricTags(Some(7L), Some("show at PipelineJob.scala:58"))
+
+    assertEquals(tags.get("sql.description"), Some("show at PipelineJob.scala:58"))
+    // Spark's own name is untouched — Spark UI correlation must keep working.
+    assertEquals(tags.get("stage.name"), Some("stage-0"))
+  }
+
+  test("stage metrics omit sql.description for a stage outside any SQL execution") {
+    val tags = stageMetricTags(None, None)
+
+    assertEquals(tags.get("sql.description"), None)
+    assertEquals(tags.get("stage.name"), Some("stage-0"))
+  }
+
   test("stage span carries the SQL execution's description when the job belongs to one") {
     withListener { (listener, exporter) =>
       // Seeds the description through the portable seam. SparkListenerSQLExecutionStart cannot

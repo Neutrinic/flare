@@ -229,7 +229,7 @@ class TracingSparkListener(
       // and holds no user frame at all. The SQL execution does name the user code.
       stageToSql.get(stageId).foreach { execId =>
         span.setLong(Stage.SqlExecutionId, execId)
-        sqlDescriptions.get(execId).foreach { desc =>
+        sqlDescriptionOf(stageId).foreach { desc =>
           setIfNonEmpty(span, Stage.SqlDescription, desc, config.sqlDescriptionMaxChars)
         }
       }
@@ -320,7 +320,10 @@ class TracingSparkListener(
 
           // Record OTEL stage-level metrics
           metrics.foreach { fm =>
-            val attrs = MetricAttributes.forStage(stageId, event.stageInfo.name)
+            // Same lookup the span does at onStageSubmitted. Safe here because a stage always
+            // completes before its job ends, and onJobEnd is what drops stageToSql.
+            val attrs =
+              MetricAttributes.forStage(stageId, event.stageInfo.name, sqlDescriptionOf(stageId))
             fm.stageExecutorRunTime.record(m.executorRunTime.toDouble, attrs)
             val inputBytes = m.inputMetrics.bytesRead
             if (inputBytes > 0) fm.stageInputBytes.add(inputBytes, attrs)
@@ -407,6 +410,16 @@ class TracingSparkListener(
    * absent for a pure-RDD job, and a non-numeric value would be a Spark bug rather than
    * something to propagate, so both fall back to None.
    */
+  /**
+   * The SQL execution description for a stage, if it belongs to one.
+   *
+   * Shared by the stage span (#48) and the stage metrics (#75) so the two surfaces can never
+   * disagree about what a stage is called. None for a pure-RDD stage, which has no description
+   * to report rather than an empty one.
+   */
+  private def sqlDescriptionOf(stageId: Int): Option[String] =
+    stageToSql.get(stageId).flatMap(sqlDescriptions.get)
+
   private def sqlExecutionIdOf(properties: java.util.Properties): Option[Long] =
     Option(properties)
       .flatMap(p => Option(p.getProperty("spark.sql.execution.id")))
