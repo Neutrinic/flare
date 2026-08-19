@@ -61,6 +61,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Adds a `FailingJob` example, since every other example succeeds and the failure path was
   therefore never exercised in the dev stack ([#46])
 
+### Documentation
+- **OTLP compression is now set in the install examples** — `otel.exporter.otlp.compression`
+  defaults to `none` in the OpenTelemetry Java agent, and neither README example set it, so anyone
+  following the documented setup was shipping uncompressed OTLP with nothing hinting at it. Spark
+  is a bad case for that: every export repeats the full resource block, dominated by
+  `process.command_args` (the whole classpath, ~2.9 kB), and one trace spans several export
+  batches per JVM. Measured on the dev stack over three matched runs each way, counting bytes
+  received by the collector: **244,660 B uncompressed against 106,480 B with gzip — 56% less
+  traffic**. Traces are byte-for-byte unaffected. No code change; Flare does not own the exporter
+  config ([#79])
+
 ### Fixed
 - **Dev-stack Stage Metrics table merged stages across application runs** — it grouped by
   `(stage_id, stage_name)` only. Stage ids restart per application, so stage 4 of one run was
@@ -350,6 +361,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#48]: https://github.com/Neutrinic/flare/issues/48
 [#50]: https://github.com/Neutrinic/flare/issues/50
 [#75]: https://github.com/Neutrinic/flare/issues/75
+[#79]: https://github.com/Neutrinic/flare/issues/79
 [#55]: https://github.com/Neutrinic/flare/issues/55
 [#46]: https://github.com/Neutrinic/flare/issues/46
 [#47]: https://github.com/Neutrinic/flare/issues/47
