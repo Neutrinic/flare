@@ -33,6 +33,11 @@ final case class FlareConfig(
   // Compiled once at load time, not per task.
   taskStagePattern: Option[Regex],
   metricsEnabled:   Boolean,      // FLARE_METRICS_ENABLED, default true
+  // FLARE_TRACK_BLOCK_UPDATES, default FALSE. SparkListenerBlockUpdated fires once per
+  // block, so on a large cached dataset it is a firehose on the listener bus thread.
+  // Off by default: the executor and block-manager gauges above are cheap and cover the
+  // common question; this one is for diagnosing cache thrash specifically.
+  trackBlockUpdates: Boolean = false,
   // Caps for the free-form strings on SparkListenerSQLExecutionStart. 0 drops the
   // attribute entirely. See FlareConfig.DefaultSql*Chars for why these exist.
   sqlPlanMaxChars:        Int = FlareConfig.DefaultSqlPlanChars,
@@ -202,6 +207,9 @@ object FlareConfig {
     val metricsEnabled = !envOrProp("FLARE_METRICS_ENABLED")
       .map(_.toLowerCase).contains("false")
 
+    val trackBlockUpdates = envOrProp("FLARE_TRACK_BLOCK_UPDATES")
+      .map(_.toLowerCase).contains("true")
+
     // 0 is legal and means "drop this attribute"; negative is a typo, not an intent.
     def charCap(key: String, default: Int): Int = envOrProp(key)
       .map { s =>
@@ -224,6 +232,7 @@ object FlareConfig {
       taskStageIds     = taskStageIds,
       taskStagePattern = taskStagePattern,
       metricsEnabled   = metricsEnabled,
+      trackBlockUpdates = trackBlockUpdates,
       sqlPlanMaxChars        = charCap("FLARE_SQL_PLAN_MAX_CHARS", DefaultSqlPlanChars),
       sqlDetailsMaxChars     = charCap("FLARE_SQL_DETAILS_MAX_CHARS", DefaultSqlDetailsChars),
       sqlDescriptionMaxChars = charCap("FLARE_SQL_DESCRIPTION_MAX_CHARS", DefaultSqlDescriptionChars),

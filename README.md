@@ -183,6 +183,7 @@ available even when a cluster-wide one is not — notebooks and `spark-shell` in
 | `FLARE_RETRY_TASKS_ONLY` | `false` | Only emit spans for retries and speculative tasks |
 | `FLARE_MAX_SPANS_PER_TRACE` | `10000` | Circuit breaker for high-cardinality jobs |
 | `FLARE_METRICS_ENABLED` | `true` | Enable OTEL metrics (task duration, shuffle bytes, stage aggregates) |
+| `FLARE_TRACK_BLOCK_UPDATES` | `false` | Per-block storage totals. Off by default — `SparkListenerBlockUpdated` fires once per block, which on a large cached dataset is a firehose on the listener bus thread |
 | `FLARE_SQL_PLAN_MAX_CHARS` | `4096` | Cap on `spark.sql.plan`; `0` drops the attribute |
 | `FLARE_SQL_DETAILS_MAX_CHARS` | `2048` | Cap on `spark.sql.details`; `0` drops the attribute |
 | `FLARE_SQL_DESCRIPTION_MAX_CHARS` | `1024` | Cap on `spark.sql.description`; `0` drops the attribute |
@@ -457,9 +458,40 @@ Nine instruments, all under the `io.flare.spark` meter, disabled wholesale by
 | `flare.stage.output.bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
 | `flare.stage.shuffle.read_bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
 | `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
+| `flare.executor.count` | updowncounter | `{executor}` | `executor.id` |
+| `flare.executor.removed` | counter | `{executor}` | `executor.id`, `reason` |
+| `flare.executor.excluded` | counter | `{executor}` | `executor.id` |
+| `flare.block_manager.count` | updowncounter | `{block_manager}` | `executor.id` |
+| `flare.rdd.unpersisted` | counter | `{rdd}` | — |
+| `flare.storage.memory.bytes` | updowncounter | `By` | `executor.id` |
+| `flare.storage.disk.bytes` | updowncounter | `By` | `executor.id` |
+| `flare.storage.blocks` | updowncounter | `{block}` | `executor.id` |
 
 The counters are only incremented for non-zero values, so a stage that read nothing produces no
 `flare.stage.input.bytes` series rather than a flat zero one.
+
+**Cluster lifecycle.** The `flare.executor.*`, `flare.block_manager.*` and `flare.storage.*`
+instruments describe the cluster rather than any one query, and are deliberately metrics rather
+than spans: an executor's lifetime is a level over time, not an operation, and an executor alive
+for the whole application would otherwise be a span longer than every trace it overlaps.
+
+They are up-down counters because they go both ways — an increment-only counter would tell you
+how many executors were ever created, never how many exist now.
+
+`flare.executor.removed` carries a `reason` tag, which is the point of it: on a dynamically
+allocated cluster a routine scale-down and a crash both reduce the executor count, and only the
+reason separates them. Spark's reason string is free text that sometimes embeds ids or hostnames,
+so it is bucketed into a fixed set (`idle_or_decommissioned`, `preempted`, `heartbeat_timeout`,
+`lost`, `killed`, `exited`, `other`, `unknown`) rather than passed through — an unbounded tag on
+a counter is the cardinality problem these instruments exist to avoid.
+
+`flare.block_manager.count` includes the **driver's** block manager, not just executors', because
+Spark registers one there too. Expect it to sit one above the executor count.
+
+The `flare.storage.*` instruments require `FLARE_TRACK_BLOCK_UPDATES=true`. They track running
+totals per executor; block ids are never used as tags. Spark signals a block being dropped by
+sending an invalid `StorageLevel` carrying the sizes it had, so a drop is recorded as a negative
+delta rather than a separate event.
 
 `flare.task.*` are recorded on the executor while the task span's scope is still open, so the SDK's
 default `trace_based` exemplar filter attaches an exemplar linking each measurement back to its
