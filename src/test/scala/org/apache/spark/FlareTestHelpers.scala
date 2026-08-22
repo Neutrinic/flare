@@ -110,4 +110,50 @@ object FlareTestHelpers {
       stageId, 0, name, numTasks, Nil, Nil, "",
       taskMetrics, Nil, None, 0, false, 0,
     )
+
+  // ── Cluster lifecycle fixtures (#49) ─────────────────────────────────────
+  //
+  // BlockManagerId's constructor is private[spark]; apply() is the supported route and its
+  // (execId, host, port) shape is identical across 3.3.4-4.2.0.
+
+  def blockManagerId(execId: String): org.apache.spark.storage.BlockManagerId =
+    org.apache.spark.storage.BlockManagerId(execId, "host-" + execId, 7077)
+
+  def executorAdded(execId: String): scheduler.SparkListenerExecutorAdded =
+    scheduler.SparkListenerExecutorAdded(
+      System.currentTimeMillis(), execId,
+      new scheduler.cluster.ExecutorInfo("host-" + execId, 4, Map.empty[String, String]),
+    )
+
+  def executorRemoved(execId: String, reason: String): scheduler.SparkListenerExecutorRemoved =
+    scheduler.SparkListenerExecutorRemoved(System.currentTimeMillis(), execId, reason)
+
+  def executorExcluded(execId: String): scheduler.SparkListenerExecutorExcluded =
+    scheduler.SparkListenerExecutorExcluded(System.currentTimeMillis(), execId, 1)
+
+  def blockManagerAdded(execId: String): scheduler.SparkListenerBlockManagerAdded =
+    scheduler.SparkListenerBlockManagerAdded(
+      System.currentTimeMillis(), blockManagerId(execId), 1024L)
+
+  def blockManagerRemoved(execId: String): scheduler.SparkListenerBlockManagerRemoved =
+    scheduler.SparkListenerBlockManagerRemoved(System.currentTimeMillis(), blockManagerId(execId))
+
+  def unpersistRDD(rddId: Int): scheduler.SparkListenerUnpersistRDD =
+    scheduler.SparkListenerUnpersistRDD(rddId)
+
+  /** `cached = false` reproduces Spark's drop signal: an invalid StorageLevel with the sizes. */
+  def blockUpdated(
+    execId: String, memSize: Long, diskSize: Long, cached: Boolean,
+  ): scheduler.SparkListenerBlockUpdated = {
+    val level =
+      if (cached) org.apache.spark.storage.StorageLevel.MEMORY_AND_DISK
+      else org.apache.spark.storage.StorageLevel.NONE
+    scheduler.SparkListenerBlockUpdated(
+      org.apache.spark.storage.BlockUpdatedInfo(
+        blockManagerId(execId),
+        org.apache.spark.storage.RDDBlockId(1, 0),
+        level, memSize, diskSize,
+      )
+    )
+  }
 }

@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Cluster lifecycle metrics** — `flare.executor.count`, `flare.executor.removed`,
+  `flare.executor.excluded`, `flare.block_manager.count` and `flare.rdd.unpersisted`, from
+  `SparkListener` callbacks Flare did not implement at all. On a dynamically allocated cluster a
+  stage that looks slow is often just waiting for executors, and nothing in the existing signal
+  distinguished those cases. Deliberately metrics rather than spans: an executor's lifetime is a
+  level over time, not an operation, and one alive for the whole application would be a span
+  longer than every trace it overlaps. Up-down counters rather than counters, since an
+  increment-only counter says how many executors were ever created, never how many exist now.
+  `flare.executor.removed` carries a bucketed `reason` tag — a routine scale-down and a crash
+  both reduce the count, and only the reason separates them; Spark's reason string is free text
+  that can embed ids, so it is mapped to a fixed set rather than passed through.
+  Note `flare.block_manager.count` includes the driver's own block manager, so it sits one above
+  the executor count ([#49])
+- **`FLARE_TRACK_BLOCK_UPDATES`** (default `false`) — running per-executor storage totals as
+  `flare.storage.memory.bytes`, `flare.storage.disk.bytes` and `flare.storage.blocks`, for
+  diagnosing cache thrash. Off by default because `SparkListenerBlockUpdated` fires once per
+  block, which on a large cached dataset is a firehose on the listener bus thread. Block ids are
+  never used as tags. Spark signals a drop by sending an invalid `StorageLevel` carrying the
+  sizes it had, so a drop is recorded as a negative delta rather than a separate event ([#49])
 - **`sql.description` on stage metrics** — `stage.name` is Spark's own `StageInfo.name`, which for
   async subquery and broadcast stages resolves inside a Spark thread pool and reads
   `$anonfun$withThreadLocalCaptured$2 at CompletableFuture.java:1768`. The dev dashboard groups on
@@ -359,6 +378,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#44]: https://github.com/Neutrinic/flare/issues/44
 [#45]: https://github.com/Neutrinic/flare/issues/45
 [#48]: https://github.com/Neutrinic/flare/issues/48
+[#49]: https://github.com/Neutrinic/flare/issues/49
 [#50]: https://github.com/Neutrinic/flare/issues/50
 [#75]: https://github.com/Neutrinic/flare/issues/75
 [#79]: https://github.com/Neutrinic/flare/issues/79

@@ -133,4 +133,25 @@ class FlareMetricsTest extends FunSuite {
     MetricAttributes.forStage(7, "shuffle read", Some("")).forEach((k, v) => blank.put(k.getKey, v))
     assertEquals(blank.get("sql.description"), null)
   }
+
+  // #49. Spark's removal reason is free text and sometimes embeds ids or hostnames, so it is
+  // bucketed before becoming a metric tag. Unbounded tag values on a counter are exactly the
+  // cardinality problem these instruments exist to avoid.
+  test("removal reason bucketing is total and never returns free text") {
+    val cases = Map(
+      ""                                 -> "unknown",
+      "Executor idle timeout exceeded"   -> "idle_or_decommissioned",
+      "Executor decommissioned"          -> "idle_or_decommissioned",
+      "Container preempted by scheduler" -> "preempted",
+      "Executor heartbeat timed out"     -> "heartbeat_timeout",
+      "Slave lost"                       -> "lost",
+      "Container killed by YARN"         -> "killed",
+      "Container exited with code 137"   -> "exited",
+      "something nobody predicted"       -> "other",
+    )
+    cases.foreach { case (in, want) =>
+      assertEquals(MetricAttributes.bucketRemovalReason(in), want, s"input: '$in'")
+    }
+    assertEquals(MetricAttributes.bucketRemovalReason(null), "unknown")
+  }
 }

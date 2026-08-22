@@ -48,4 +48,43 @@ object MetricAttributes {
     sqlDescription.filter(_.nonEmpty).foreach(b.put(SqlDescription, _))
     b.build()
   }
+
+  /**
+   * Tags for cluster lifecycle instruments (#49).
+   *
+   * `executor.id` only. Deliberately no host, no block id, no RDD id: these instruments are
+   * gauges over the life of an application, so anything unbounded here would accumulate series
+   * forever rather than per query. Removal reasons are a separate, low-cardinality tag.
+   */
+  def forExecutor(executorId: String): Attributes =
+    Attributes.builder().put(ExecutorId, executorId).build()
+
+  /**
+   * Executor removal, tagged with why.
+   *
+   * Spark's reason string is free text and sometimes embeds ids or hostnames, so it is
+   * bucketed rather than passed through — an unbounded tag on a counter is exactly the
+   * cardinality problem these instruments exist to avoid.
+   */
+  def forExecutorRemoval(executorId: String, reason: String): Attributes =
+    Attributes.builder()
+      .put(ExecutorId, executorId)
+      .put(Reason, bucketRemovalReason(reason))
+      .build()
+
+  private val Reason = AttributeKey.stringKey("reason")
+
+  private[metrics] def bucketRemovalReason(reason: String): String = {
+    val r = Option(reason).getOrElse("").toLowerCase
+    if (r.isEmpty) "unknown"
+    // Spark's own wording for a dynamic-allocation scale-down. This is the one that must be
+    // distinguishable from a failure, since it is routine rather than a problem.
+    else if (r.contains("idle") || r.contains("decommission")) "idle_or_decommissioned"
+    else if (r.contains("preempt")) "preempted"
+    else if (r.contains("heartbeat")) "heartbeat_timeout"
+    else if (r.contains("lost") || r.contains("disconnect")) "lost"
+    else if (r.contains("killed") || r.contains("kill")) "killed"
+    else if (r.contains("exit")) "exited"
+    else "other"
+  }
 }

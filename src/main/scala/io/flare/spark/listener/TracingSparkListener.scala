@@ -357,6 +357,79 @@ class TracingSparkListener(
     }
   }
 
+  // ── Cluster lifecycle (#49) ──────────────────────────────────────────────────
+  //
+  // Metrics only, never spans. An executor's lifetime is a level over time, not an operation
+  // a trace should describe — an executor alive for the whole application would be a span
+  // longer than every trace it overlaps.
+  //
+  // All of these are cheap and low-cardinality except onBlockUpdated, which is gated.
+
+  override def onExecutorAdded(event: SparkListenerExecutorAdded): Unit =
+    safeHandle("onExecutorAdded") {
+      metrics.foreach(_.executorCount.add(1L, MetricAttributes.forExecutor(event.executorId)))
+    }
+
+  override def onExecutorRemoved(event: SparkListenerExecutorRemoved): Unit =
+    safeHandle("onExecutorRemoved") {
+      metrics.foreach { fm =>
+        fm.executorCount.add(-1L, MetricAttributes.forExecutor(event.executorId))
+        // The reason is the point: it separates a routine dynamic-allocation scale-down from
+        // a crash, which is otherwise indistinguishable in the executor count alone.
+        fm.executorRemoved.add(1L, MetricAttributes.forExecutorRemoval(event.executorId, event.reason))
+      }
+    }
+
+  // Spark posts SparkListenerExecutorExcluded since 3.1; the older Blacklisted event and its
+  // callback still exist on every version in the matrix but are not what the health tracker
+  // emits, so overriding only this one avoids double counting.
+  override def onExecutorExcluded(event: SparkListenerExecutorExcluded): Unit =
+    safeHandle("onExecutorExcluded") {
+      metrics.foreach(_.executorExcluded.add(1L, MetricAttributes.forExecutor(event.executorId)))
+    }
+
+  override def onBlockManagerAdded(event: SparkListenerBlockManagerAdded): Unit =
+    safeHandle("onBlockManagerAdded") {
+      metrics.foreach(_.blockManagerCount.add(1L,
+        MetricAttributes.forExecutor(event.blockManagerId.executorId)))
+    }
+
+  override def onBlockManagerRemoved(event: SparkListenerBlockManagerRemoved): Unit =
+    safeHandle("onBlockManagerRemoved") {
+      metrics.foreach(_.blockManagerCount.add(-1L,
+        MetricAttributes.forExecutor(event.blockManagerId.executorId)))
+    }
+
+  override def onUnpersistRDD(event: SparkListenerUnpersistRDD): Unit =
+    safeHandle("onUnpersistRDD") {
+      // No rdd.id tag — an application can create unboundedly many RDDs, and this counter
+      // is alive for the whole application rather than per query.
+      metrics.foreach(_.rddUnpersisted.add(1L))
+    }
+
+  /**
+   * Running storage totals, off unless FLARE_TRACK_BLOCK_UPDATES=true.
+   *
+   * This fires once per block. On a large cached dataset that is a firehose on the listener
+   * bus thread, which is why it is opt-in rather than on by default.
+   *
+   * Spark signals a block being dropped by sending an invalid StorageLevel with the sizes it
+   * had, so removal is a negative delta of those sizes rather than a separate event.
+   */
+  override def onBlockUpdated(event: SparkListenerBlockUpdated): Unit =
+    if (config.trackBlockUpdates) safeHandle("onBlockUpdated") {
+      metrics.foreach { fm =>
+        val info  = event.blockUpdatedInfo
+        val attrs = MetricAttributes.forExecutor(info.blockManagerId.executorId)
+        val live  = info.storageLevel.isValid
+        val sign  = if (live) 1L else -1L
+
+        if (info.memSize  != 0L) fm.storageMemoryBytes.add(sign * info.memSize, attrs)
+        if (info.diskSize != 0L) fm.storageDiskBytes.add(sign * info.diskSize, attrs)
+        fm.storageBlocks.add(sign, attrs)
+      }
+    }
+
   // ── SQL ──────────────────────────────────────────────────────────────────────
 
   override def onOtherEvent(event: SparkListenerEvent): Unit =
