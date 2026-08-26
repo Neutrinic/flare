@@ -1,0 +1,60 @@
+# CodeRabbit configuration.
+#
+# Committed rather than dashboard-only so it is version-controlled and reviewable,
+# and so it survives the integration being reconfigured. See #84.
+reviews:
+  # chill over assertive: this repo has one maintainer triaging every comment.
+  profile: chill
+
+  auto_review:
+    enabled: true
+    # PRs here routinely take follow-up commits, so re-reviewing every push is noise
+    # rather than signal.
+    auto_incremental_review: false
+
+  # Several conventions below are the opposite of generic best practice. Without them a
+  # reviewer re-argues settled decisions on every PR.
+  path_instructions:
+    - path: "src/main/**/*.scala"
+      instructions: |
+        Omitted means "not measured"; zero means "measured zero". Do not suggest
+        exporting a default 0 in place of skipping an attribute or metric — that
+        distinction is deliberate throughout this codebase.
+
+        The emitted telemetry shape — span names, attribute keys, metric names and
+        labels — is this project's public contract. Changing or removing one is a
+        breaking change for a major version, not a cleanup.
+
+        A new metric label needs a cardinality justification: it is acceptable when
+        functionally determined by labels already on the series. Unbounded tag values
+        on a counter are not acceptable.
+
+        Values derived from free-form Spark strings must be bucketed or omitted, never
+        passed through — Spark embeds ids, hostnames and ports in them.
+
+        Listener and executor-plugin callbacks run on Spark's threads. Work there must
+        be cheap and must never throw into Spark; high-frequency callbacks need
+        aggregation or an opt-in flag.
+
+    - path: "src/test/**/*.scala"
+      instructions: |
+        A regression test must be shown to fail against the old implementation. Tests
+        that pass both before and after are guards, not evidence, and should be
+        labelled as such rather than presented as proof.
+
+        Spark's internal APIs differ across the supported matrix (3.3 through 4.0), so
+        test fixtures must use constructors that are stable across it. Prefer helpers in
+        org.apache.spark.FlareTestHelpers over constructing private[spark] types inline.
+
+    - path: "docker/**"
+      instructions: |
+        Dev stack only — never shipped to users. Correctness of the Grafana dashboard
+        JSON and compose configuration matters; production hardening does not. Do not
+        review flare-spark.json as application code.
+
+    - path: "examples/**/*.scala"
+      instructions: |
+        Demonstration jobs run against the dev stack, whose image is a newer Spark than
+        these are compiled against. Stay on the DataFrame API unless there is a stated
+        reason: Dataset.map needs SparkSession.implicits, whose signature changed in
+        Spark 4.0 and fails under that skew.
