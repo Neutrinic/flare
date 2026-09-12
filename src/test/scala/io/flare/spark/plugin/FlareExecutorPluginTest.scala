@@ -273,4 +273,97 @@ class FlareExecutorPluginTest extends FunSuite {
       assertEquals(dangling, Set.empty[String], s"dangling exemplars under $mode")
     }
   }
+
+  // ── #100: a suppressed task span must not orphan its descendants ───────────
+
+  /**
+   * Runs one task and creates a span inside the task body, the way the javaagent's own JDBC,
+   * HTTP and Kafka instrumentation does on a real executor.
+   *
+   * This is not a synthetic worry. Flare ships as a javaagent *extension*, so those
+   * instrumentations are active by default alongside it — any task that touches a database or
+   * calls a service produces exactly this shape.
+   */
+  private def runTaskWithInTaskSpan(): Seq[io.opentelemetry.sdk.trace.data.SpanData] = {
+    val spanExporter = InMemorySpanExporter.create()
+    val sdk = OpenTelemetrySdk.builder()
+      .setTracerProvider(
+        SdkTracerProvider.builder()
+          .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+          .build()
+      )
+      .setMeterProvider(
+        SdkMeterProvider.builder().registerMetricReader(InMemoryMetricReader.create()).build()
+      )
+      .buildAndRegisterGlobal()
+
+    try {
+      val plugin = new FlareExecutorPlugin()
+      plugin.init(StubPluginContext, java.util.Collections.emptyMap[String, String]())
+
+      FlareTestHelpers.bindEmptyTaskContext()
+      plugin.onTaskStart()
+
+      // No explicit parent: this picks up whatever the plugin made current, which is the point.
+      val child = GlobalOpenTelemetry.getTracer("test").spanBuilder("jdbc.query").startSpan()
+      child.end()
+
+      plugin.onTaskSucceeded()
+      FlareTestHelpers.unbindTaskContext()
+
+      spanExporter.getFinishedSpanItems.asScala.toSeq
+    } finally sdk.close()
+  }
+
+  /** Every exported span that names a parent must have that parent in the same export set. */
+  private def orphansIn(spans: Seq[io.opentelemetry.sdk.trace.data.SpanData]): Seq[String] = {
+    val exportedIds = spans.map(_.getSpanId).toSet
+    spans
+      .filter(s => io.opentelemetry.api.trace.SpanId.isValid(s.getParentSpanId))
+      .filterNot(s => exportedIds.contains(s.getParentSpanId))
+      .map(_.getName)
+  }
+
+  // Establishes that the in-task span really does parent to the task span. Without this the
+  // suppression test below could pass for the wrong reason — a child that was never nested
+  // cannot be orphaned by dropping its parent.
+  test("an in-task span is a child of the task span when nothing suppresses it") {
+    sys.props("FLARE_TRACE_GRANULARITY") = "all"
+    val spans = runTaskWithInTaskSpan()
+
+    val task  = spans.find(_.getName == "spark.task.executor").getOrElse(
+      fail("no task span was exported"))
+    val child = spans.find(_.getName == "jdbc.query").getOrElse(
+      fail("no in-task span was exported"))
+
+    assertEquals(child.getParentSpanId, task.getSpanId)
+    assertEquals(orphansIn(spans), Seq.empty[String])
+  }
+
+  // Tagged `.fail` because it documents a defect that is still open (#100): it asserts the
+  // behaviour Flare promises, and munit passes it precisely because that assertion does not hold
+  // yet. CI therefore stays green on the known-bad state, and the day the fix lands this test
+  // starts failing and forces whoever fixed it to drop the tag. It is a tracked defect, not a
+  // tolerated one.
+  test("a task suppressed by FLARE_SLOW_TASK_MS does not orphan spans created inside it".fail) {
+    sys.props("FLARE_TRACE_GRANULARITY") = "all"
+    // Far above any plausible duration for an empty task, so the task span is suppressed.
+    sys.props("FLARE_SLOW_TASK_MS") = "600000"
+    val spans = runTaskWithInTaskSpan()
+
+    // The in-task span ended normally, so it IS exported regardless of the filter.
+    assert(
+      spans.exists(_.getName == "jdbc.query"),
+      "the in-task span should still be exported — the filter targets task spans only",
+    )
+
+    // ... and it must not be left pointing at a parent that was abandoned unended. Either the
+    // task span is exported too, or the filter has to account for descendants some other way.
+    // What it must never do is emit a child whose parent does not exist, which is precisely
+    // what README.md:33 promises does not happen.
+    assertEquals(
+      orphansIn(spans), Seq.empty[String],
+      "exported spans reference a parent that was never exported",
+    )
+  }
 }

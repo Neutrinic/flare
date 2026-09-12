@@ -30,7 +30,7 @@ spark.application                          (flare-driver)
 
 Most Spark observability stops at the driver. You get a stage span with an aggregate duration but cannot see which executor ran slow, which partition was skewed, or whether a retry happened on a specific node.
 
-Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stage W3C `traceparent` into task properties before tasks are created. On the executor, the traceparent is extracted and restored as OTEL context, creating task spans with accurate wall-clock timing nested under their specific stage span. The full hierarchy — `app → sql → job → stage → task` — spans two JVM services with zero orphan spans.
+Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stage W3C `traceparent` into task properties before tasks are created. On the executor, the traceparent is extracted and restored as OTEL context, creating task spans with accurate wall-clock timing nested under their specific stage span. The full hierarchy — `app → sql → job → stage → task` — spans two JVM services with no orphan spans on the default configuration. One exception is currently known: enabling `FLARE_SLOW_TASK_MS` (off by default) can leave spans created *inside* a suppressed task pointing at a parent that is never exported — see [#100](https://github.com/Neutrinic/flare/issues/100).
 
 ## Features
 
