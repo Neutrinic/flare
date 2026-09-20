@@ -67,15 +67,16 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 
 Flare is an OTEL Java agent **extension**. The agent loads it from a filesystem path given by
 `-Dotel.javaagent.extensions`, so the JAR must sit at a stable, identical path on every node.
-That requirement drives the two options below.
+Four JARs go onto every node: the OTEL agent, the Flare extension, and the three
+OpenTelemetry API JARs that Flare needs on the application classpath.
 
-### Option 1: Manual JAR deployment (recommended)
+### Deploying the JARs
 
 ```bash
 spark-submit \
   --conf "spark.plugins=io.flare.spark.plugin.FlareSparkPlugin" \
-  --conf "spark.driver.extraClassPath=/opt/flare/flare-spark.jar" \
-  --conf "spark.executor.extraClassPath=/opt/flare/flare-spark.jar" \
+  --conf "spark.driver.extraClassPath=/opt/flare/flare-spark.jar:/opt/flare/opentelemetry-api.jar:/opt/flare/opentelemetry-context.jar:/opt/flare/opentelemetry-common.jar" \
+  --conf "spark.executor.extraClassPath=/opt/flare/flare-spark.jar:/opt/flare/opentelemetry-api.jar:/opt/flare/opentelemetry-context.jar:/opt/flare/opentelemetry-common.jar" \
   --conf "spark.driver.extraJavaOptions=\
     -javaagent:/opt/flare/opentelemetry-javaagent.jar \
     -Dotel.javaagent.extensions=/opt/flare/flare-spark.jar \
@@ -103,33 +104,10 @@ spark-submit \
 > collector: **244,660 bytes uncompressed against 106,480 with gzip — 56% less traffic, 2.3x
 > smaller.** Span data is unaffected; the same run still produced identical traces.
 
-Both JARs must be accessible on every node. On Kubernetes, bake them into your Spark image. On YARN/EMR, use `--files` and reference via `{{PWD}}`.
+All four JARs must sit at the same absolute path on every node. On Kubernetes, bake them into your Spark image. On YARN/EMR, use `--files` and reference via `{{PWD}}`. On Databricks, fetch them in a cluster init script.
 
-Download the JAR matching your Spark version from
-[Releases](https://github.com/Neutrinic/flare/releases), or pull it from Maven Central.
-
-### Option 2: `--packages` (reduced fidelity)
-
-```bash
-spark-submit \
-  --packages io.github.neutrinic:flare-spark-3-5_2.13:1.2.0 \
-  --conf "spark.plugins=io.flare.spark.plugin.FlareSparkPlugin" \
-  --conf "spark.driver.extraJavaOptions=\
-    -javaagent:/opt/flare/opentelemetry-javaagent.jar \
-    -Dotel.service.name=my-app-driver \
-    -Dotel.exporter.otlp.protocol=grpc \
-    -Dotel.exporter.otlp.endpoint=http://your-collector:4317 \
-    -Dotel.exporter.otlp.compression=gzip" \
-  --conf "spark.executor.extraJavaOptions=\
-    -javaagent:/opt/flare/opentelemetry-javaagent.jar \
-    -Dotel.service.name=my-app-executor \
-    -Dotel.exporter.otlp.protocol=grpc \
-    -Dotel.exporter.otlp.endpoint=http://your-collector:4317 \
-    -Dotel.exporter.otlp.compression=gzip" \
-  myapp.jar
-```
-
-Pick the artifact matching your Spark version:
+Download the Flare JAR matching your Spark version from
+[Releases](https://github.com/Neutrinic/flare/releases), or pull it from Maven Central:
 
 ```
 io.github.neutrinic:flare-spark-3-3_2.12:1.2.0   # Spark 3.3, Scala 2.12
@@ -141,26 +119,26 @@ io.github.neutrinic:flare-spark-3-5_2.13:1.2.0   # Spark 3.5, Scala 2.13
 io.github.neutrinic:flare-spark-4-0_2.13:1.2.0   # Spark 4.0, Scala 2.13
 ```
 
-The OTEL Java agent JAR (`opentelemetry-javaagent.jar`) must still be placed on every node — `--packages` handles only Flare and its dependencies.
+The three OpenTelemetry JARs are `opentelemetry-api`, `opentelemetry-context` and
+`opentelemetry-common`, all at 1.64.0, from Maven Central.
 
-> **`--packages` alone does not load the agent extension.** `-Dotel.javaagent.extensions` is read
-> at premain, from a fixed path. Resolved packages land in an Ivy cache on the driver and are
-> fetched into a per-application directory on executors at executor startup — in both cases too
-> late, and at a path you cannot name in advance. Flare still runs through `spark.plugins` and
-> still produces traces, but the agent SPI components are inactive:
+> **The OTEL JARs are not optional.** Flare's Spark-side half is loaded by `spark.plugins` into
+> Spark's own classloader. The Flare JAR deliberately bundles no dependencies, the OTEL agent does
+> not put an API on the application classpath (it shades its own copy and bridges to one you
+> supply), and Spark ships none. Without them the driver dies at `SparkContext` init with
+> `NoClassDefFoundError: io/opentelemetry/context/ImplicitContextKeyed`.
 >
-> | Lost | Effect |
-> |------|--------|
-> | `SubmitMissingTasksInstrumentation` | No per-stage traceparent. Task spans parent to `spark.application` instead of their stage, so the hierarchy flattens to `app → task` alongside `app → job → stage`. AQE sub-jobs are missed |
-> | `TaskRunnerInstrumentationModule` | No OTEL context inside task bodies. JDBC/HTTP/gRPC calls made by your task code are not linked into the trace |
-> | `FlareAutoConfig` | No `flare.role` / `flare.version` resource attributes |
+> `extraClassPath` is also what makes the ByteBuddy advice work, since its Scala helper classes
+> are resolved from there. Dropping it costs per-stage traceparent injection, which silently
+> flattens task spans onto `spark.application`.
 
-#### Recovering stage attribution with a driver-side JAR
+### If you can only place JARs on the driver
 
-The first row is the one that costs you most, and it is recoverable on its own. Both
-`SparkContext` and `DAGScheduler` live on the driver, so attaching the extension **only there**
-restores per-stage traceparent injection. Executors read it out of the task properties through
-the plugin and parent correctly, without needing the extension themselves:
+Some environments let you stage files on the driver but not cluster-wide, notebooks and
+`spark-shell` in particular. Both `SparkContext` and `DAGScheduler` live on the driver, so
+attaching the extension **only there** still restores per-stage traceparent injection. Executors
+read it out of the task properties through the plugin and parent correctly without needing the
+extension themselves:
 
 ```bash
   --conf "spark.driver.extraJavaOptions=\
@@ -169,9 +147,9 @@ the plugin and parent correctly, without needing the extension themselves:
     ..."
 ```
 
-Verified: `spark.task → spark.stage` is restored, while executors report no `flare.role` and get
-no in-task context restoration. This only needs a stable path on the driver node, which is often
-available even when a cluster-wide one is not — notebooks and `spark-shell` in particular.
+Verified: `spark.task` parents to `spark.stage` again. Executors report no `flare.role` and get no
+in-task context restoration, so JDBC and HTTP calls inside task bodies are not linked into the
+trace.
 
 ## Configuration
 
@@ -594,7 +572,7 @@ Open Grafana at `http://localhost:3000`:
 
 ```
 ByteBuddy (OTEL agent extension)
-├── SparkContextInstrumentation        # auto-registers listener + executor plugin
+├── SparkContextInstrumentation        # hooks SparkContext init; app span + listener
 ├── SubmitMissingTasksInstrumentation  # hooks DAGScheduler.submitMissingTasks
 │   └── SubmitMissingTasksAdviceHelper # creates job/stage spans, injects traceparent
 ├── TaskRunnerInstrumentation          # hooks Executor$TaskRunner.run()
