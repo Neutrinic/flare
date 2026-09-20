@@ -67,8 +67,9 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 
 Flare is an OTEL Java agent **extension**. The agent loads it from a filesystem path given by
 `-Dotel.javaagent.extensions`, so the JAR must sit at a stable, identical path on every node.
-Four JARs go onto every node: the OTEL agent, the Flare extension, and the three
-OpenTelemetry API JARs that Flare needs on the application classpath.
+Five JARs go onto every node: the OTEL agent, the Flare extension, and the three
+OpenTelemetry API JARs that Flare needs on the application classpath. The agent is
+attached with `-javaagent`; the other four go on `extraClassPath`.
 
 ### Deploying the JARs
 
@@ -123,7 +124,7 @@ The three OpenTelemetry JARs are `opentelemetry-api`, `opentelemetry-context` an
 `opentelemetry-common`, all at 1.64.0, from Maven Central.
 
 > **The OTEL JARs are not optional.** Flare's Spark-side half is loaded by `spark.plugins` into
-> Spark's own classloader. The Flare JAR deliberately bundles no dependencies, the OTEL agent does
+> Spark's own classloader. The published Flare JAR bundles no dependencies, the OTEL agent does
 > not put an API on the application classpath (it shades its own copy and bridges to one you
 > supply), and Spark ships none. Without them the driver dies at `SparkContext` init with
 > `NoClassDefFoundError: io/opentelemetry/context/ImplicitContextKeyed`.
@@ -138,7 +139,16 @@ Some environments let you stage files on the driver but not cluster-wide, notebo
 `spark-shell` in particular. Both `SparkContext` and `DAGScheduler` live on the driver, so
 attaching the extension **only there** still restores per-stage traceparent injection. Executors
 read it out of the task properties through the plugin and parent correctly without needing the
-extension themselves:
+extension themselves.
+
+Only the **extension** is driver-side. `spark.plugins` and `extraClassPath` — the Flare JAR plus
+the three OpenTelemetry JARs — are still required on the driver *and* every executor. The plugin
+is what creates task spans at all; `-Dotel.javaagent.extensions` loads the agent extension and
+puts nothing on the Spark classpath. Drop the executor classpath and you get no task spans rather
+than badly parented ones.
+
+So relative to the full install above, change only the executor `extraJavaOptions`, dropping
+`-Dotel.javaagent.extensions` from it:
 
 ```bash
   --conf "spark.driver.extraJavaOptions=\
