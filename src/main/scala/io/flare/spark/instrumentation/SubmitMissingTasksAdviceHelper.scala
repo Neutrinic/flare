@@ -1,5 +1,6 @@
 package io.flare.spark.instrumentation
 
+import io.flare.spark.BuildInfo
 import io.flare.spark.plugin.FlareDriverState
 import io.flare.spark.propagation.LocalPropertyPropagator
 import io.opentelemetry.api.GlobalOpenTelemetry
@@ -135,13 +136,14 @@ object SubmitMissingTasksAdviceHelper {
       val props = propertiesMethod.invoke(activeJob).asInstanceOf[java.util.Properties]
       if (props == null) return
 
-      val tracer = GlobalOpenTelemetry.getTracer("io.flare.spark")
+      // Version matters: every other call site passes it, and without it these spans report an
+      // empty instrumentation scope version, which was visible on every stage span (#104).
+      val tracer = GlobalOpenTelemetry.getTracer("io.flare.spark", BuildInfo.version)
 
       // Get or create job span for this jobId (first stage creates it).
       // Use putIfAbsent to handle the race where the listener's onJobStart
       // may have already created and stored a span for this jobId.
-      var jobSpan = jobSpans.get(jobId)
-      if (jobSpan == null) {
+      val jobSpan = getOrCreateJobSpan(jobId) {
         // Determine parent: SQL span if job is SQL-triggered, otherwise app span.
         // Spark sets spark.sql.execution.id in ActiveJob.properties for SQL jobs.
         val parentSpan = Option(props.getProperty("spark.sql.execution.id"))
@@ -150,20 +152,11 @@ object SubmitMissingTasksAdviceHelper {
           .flatMap(Option(_))
           .getOrElse(appSpan)
 
-        val parentCtx = Context.root().`with`(parentSpan)
-        val newSpan = tracer
+        tracer
           .spanBuilder(s"spark.job.$jobId")
           .setSpanKind(SpanKind.INTERNAL)
-          .setParent(parentCtx)
+          .setParent(Context.root().`with`(parentSpan))
           .startSpan()
-        val existing = jobSpans.putIfAbsent(jobId, newSpan)
-        if (existing != null) {
-          // Listener already created a span for this jobId — discard ours
-          newSpan.end()
-          jobSpan = existing
-        } else {
-          jobSpan = newSpan
-        }
       }
 
       // Create stage span as child of job span
@@ -193,6 +186,26 @@ object SubmitMissingTasksAdviceHelper {
         logger.log(Level.FINE, "[Flare] submitMissingTasks advice failed", e)
     }
   }
+
+  /**
+   * Fetch the job span for `jobId`, creating it with `build` only if absent.
+   *
+   * Both writers race here: this advice runs on `dag-scheduler-event-loop`, and
+   * `TracingSparkListener.onJobStart` runs on the listener bus. `computeIfAbsent` is
+   * load-bearing rather than stylistic — it guarantees `build` runs at most once per jobId,
+   * so a thread that loses the race never starts a span in the first place.
+   *
+   * The previous shape started a span, then called `putIfAbsent`, then `end()`-ed the loser.
+   * Ending a span is precisely what EXPORTS it, so every lost race published a 0ms
+   * `spark.job.N` span carrying no Spark attributes and no status, alongside the real one.
+   * Observed in production traces (#104). A span that must not be exported has to never be
+   * started, or be abandoned un-ended — `end()` is not a discard.
+   *
+   * `build` must stay cheap and must not touch `jobSpans`: it runs while the map bin is
+   * locked. Starting a span is a local allocation, which is fine.
+   */
+  private[spark] def getOrCreateJobSpan(jobId: Int)(build: => Span): Span =
+    jobSpans.computeIfAbsent(jobId, _ => build)
 
   // ── Listener adoption methods ─────────────────────────────────────────────
 

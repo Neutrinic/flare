@@ -133,4 +133,69 @@ class SubmitMissingTasksAdviceHelperTest extends FunSuite {
     SubmitMissingTasksAdviceHelper.onEnter(null, null, 0)
     assert(SubmitMissingTasksAdviceHelper.jobSpans.isEmpty)
   }
+
+  // ── #104: a lost race must not publish an empty duplicate job span ─────────
+
+  /**
+   * Two writers create job spans for the same jobId: this advice on
+   * `dag-scheduler-event-loop`, and `TracingSparkListener.onJobStart` on the listener bus.
+   *
+   * The old shape started a span, called `putIfAbsent`, then `end()`-ed the loser. Ending a
+   * span is what exports it, so every lost race published a 0ms `spark.job.N` span with no
+   * attributes beside the real one. `getOrCreateJobSpan` builds at most once per jobId, so a
+   * loser never starts a span at all.
+   */
+  test("concurrent callers create exactly one job span, and losers export nothing") {
+    SubmitMissingTasksAdviceHelper.jobSpans.clear()
+    exporter.reset()
+
+    val threads  = 16
+    val started  = new java.util.concurrent.atomic.AtomicInteger(0)
+    val barrier  = new java.util.concurrent.CyclicBarrier(threads)
+    val results  = new java.util.concurrent.ConcurrentLinkedQueue[Span]()
+    val pool     = java.util.concurrent.Executors.newFixedThreadPool(threads)
+
+    try {
+      val tasks = (1 to threads).map { _ =>
+        new Runnable {
+          override def run(): Unit = {
+            barrier.await()
+            val span = SubmitMissingTasksAdviceHelper.getOrCreateJobSpan(99) {
+              started.incrementAndGet()
+              tracer.spanBuilder("spark.job.99").setSpanKind(SpanKind.INTERNAL).startSpan()
+            }
+            results.add(span)
+          }
+        }
+      }
+      tasks.foreach(pool.submit(_: Runnable))
+      pool.shutdown()
+      assert(
+        pool.awaitTermination(20, java.util.concurrent.TimeUnit.SECONDS),
+        "threads did not finish",
+      )
+    } finally pool.shutdownNow()
+
+    // The builder must have run once, not once per loser.
+    assertEquals(started.get(), 1, "more than one span was started for the same jobId")
+
+    // Every caller must see the same span.
+    val distinct = scala.collection.JavaConverters
+      .collectionAsScalaIterableConverter(results).asScala
+      .map(_.getSpanContext.getSpanId).toSet
+    assertEquals(distinct.size, 1, s"callers saw different spans: $distinct")
+
+    // Nothing may have been exported yet: no span has been ended. Under the old shape the
+    // losing threads would have ended theirs here, publishing empty duplicates.
+    assertEquals(
+      exporter.getFinishedSpanItems.size(), 0,
+      "a span was exported before anything was ended, which is the #104 duplicate",
+    )
+
+    // Ending the single survivor yields exactly one exported span.
+    SubmitMissingTasksAdviceHelper.jobSpans.get(99).end()
+    assertEquals(exporter.getFinishedSpanItems.size(), 1)
+
+    SubmitMissingTasksAdviceHelper.jobSpans.clear()
+  }
 }

@@ -94,36 +94,23 @@ class TracingSparkListener(
       // Race condition: onJobStart fires async on the listener bus. The advice's
       // submitMissingTasks may or may not have run yet. Both sides use putIfAbsent
       // on the shared jobSpans map so only ONE span wins per jobId.
-      val span = SubmitMissingTasksAdviceHelper.getJobSpan(event.jobId) match {
-        case Some(preCreated) =>
-          logger.debug(s"[Flare] Job ${event.jobId} adopted pre-created span")
-          preCreated
+      // Adopts the advice's span when submitMissingTasks got here first, and creates one
+      // otherwise. The builder runs at most once per jobId, so losing this race costs
+      // nothing rather than publishing an empty duplicate span — see #104.
+      val span = SubmitMissingTasksAdviceHelper.getOrCreateJobSpan(event.jobId) {
+        // Parent under SQL span if this job was triggered by a SQL execution.
+        val sqlParent = sqlExecutionIdOf(event.properties)
+          .flatMap(id => Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.get(id)))
 
-        case None =>
-          // No pre-created span yet. Create one and store it in the helper's map
-          // via putIfAbsent. If the advice races us and stores first, we discard ours.
-          // Parent under SQL span if this job was triggered by a SQL execution.
-          val sqlParent = sqlExecutionIdOf(event.properties)
-            .flatMap(id => Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.get(id)))
+        val parentContext = sqlParent.orElse(applicationSpan)
+          .map(Context.current().`with`)
+          .getOrElse(Context.current())
 
-          val parentContext = sqlParent.orElse(applicationSpan)
-            .map(Context.current().`with`)
-            .getOrElse(Context.current())
-
-          val newSpan = tracer
-            .spanBuilder(s"spark.job.${event.jobId}")
-            .setSpanKind(SpanKind.INTERNAL)
-            .setParent(parentContext)
-            .startSpan()
-
-          val existing = SubmitMissingTasksAdviceHelper.jobSpans.putIfAbsent(event.jobId, newSpan)
-          if (existing != null) {
-            // Advice created a span between our get and putIfAbsent — use theirs
-            newSpan.end()
-            existing
-          } else {
-            newSpan
-          }
+        tracer
+          .spanBuilder(s"spark.job.${event.jobId}")
+          .setSpanKind(SpanKind.INTERNAL)
+          .setParent(parentContext)
+          .startSpan()
       }
 
       span.setLong(Job.Id, event.jobId.toLong)
