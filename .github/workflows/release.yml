@@ -9,6 +9,10 @@ jobs:
   publish:
     runs-on: ubuntu-latest
 
+    # Needed to create the Release object and upload assets to it.
+    permissions:
+      contents: write
+
     strategy:
       # Coordinates are disjoint across jobs (see below), so a failure in one says
       # nothing about the others. Cancelling a sibling mid-upload would leave a
@@ -44,3 +48,57 @@ jobs:
           PGP_SECRET: ${{ secrets.PGP_SECRET }}
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+
+      # ── GitHub Release assets ───────────────────────────────────────────────
+      #
+      # The assembly JAR bundles the OpenTelemetry API, unlike the Maven artifact, so each
+      # of these is a single placeable file that needs no extraClassPath archaeology and no
+      # separate OTEL JARs (#103). Maven Central stays the thin artifact; this is the
+      # one-file route for people who deploy JARs rather than resolve them (#109).
+
+      - name: Build assembly JARs
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          SPARK="${{ matrix.spark }}"
+          MM="${SPARK%.*}"                 # 3.5.1 -> 3.5
+          COORD="${MM//./-}"               # 3.5   -> 3-5, matching the Central coordinate
+          mkdir -p release-assets
+
+          # Mirrors crossScalaVersions in build.sbt: Spark 4.x is Scala 2.13 only.
+          # Kept in step with that definition by the count check below.
+          case "$MM" in
+            4.*) SCALAS="2.13.16"; EXPECTED=1 ;;
+            *)   SCALAS="2.12.18 2.13.16"; EXPECTED=2 ;;
+          esac
+
+          for SC in $SCALAS; do
+            BIN="${SC%.*}"                 # 2.13.16 -> 2.13
+            sbt -DsparkVersion="$SPARK" "++$SC" assembly
+            cp "target/scala-$BIN/flare-spark-$MM.jar" \
+               "release-assets/flare-spark-${COORD}_${BIN}-${VERSION}.jar"
+          done
+
+          ACTUAL=$(ls -1 release-assets/*.jar | wc -l)
+          if [ "$ACTUAL" -ne "$EXPECTED" ]; then
+            echo "expected $EXPECTED assembly JARs for Spark $SPARK, got $ACTUAL" >&2
+            exit 1
+          fi
+          ls -l release-assets
+
+      - name: Attach JARs to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+
+          # Releases have been created by hand after the tag push, so the object may not exist
+          # when this runs. Matrix jobs can also race to create it, hence tolerating failure
+          # and then asserting it exists. --clobber keeps re-runs idempotent.
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --verify-tag --generate-notes \
+            || true
+          gh release view "$TAG" >/dev/null
+
+          gh release upload "$TAG" release-assets/*.jar --clobber
