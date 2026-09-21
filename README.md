@@ -59,7 +59,7 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 ![Logs](screenshots/logs.png)
 
 **General**
-- **Zero code changes** — two JARs, two `--conf` lines on `spark-submit`
+- **Zero code changes** — five JARs on every node, five `--conf` lines on `spark-submit`
 - **OTEL native** — OTLP export to any backend (Grafana, Jaeger, Honeycomb, Datadog)
 - **Provisioned Grafana dashboard** — task duration heatmaps, shuffle skew detection, executor comparison, logs, and trace links out of the box
 
