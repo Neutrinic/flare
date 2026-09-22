@@ -44,10 +44,52 @@ object FlareDriverState {
       applicationSpan = Some(span)
       listener = Some(tracingListener)
       _initialized = true
+      registerShutdownHook()
       logger.info("[Flare] Driver state initialized")
       true
     }
   }
+
+  @volatile private var hookRegistered = false
+
+  /**
+   * End Flare's open spans as soon as the JVM starts shutting down (#83).
+   *
+   * The application span is the trace root and the last span to end, so it is the one most
+   * exposed to shutdown ordering. Without this hook it is ended from Spark's own shutdown path:
+   * `sc.stop()` runs inside Spark's JVM shutdown hook, and only after stopping the DAGScheduler,
+   * draining the listener bus and releasing executors does the plugin end the span.
+   *
+   * The javaagent closes its SDK from a separate JVM shutdown hook. The JVM starts all shutdown
+   * hooks at once, in no defined order, so on an abrupt exit those two race — and `sc.stop()` is
+   * slow enough that the agent usually wins. Its `BatchSpanProcessor` then drops the root span as
+   * it is ended. Measured on a two-host cluster against a remote collector: the root was lost in
+   * 4 of 5 runs ending in `System.exit`, leaving every `spark.sql.N` orphaned and the trace
+   * rootless.
+   *
+   * This hook does only one thing, and does it immediately: end the open spans. It does not wait
+   * on Spark's teardown, so it lands inside the agent's flush window rather than after it. It is
+   * still a race against the agent's hook, which Flare cannot order itself ahead of, so this
+   * narrows the loss rather than guaranteeing against it.
+   *
+   * A normal exit is unaffected. When the job calls `spark.stop()` the plugin has already shut
+   * state down before the JVM exits, so this finds nothing initialised and returns.
+   *
+   * Flushing is left to the agent's own hook. Spark-side code cannot flush under the agent at all,
+   * because `GlobalOpenTelemetry` returns an API bridge rather than the SDK.
+   */
+  private def registerShutdownHook(): Unit =
+    if (!hookRegistered) {
+      hookRegistered = true
+      try {
+        Runtime.getRuntime.addShutdownHook(
+          new Thread(() => shutdown(), "flare-driver-shutdown")
+        )
+      } catch {
+        // Shutdown already under way; nothing left to protect.
+        case _: IllegalStateException => ()
+      }
+    }
 
   /**
    * Shutdown: delegate to the listener (which ends all open spans including
