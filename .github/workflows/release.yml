@@ -51,10 +51,9 @@ jobs:
 
       # ── GitHub Release assets ───────────────────────────────────────────────
       #
-      # The assembly JAR bundles the OpenTelemetry API, unlike the Maven artifact, so each
-      # of these is a single placeable file that needs no extraClassPath archaeology and no
-      # separate OTEL JARs (#103). Maven Central stays the thin artifact; this is the
-      # one-file route for people who deploy JARs rather than resolve them (#109).
+      # The same assembly JAR that ci-release publishes to Maven Central (#107): it bundles the
+      # OpenTelemetry API, so each is a single placeable file with no separate OTEL JARs (#103).
+      # Attached here so it can be downloaded without a Maven resolver (#109).
 
       - name: Build assembly JARs
         run: |
