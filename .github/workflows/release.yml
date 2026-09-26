@@ -56,34 +56,9 @@ jobs:
       # Attached here so it can be downloaded without a Maven resolver (#109).
 
       - name: Build assembly JARs
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          SPARK="${{ matrix.spark }}"
-          MM="${SPARK%.*}"                 # 3.5.1 -> 3.5
-          COORD="${MM//./-}"               # 3.5   -> 3-5, matching the Central coordinate
-          mkdir -p release-assets
-
-          # Mirrors crossScalaVersions in build.sbt: Spark 4.x is Scala 2.13 only.
-          # Kept in step with that definition by the count check below.
-          case "$MM" in
-            4.*) SCALAS="2.13.16"; EXPECTED=1 ;;
-            *)   SCALAS="2.12.18 2.13.16"; EXPECTED=2 ;;
-          esac
-
-          for SC in $SCALAS; do
-            BIN="${SC%.*}"                 # 2.13.16 -> 2.13
-            sbt -DsparkVersion="$SPARK" "++$SC" assembly
-            cp "target/scala-$BIN/flare-spark-$MM.jar" \
-               "release-assets/flare-spark-${COORD}_${BIN}-${VERSION}.jar"
-          done
-
-          ACTUAL=$(ls -1 release-assets/*.jar | wc -l)
-          if [ "$ACTUAL" -ne "$EXPECTED" ]; then
-            echo "expected $EXPECTED assembly JARs for Spark $SPARK, got $ACTUAL" >&2
-            exit 1
-          fi
-          ls -l release-assets
+        # Shared with dev.yml, which runs it on every push to main — so this path is exercised
+        # continuously rather than only when a version tag is pushed (#114).
+        run: bash .github/scripts/build-assemblies.sh "${{ matrix.spark }}" "${GITHUB_REF_NAME#v}" release-assets
 
       - name: Attach JARs to the GitHub Release
         env:
