@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Assembly JARs attached to every GitHub Release** — one per published coordinate, named to
+  match (`flare-spark-3-5_2.12-<version>.jar`). Releases previously carried no assets while the
+  README linked there for downloads, so Maven Central was the only real source. Each asset is a
+  single file that bundles the OTEL API. A follow-up release job reports any coordinate missing
+  from the release rather than holding back the rest; re-running the failed matrix entry fills
+  the gap ([#109])
+
 ### Changed
 - **The published JAR now bundles the OpenTelemetry API** — `opentelemetry-api`,
   `opentelemetry-context` and the `opentelemetry-common` they pull in are inside the artifact,
@@ -19,6 +27,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copy comes first on `extraClassPath` and pins that version. Anyone resolving through Maven
   stops receiving the API as a transitive dependency, which is correct now that it ships
   inside the JAR ([#107])
+
+### Fixed
+- **Duplicate `spark.job.N` span** — the DAGScheduler advice and `TracingSparkListener.onJobStart`
+  both create the job span. Each started a span, called `putIfAbsent`, then ended the one that
+  lost. Ending a span exports it, so every lost race published a 0 ms `spark.job.N` with no Spark
+  attributes and no status next to the real one, which dashboards drew as an empty duplicate job.
+  Measured on a two-host cluster: 3 of 4 runs affected before, 0 of 3 after. Also passes the
+  Flare version to the tracer on this path, whose spans previously reported an empty
+  instrumentation-scope version ([#104])
+- **Root span lost when the driver exits abruptly** — the application span was ended only from
+  Spark's own shutdown path, which runs after `sc.stop()` has torn the scheduler down, while the
+  agent closes its SDK from a separate JVM shutdown hook. The JVM starts all hooks at once, and the
+  agent usually won, dropping the root and orphaning every `spark.sql.N`. A dedicated shutdown hook
+  now ends Flare's open spans immediately. Measured with the driver ending in `System.exit`: root
+  exported in 0 of 10 runs before, 7 of 10 after. This narrows the loss rather than removing it,
+  because Flare cannot order its hook ahead of the agent's. A normal exit that calls
+  `spark.stop()` was never affected ([#83])
+- **Shutdown flush silently skipped under the agent** — both plugins flushed only when
+  `GlobalOpenTelemetry` was the SDK. Under the javaagent it is the agent's API bridge, so the flush
+  never ran and nothing said so. It is now logged at debug; flushing is left to the agent ([#83])
+
+### Documentation
+- **The install needs the OpenTelemetry API on the Spark classpath** — the documented manual
+  install crashed the driver with `NoClassDefFoundError: io/opentelemetry/context/ImplicitContextKeyed`.
+  `extraClassPath` now lists `opentelemetry-api`, `-context` and `-common` alongside the Flare JAR,
+  with the reason they are required ([#103])
+- **`--packages` removed from the install guide** — a resolved JAR has no fixed path, so
+  `-Dotel.javaagent.extensions` cannot name it and the extension never loads. Task spans then
+  hang off `spark.application` instead of their stage and `flare.role` is absent. The
+  driver-only fallback is kept, with the correction that `spark.plugins` and `extraClassPath` are
+  still needed on every executor ([#103])
+- **Install size in the feature list corrected** — it said two JARs and two `--conf` lines; the
+  documented install is five of each ([#111])
+- **"Zero orphan spans" qualified** — with `FLARE_SLOW_TASK_MS` set, a span created inside a
+  suppressed task can be exported pointing at a parent that never is. The defect is still open;
+  a regression test now records it ([#100])
 
 ## [1.2.0] - 2026-08-26
 
@@ -411,3 +455,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#70]: https://github.com/Neutrinic/flare/issues/70
 [#103]: https://github.com/Neutrinic/flare/issues/103
 [#107]: https://github.com/Neutrinic/flare/issues/107
+[#83]: https://github.com/Neutrinic/flare/issues/83
+[#100]: https://github.com/Neutrinic/flare/issues/100
+[#104]: https://github.com/Neutrinic/flare/issues/104
+[#109]: https://github.com/Neutrinic/flare/issues/109
+[#111]: https://github.com/Neutrinic/flare/issues/111
