@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The published JAR now bundles the OpenTelemetry API** — `opentelemetry-api`,
+  `opentelemetry-context` and the `opentelemetry-common` they pull in are inside the artifact,
+  and are no longer listed in its POM. `spark.plugins` loads Flare into Spark's own classloader,
+  and neither Spark nor the OTEL agent puts an API there, so the previous thin JAR needed three
+  more JARs on `extraClassPath` or the driver died at `SparkContext` init ([#103]). An install
+  is now the agent plus one Flare JAR, the same shape under every cluster manager.
+  The API is bundled unshaded, because the agent's bridge keys on the real
+  `io.opentelemetry.api` names. If a job already carries its own `opentelemetry-api`, Flare's
+  copy comes first on `extraClassPath` and pins that version. Anyone resolving through Maven
+  stops receiving the API as a transitive dependency, which is correct now that it ships
+  inside the JAR ([#107])
+
 ## [1.2.0] - 2026-08-26
 
 ### Added
@@ -396,3 +409,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#65]: https://github.com/Neutrinic/flare/issues/65
 [#67]: https://github.com/Neutrinic/flare/issues/67
 [#70]: https://github.com/Neutrinic/flare/issues/70
+[#103]: https://github.com/Neutrinic/flare/issues/103
+[#107]: https://github.com/Neutrinic/flare/issues/107
