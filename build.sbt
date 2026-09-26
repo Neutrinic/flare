@@ -136,6 +136,32 @@ lazy val root = (project in file("."))
     assembly / assemblyOption  := (assembly / assemblyOption).value
       .withIncludeScala(false),
 
+    // Publish the assembly, not the thin jar (#107). spark.plugins loads Flare into Spark's own
+    // classloader, and neither the agent nor Spark puts an OTEL API there, so a thin jar needs
+    // three more JARs on extraClassPath or the driver dies at SparkContext init (#103). The
+    // assembly carries them, which makes every cluster manager the same shape: agent + one JAR.
+    //
+    // The API cannot be shaded: the agent's bridge keys on the real io.opentelemetry.api names.
+    // Safe because exportJars is false, so assembly reads class directories rather than this
+    // task and there is no cycle.
+    Compile / packageBin := assembly.value,
+
+    // The API and context now travel inside the jar, so advertising them in the POM would put a
+    // second copy on a resolver's classpath, and any version conflict resolution between the two
+    // would split the classes. opentelemetry-common arrives through context and goes with it.
+    pomPostProcess := { (node: scala.xml.Node) =>
+      import scala.xml.{Elem, Node}
+      import scala.xml.transform.{RewriteRule, RuleTransformer}
+      val bundled = Set("opentelemetry-api", "opentelemetry-context")
+      new RuleTransformer(new RewriteRule {
+        override def transform(n: Node): Seq[Node] = n match {
+          case e: Elem if e.label == "dependency" && bundled.contains((e \ "artifactId").text) =>
+            Seq.empty
+          case other => Seq(other)
+        }
+      }).transform(node).head
+    },
+
     Test / fork := true,
     Test / javaOptions ++= Seq(
       s"-Dspark.version=$sparkBuildVersion",
