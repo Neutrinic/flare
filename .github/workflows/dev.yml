@@ -14,14 +14,20 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# A newer push supersedes an in-flight build: the pre-release should track the latest commit.
-concurrency:
-  group: dev-jars-${{ github.ref }}
-  cancel-in-progress: true
+# Read-only unless a job says otherwise. The repo default is already read, but pinning it here keeps
+# the build job read-only even if that default is ever changed; only publish needs to write.
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # A newer push supersedes an in-flight build of the same coordinate. Cancelling here is safe:
+    # a cancelled build means that run's publish never starts, so nothing half-published is left.
+    concurrency:
+      group: dev-jars-build-${{ github.ref }}-${{ matrix.spark }}
+      cancel-in-progress: true
 
     strategy:
       # Unlike release.yml, stop on the first failure. Assets here are published together in the
@@ -37,6 +43,9 @@ jobs:
         with:
           # sbt-dynver derives the version from tags, so it needs history.
           fetch-depth: 0
+          # sbt runs plugin and dependency code, and this job never pushes, so do not leave the
+          # token on disk where that code could read it.
+          persist-credentials: false
 
       - uses: actions/setup-java@v6
         with:
@@ -58,6 +67,13 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+
+    # Never cancelled mid-flight. Interrupting `gh release upload --clobber` would leave the
+    # pre-release holding JARs from two commits. A newer run's publish queues behind this one
+    # instead, so the release still ends on the latest commit.
+    concurrency:
+      group: dev-jars-publish-${{ github.ref }}
+      cancel-in-progress: false
 
     permissions:
       contents: write
