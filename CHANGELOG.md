@@ -49,17 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never ran and nothing said so. It is now logged at debug; flushing is left to the agent ([#83])
 
 ### Documentation
-- **The install needs the OpenTelemetry API on the Spark classpath** — the documented manual
-  install crashed the driver with `NoClassDefFoundError: io/opentelemetry/context/ImplicitContextKeyed`.
-  `extraClassPath` now lists `opentelemetry-api`, `-context` and `-common` alongside the Flare JAR,
-  with the reason they are required ([#103])
+- **The previous thin-JAR install needed the OpenTelemetry API on the Spark classpath** — without
+  `opentelemetry-api`, `-context` and `-common`, the driver crashed with
+  `NoClassDefFoundError: io/opentelemetry/context/ImplicitContextKeyed`. The published assembly
+  now bundles them, so the current install needs only the agent and one Flare JAR ([#103])
 - **`--packages` removed from the install guide** — a resolved JAR has no fixed path, so
   `-Dotel.javaagent.extensions` cannot name it and the extension never loads. Task spans then
   hang off `spark.application` instead of their stage and `flare.role` is absent. The
   driver-only fallback is kept, with the correction that `spark.plugins` and `extraClassPath` are
   still needed on every executor ([#103])
-- **Install size in the feature list corrected** — it said two JARs and two `--conf` lines; the
-  documented install is five of each ([#111])
+- **Install size in the feature list corrected** — it claimed two `--conf` lines; the install
+  needs five: `spark.plugins`, two `extraClassPath` and two `extraJavaOptions` ([#111])
 - **"Zero orphan spans" qualified** — with `FLARE_SLOW_TASK_MS` set, a span created inside a
   suppressed task can be exported pointing at a parent that never is. The defect is still open;
   a regression test now records it ([#100])
