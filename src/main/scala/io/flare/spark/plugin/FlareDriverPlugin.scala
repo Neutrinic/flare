@@ -122,7 +122,14 @@ class FlareDriverPlugin extends DriverPlugin {
           sdk.getSdkTracerProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
           sdk.getSdkMeterProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
           logger.info("[Flare] Forced flush of TracerProvider and MeterProvider completed")
-        case _ => ()
+        case other =>
+          // Under the javaagent GlobalOpenTelemetry is an API bridge, not the SDK, so there is
+          // nothing here to flush and this branch is the normal case rather than an error. The
+          // agent flushes from its own shutdown hook. Logged so the path is visible, since a
+          // silent no-op here previously looked like a flush that ran (#83).
+          logger.debug(
+            s"[Flare] Shutdown flush skipped: GlobalOpenTelemetry is ${other.getClass.getName}, " +
+              "not an SDK; flushing is left to the agent's shutdown hook")
       }
     } catch {
       case _: NoClassDefFoundError =>
