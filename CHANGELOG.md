@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Rolling development JARs** — every push to `main` publishes one assembly JAR per coordinate
+  to a `dev` pre-release, e.g.
+  `https://github.com/Neutrinic/flare/releases/download/dev/flare-spark-4-0_2.13-dev.jar`.
+  The release notes record the commit, and the embedded version carries it too. Not a release:
+  never on Maven Central and never marked Latest. For testing unreleased changes on a cluster by
+  URL, which suits pods and YARN containers that cannot read a host path ([#114])
 - **Assembly JARs attached to every GitHub Release** — one per published coordinate, named to
   match (`flare-spark-3-5_2.12-<version>.jar`). Releases previously carried no assets while the
   README linked there for downloads, so Maven Central was the only real source. Each asset is a
@@ -460,3 +466,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#104]: https://github.com/Neutrinic/flare/issues/104
 [#109]: https://github.com/Neutrinic/flare/issues/109
 [#111]: https://github.com/Neutrinic/flare/issues/111
+[#114]: https://github.com/Neutrinic/flare/issues/114

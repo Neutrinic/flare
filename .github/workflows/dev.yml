@@ -1,0 +1,116 @@
+name: Dev JARs
+
+# Rolling development JARs on a GitHub pre-release, so a lab node or pod fetches a commit-tied
+# build by URL instead of a JAR copied by hand (#114). Never a release: no Maven publish, never
+# marked Latest.
+#
+#   https://github.com/Neutrinic/flare/releases/download/dev/flare-spark-4-0_2.13-dev.jar
+#
+# A manual run on another branch publishes to dev-<branch> instead, for testing on the cluster
+# before merge.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push supersedes an in-flight build: the pre-release should track the latest commit.
+concurrency:
+  group: dev-jars-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Unlike release.yml, stop on the first failure. Assets here are published together in the
+      # job below, and a partial set would leave the pre-release mixing JARs from two commits.
+      fail-fast: true
+      matrix:
+        spark: ["3.3.4", "3.4.3", "3.5.1", "4.0.0"]
+
+    name: Build Spark ${{ matrix.spark }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # sbt-dynver derives the version from tags, so it needs history.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: sbt
+
+      - uses: sbt/setup-sbt@v1
+
+      - name: Build assembly JARs
+        run: bash .github/scripts/build-assemblies.sh "${{ matrix.spark }}" dev dev-assets
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dev-${{ matrix.spark }}
+          path: dev-assets/*.jar
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dev-assets
+          merge-multiple: true
+
+      - name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            TAG="dev"
+          else
+            TAG="dev-$(printf '%s' "$GITHUB_REF_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')"
+          fi
+
+          ACTUAL=$(find dev-assets -maxdepth 1 -name '*.jar' | wc -l)
+          if [ "$ACTUAL" -ne 7 ]; then
+            echo "expected 7 JARs, one per published coordinate, got $ACTUAL" >&2
+            ls -l dev-assets >&2
+            exit 1
+          fi
+
+          # The version is read from a built JAR rather than recomputed, so the notes describe
+          # exactly what was uploaded. sbt-dynver embeds the commit in it.
+          VERSION=$(unzip -p "$(find dev-assets -name '*.jar' | head -1)" \
+            io/flare/spark/flare-build.properties | sed -n 's/^flare.version=//p')
+
+          NOTES="Rolling development build. Not a release, and not on Maven Central.
+
+          Commit: ${GITHUB_SHA}
+          Version: ${VERSION}
+          Built by: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          # Move the tag to this commit so the release's source link and its JARs agree. Tags
+          # are not covered by branch protection, and a dev tag matches neither sbt-dynver's v*
+          # pattern nor release.yml's trigger, so it disturbs neither versioning nor publishing.
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$TAG"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --prerelease --title "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "$NOTES"
+          fi
+
+          gh release upload "$TAG" dev-assets/*.jar --clobber
+          echo "Published $TAG at $GITHUB_SHA ($VERSION)"
