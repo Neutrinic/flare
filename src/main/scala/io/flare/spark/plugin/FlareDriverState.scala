@@ -75,8 +75,7 @@ object FlareDriverState {
    * A normal exit is unaffected. When the job calls `spark.stop()` the plugin has already shut
    * state down before the JVM exits, so this finds nothing initialised and returns.
    *
-   * Flushing is left to the agent's own hook. Spark-side code cannot flush under the agent at all,
-   * because `GlobalOpenTelemetry` returns an API bridge rather than the SDK.
+   * [[shutdown]] flushes once the spans are ended, on this path and the plugin's alike (#122).
    */
   private def registerShutdownHook(): Unit =
     if (!hookRegistered) {
@@ -93,8 +92,11 @@ object FlareDriverState {
 
   /**
    * Shutdown: delegate to the listener (which ends all open spans including
-   * the application span). Idempotent — safe to call from both plugin shutdown
+   * the application span), then flush. Idempotent — safe to call from both plugin shutdown
    * and a JVM shutdown hook.
+   *
+   * The flush is what gets the root span out when the JVM is killed shortly after Spark stops,
+   * as on a Databricks job cluster (#122). Ending the span only queues it for the next batch.
    */
   def shutdown(): Unit = synchronized {
     if (!_initialized) return
@@ -103,6 +105,7 @@ object FlareDriverState {
     listener = None
     _initialized = false
     logger.info("[Flare] Driver state shut down")
+    TelemetryFlush.flush("driver shutdown")
   }
 
   /** Visible for testing — reset all state. */

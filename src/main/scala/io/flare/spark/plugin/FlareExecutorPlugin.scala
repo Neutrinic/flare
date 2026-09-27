@@ -58,6 +58,13 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   // onTaskSucceeded/onTaskFailed fires, so we can't rely on it in endTask.
   private val taskMetricState = new ThreadLocal[Option[(TaskContext, Long)]]()
 
+  // Flushes once no task has ended for a second (#122). Some clusters kill executors without a
+  // shutdown call, Databricks job clusters among them, and the metric reader only exports every
+  // 60s, so task metrics from the last minute of a run were lost. A second after the last task is
+  // the last point Flare can act.
+  private val idleFlush =
+    new QuietPeriodAction(1000L, () => TelemetryFlush.flush("executor idle"), "flare-executor-idle-flush")
+
   override def init(ctx: PluginContext, extraConf: ju.Map[String, String]): Unit = {
     config = try FlareConfig.load() catch {
       case e: IllegalArgumentException =>
@@ -223,6 +230,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     } finally {
       taskState.remove()
       taskMetricState.remove()
+      idleFlush.request()
     }
   }
 
@@ -317,30 +325,9 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     }
     taskMetricState.remove()
 
-    // Force-flush TracerProvider and MeterProvider to push buffered spans/metrics
-    // before JVM exits. The SDK classes live in the agent classloader — catch
-    // NoClassDefFoundError if they're not visible from the app classloader.
-    try {
-      GlobalOpenTelemetry.get() match {
-        case sdk: io.opentelemetry.sdk.OpenTelemetrySdk =>
-          sdk.getSdkTracerProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
-          sdk.getSdkMeterProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
-          logger.info("[Flare] Forced flush of TracerProvider and MeterProvider completed")
-        case other =>
-          // Under the javaagent GlobalOpenTelemetry is an API bridge, not the SDK, so there is
-          // nothing here to flush and this branch is the normal case rather than an error. The
-          // agent flushes from its own shutdown hook. Logged so the path is visible, since a
-          // silent no-op here previously looked like a flush that ran (#83).
-          logger.debug(
-            s"[Flare] Shutdown flush skipped: GlobalOpenTelemetry is ${other.getClass.getName}, " +
-              "not an SDK; flushing is left to the agent's shutdown hook")
-      }
-    } catch {
-      case _: NoClassDefFoundError =>
-        logger.debug("[Flare] SDK classes not accessible, relying on agent shutdown hook")
-      case e: Exception =>
-        logger.warn(s"[Flare] Error during shutdown flush: ${e.getMessage}")
-    }
+    // Push buffered spans and metrics out before the JVM exits (#122).
+    idleFlush.close()
+    TelemetryFlush.flush("executor shutdown")
   }
 }
 
