@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside the JAR ([#107])
 
 ### Fixed
+- **On Java 8 or 11, Flare disabled the whole agent and nothing was exported** — Flare's Java
+  sources, the agent-extension half, were compiled for Java 17 because the build never set a javac
+  target and CI builds on 17. Spark 3.x runs on Java 8 and 11, where the agent cannot load
+  `FlareAutoConfig`; that fails the agent's SDK autoconfiguration outright, so no telemetry left the
+  JVM at all — not even the agent's own instrumentation — while the Spark job still succeeded.
+  Affected every published Spark 3.x coordinate since 1.0.0, including Databricks Runtime 14 and 15,
+  which default to JDK 8. The Java sources now compile for each Spark line's minimum: Java 8 for
+  3.x, 17 for 4.x. Verified on Dataproc with Java 11: zero spans before, the full hierarchy after
+  ([#120])
 - **Duplicate `spark.job.N` span** — the DAGScheduler advice and `TracingSparkListener.onJobStart`
   both create the job span. Each started a span, called `putIfAbsent`, then ended the one that
   lost. Ending a span exports it, so every lost race published a 0 ms `spark.job.N` with no Spark
@@ -467,3 +476,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#109]: https://github.com/Neutrinic/flare/issues/109
 [#111]: https://github.com/Neutrinic/flare/issues/111
 [#114]: https://github.com/Neutrinic/flare/issues/114
+[#120]: https://github.com/Neutrinic/flare/issues/120

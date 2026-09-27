@@ -130,6 +130,12 @@ lazy val root = (project in file("."))
     // Scaladoc crashes on OTEL/Spark types — publish empty javadoc JAR
     Compile / doc / sources := Seq.empty,
 
+    // Compile the Java sources for the oldest Java the Spark line runs on (#120). Without this javac
+    // targets whichever JDK runs the build — 17 in CI — and on Java 8 or 11 the agent cannot load
+    // FlareAutoConfig, which takes down its SDK autoconfiguration: nothing at all is exported, and
+    // the job still succeeds. Scala already targets Java 8 by default. BytecodeLevelTest guards it.
+    Compile / javacOptions ++= Seq("--release", if (sparkMajorMinor.startsWith("3.")) "8" else "17"),
+
     // Bundle OTEL API + context (needed on Spark's app classloader for SparkPlugin).
     // Everything else (Spark, SLF4J, ByteBuddy, OTEL SDK) is provided.
     assembly / assemblyJarName := s"flare-spark-$sparkMajorMinor.jar",
