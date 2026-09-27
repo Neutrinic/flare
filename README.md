@@ -176,7 +176,7 @@ trace.
 | `FLARE_SQL_DETAILS_MAX_CHARS` | `2048` | Cap on `spark.sql.details`; `0` drops the attribute |
 | `FLARE_SQL_DESCRIPTION_MAX_CHARS` | `1024` | Cap on `spark.sql.description`; `0` drops the attribute |
 | `FLARE_SQL_PLAN_INITIAL_MAX_CHARS` | `0` (dropped) | Cap on `spark.sql.plan.initial`, the pre-AQE plan |
-| `FLARE_DROP_NON_SPARK_ROOTS` | `true` | On the driver, drop traces that do not start from a Flare `spark.*` span, such as the platform's own HTTP calls. Spans inside Spark work are kept |
+| `FLARE_DROP_NON_SPARK_ROOTS` | `true` | On the driver, drop spans that have no parent and are not a Flare `spark.*` span, such as the platform's own HTTP calls. Spans with a parent, local or remote, go to the configured sampler as before |
 | `FLARE_ENABLED` | `true` | Kill switch |
 
 Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables. System properties take
