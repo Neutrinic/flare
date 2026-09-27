@@ -84,6 +84,9 @@ class EndDriverSpansOnShutdownTest extends FunSuite {
     assert(!FlareDriverState.initialized, "Flare's state should have been shut down by the wrapper")
   }
 
+  // Guards, not evidence: the next two pass with or without the wrapper. They pin that the wrapper
+  // does no harm when Flare got there first or never registered. The control and the test above
+  // are the regression evidence.
   test("if Flare already ended its spans, shutdown is unaffected") {
     val exporter = new Collecting
     val tp = provider(exporter, wrap = true)
