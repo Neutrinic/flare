@@ -37,6 +37,23 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
 
     customizer.addResourceCustomizer(
         (resource, config) -> Resource.create(flareResourceAttributes()).merge(resource));
+
+    if ("driver".equals(detectRole()) && dropsNonSparkRoots()) {
+      customizer.addSamplerCustomizer((sampler, config) -> new SparkRootSampler(sampler));
+    }
+  }
+
+  /**
+   * Reads {@code FLARE_DROP_NON_SPARK_ROOTS}: system property first, then environment. On unless the
+   * value is the literal {@code "false"}, like {@code FLARE_ENABLED}. Opt out when the driver does
+   * its own traced work that should start traces, such as serving HTTP.
+   */
+  static boolean dropsNonSparkRoots() {
+    String configured = System.getProperty("FLARE_DROP_NON_SPARK_ROOTS");
+    if (configured == null) {
+      configured = System.getenv("FLARE_DROP_NON_SPARK_ROOTS");
+    }
+    return configured == null || !"false".equalsIgnoreCase(configured);
   }
 
   /**

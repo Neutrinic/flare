@@ -43,12 +43,13 @@ class FlareAgentExtensionTest extends FunSuite {
     try {
       GlobalOpenTelemetry
         .getTracer("flare-agent-test-probe")
-        .spanBuilder("flare.agent.spi.probe")
+        // A spark.* name: the driver drops root spans that are not Spark's (#123).
+        .spanBuilder("spark.agent.spi.probe")
         .startSpan()
         .end()
 
       val requiredStrings = Seq(
-        "flare.agent.spi.probe",
+        "spark.agent.spi.probe",
         "flare.role",
         "driver",
         "flare.version",
