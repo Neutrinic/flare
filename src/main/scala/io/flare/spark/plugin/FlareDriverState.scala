@@ -45,6 +45,7 @@ object FlareDriverState {
       listener = Some(tracingListener)
       _initialized = true
       registerShutdownHook()
+      DriverSpans.register()
       logger.info("[Flare] Driver state initialized")
       true
     }
@@ -68,9 +69,10 @@ object FlareDriverState {
    * rootless.
    *
    * This hook does only one thing, and does it immediately: end the open spans. It does not wait
-   * on Spark's teardown, so it lands inside the agent's flush window rather than after it. It is
-   * still a race against the agent's hook, which Flare cannot order itself ahead of, so this
-   * narrows the loss rather than guaranteeing against it.
+   * on Spark's teardown, so it lands inside the agent's flush window rather than after it. On its
+   * own it is still a race against the agent's hook. What closes the race is the agent side
+   * calling [[endOpenSpans]] before its span processors shut down (#122); this hook remains for
+   * a JVM without the agent's processor wrapper, such as a plain SDK install.
    *
    * A normal exit is unaffected. When the job calls `spark.stop()` the plugin has already shut
    * state down before the JVM exits, so this finds nothing initialised and returns.
@@ -91,21 +93,36 @@ object FlareDriverState {
     }
 
   /**
-   * Shutdown: delegate to the listener (which ends all open spans including
-   * the application span), then flush. Idempotent — safe to call from both plugin shutdown
-   * and a JVM shutdown hook.
+   * Shutdown: end all open spans including the application span, then flush. Idempotent — safe
+   * to call from both plugin shutdown and a JVM shutdown hook.
    *
-   * The flush is what gets the root span out when the JVM is killed shortly after Spark stops,
-   * as on a Databricks job cluster (#122). Ending the span only queues it for the next batch.
+   * The flush is what gets the root span out when the JVM is killed shortly after Spark stops
+   * (#122). Ending a span only queues it for the next batch.
    */
-  def shutdown(): Unit = synchronized {
-    if (!_initialized) return
-    listener.foreach(_.shutdown())
-    applicationSpan = None
-    listener = None
-    _initialized = false
-    logger.info("[Flare] Driver state shut down")
-    TelemetryFlush.flush("driver shutdown", verbose = true)
+  def shutdown(): Unit =
+    if (endOpenSpans()) TelemetryFlush.flush("driver shutdown", verbose = true)
+
+  /**
+   * Ends Flare's open spans, including the root, and clears state. Returns true if this call did
+   * it, false if there was nothing to end.
+   *
+   * Also called by the agent, through [[DriverSpans]], as its tracer provider starts shutting
+   * down, and before the span processors stop accepting spans. That is what makes the root span
+   * safe from the shutdown race (#83, #122): when a cluster manager sends SIGTERM, as a Databricks
+   * job cluster does, Spark never stops the context, and Flare's own JVM hook runs alongside the
+   * agent's. Without this, the agent's hook usually wins and the root span is dropped as it ends.
+   * No flush here: the processor shutdown that follows exports what is queued.
+   */
+  def endOpenSpans(): Boolean = synchronized {
+    if (!_initialized) false
+    else {
+      listener.foreach(_.shutdown())
+      applicationSpan = None
+      listener = None
+      _initialized = false
+      logger.info("[Flare] Driver state shut down")
+      true
+    }
   }
 
   /** Visible for testing — reset all state. */
