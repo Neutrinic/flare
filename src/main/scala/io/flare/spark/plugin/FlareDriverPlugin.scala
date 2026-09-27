@@ -114,7 +114,7 @@ class FlareDriverPlugin extends DriverPlugin {
         span.setStatus(StatusCode.OK)
         span.end()
       }
-      TelemetryFlush.flush("driver plugin shutdown")
+      TelemetryFlush.flush("driver plugin shutdown", verbose = true)
     }
 
     logger.info("[Flare] Driver plugin shutdown complete")

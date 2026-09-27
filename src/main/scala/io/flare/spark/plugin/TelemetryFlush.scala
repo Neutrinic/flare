@@ -30,15 +30,17 @@ private[spark] object TelemetryFlush {
 
   private val AgentAccessClass = "io.opentelemetry.javaagent.bootstrap.OpenTelemetrySdkAccess"
 
-  private lazy val agentForceFlush: Option[Method] =
-    try Some(Class.forName(AgentAccessClass).getMethod("forceFlush", classOf[Long], classOf[TimeUnit]))
+  // Left holds why the agent's entry point is unavailable, for the shutdown log line.
+  private lazy val agentForceFlush: Either[String, Method] =
+    try Right(Class.forName(AgentAccessClass).getMethod("forceFlush", classOf[Long], classOf[TimeUnit]))
     catch {
-      case _: ClassNotFoundException | _: NoSuchMethodException | _: LinkageError => None
+      case e @ (_: ClassNotFoundException | _: NoSuchMethodException | _: LinkageError) =>
+        Left(s"${e.getClass.getSimpleName}: ${e.getMessage}")
     }
 
   /** Flush through the agent if it is attached. Returns false when there is no agent to ask. */
   private[plugin] def flushAgent(timeoutMs: Long): Boolean = agentForceFlush match {
-    case Some(method) =>
+    case Right(method) =>
       try {
         method.invoke(null, Long.box(timeoutMs), TimeUnit.MILLISECONDS)
         true
@@ -47,17 +49,27 @@ private[spark] object TelemetryFlush {
           logger.log(Level.WARNING, s"[Flare] Agent flush failed: ${e.getClass.getSimpleName}", e)
           false
       }
-    case None => false
+    case Left(_) => false
   }
 
   /**
    * Flush through the agent, or failing that through a plain SDK installed as the global. Blocks
    * for at most roughly `timeoutMs` per provider.
+   *
+   * `verbose` logs the outcome at INFO. Use it for one-off flushes at shutdown, where it is the only
+   * evidence the flush ran, and not for the executor's frequent idle flushes.
    */
-  def flush(reason: String, timeoutMs: Long = 5000L): Unit =
+  def flush(reason: String, timeoutMs: Long = 5000L, verbose: Boolean = false): Unit = {
+    val level = if (verbose) Level.INFO else Level.FINE
+    val started = System.nanoTime()
     if (flushAgent(timeoutMs)) {
-      logger.fine(s"[Flare] Flushed telemetry through the agent ($reason)")
+      logger.log(level, s"[Flare] Flushed telemetry through the agent ($reason) in " +
+        s"${(System.nanoTime() - started) / 1000000L} ms")
     } else {
+      agentForceFlush match {
+        case Left(why) => logger.log(level, s"[Flare] Agent flush unavailable ($why)")
+        case Right(_)  => ()
+      }
       try {
         // getOrNoop, not get: get() installs a no-op global when none is set yet, and a flush
         // must never decide what the global is.
@@ -65,10 +77,10 @@ private[spark] object TelemetryFlush {
           case sdk: io.opentelemetry.sdk.OpenTelemetrySdk =>
             sdk.getSdkTracerProvider.forceFlush().join(timeoutMs, TimeUnit.MILLISECONDS)
             sdk.getSdkMeterProvider.forceFlush().join(timeoutMs, TimeUnit.MILLISECONDS)
-            logger.fine(s"[Flare] Flushed the global SDK ($reason)")
+            logger.log(level, s"[Flare] Flushed the global SDK ($reason)")
           case other =>
-            logger.fine(s"[Flare] Nothing to flush ($reason): no agent, and GlobalOpenTelemetry " +
-              s"is ${other.getClass.getName}")
+            logger.log(level, s"[Flare] Nothing to flush ($reason): no agent, and " +
+              s"GlobalOpenTelemetry is ${other.getClass.getName}")
         }
       } catch {
         // The SDK is not on this classloader, or an older API without getOrNoop is. Nothing to
@@ -78,6 +90,7 @@ private[spark] object TelemetryFlush {
           logger.log(Level.WARNING, s"[Flare] Flush failed ($reason): ${e.getMessage}", e)
       }
     }
+  }
 }
 
 /**

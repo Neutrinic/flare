@@ -327,7 +327,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
 
     // Push buffered spans and metrics out before the JVM exits (#122).
     idleFlush.close()
-    TelemetryFlush.flush("executor shutdown")
+    TelemetryFlush.flush("executor shutdown", verbose = true)
   }
 }
 

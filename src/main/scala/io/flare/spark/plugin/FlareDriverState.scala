@@ -105,7 +105,7 @@ object FlareDriverState {
     listener = None
     _initialized = false
     logger.info("[Flare] Driver state shut down")
-    TelemetryFlush.flush("driver shutdown")
+    TelemetryFlush.flush("driver shutdown", verbose = true)
   }
 
   /** Visible for testing — reset all state. */
