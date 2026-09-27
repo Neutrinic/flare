@@ -31,7 +31,7 @@ class ApplicationSpanIdentityTest extends FunSuite {
   private val ReadableSpanClass = "io.opentelemetry.sdk.trace.ReadableSpan"
 
   test("a Span resolved from GlobalOpenTelemetry under the agent is a bridge proxy, not an SdkSpan") {
-    val span = GlobalOpenTelemetry.getTracer("flare-span-identity").spanBuilder("probe").startSpan()
+    val span = GlobalOpenTelemetry.getTracer("flare-span-identity").spanBuilder("spark.probe").startSpan()
 
     try {
       // The unshaded SDK is on this test's classpath, so a failed isInstance below is a real

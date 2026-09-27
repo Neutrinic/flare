@@ -176,11 +176,12 @@ trace.
 | `FLARE_SQL_DETAILS_MAX_CHARS` | `2048` | Cap on `spark.sql.details`; `0` drops the attribute |
 | `FLARE_SQL_DESCRIPTION_MAX_CHARS` | `1024` | Cap on `spark.sql.description`; `0` drops the attribute |
 | `FLARE_SQL_PLAN_INITIAL_MAX_CHARS` | `0` (dropped) | Cap on `spark.sql.plan.initial`, the pre-AQE plan |
+| `FLARE_DROP_NON_SPARK_ROOTS` | `true` | On the driver, drop traces that do not start from a Flare `spark.*` span, such as the platform's own HTTP calls. Spans inside Spark work are kept |
 | `FLARE_ENABLED` | `true` | Kill switch |
 
 Set via `-DFLARE_*` in `extraJavaOptions` or as environment variables. System properties take
-precedence. `FLARE_ENABLED` only disables Flare for the literal value `false` (case-insensitive);
-any other value leaves it on.
+precedence. `FLARE_ENABLED` and `FLARE_DROP_NON_SPARK_ROOTS` only turn off for the literal value
+`false` (case-insensitive); any other value leaves them on.
 
 The SQL caps exist because a physical plan is unbounded at the source — a wide query runs to tens
 of kilobytes, which is enough to push an OTLP batch past a collector's message limit, dropping the

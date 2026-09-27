@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copy comes first on `extraClassPath` and pins that version. Anyone resolving through Maven
   stops receiving the API as a transitive dependency, which is correct now that it ships
   inside the JAR ([#107])
+- **The driver no longer exports traces that are not Spark's.** The agent instruments the whole
+  driver, and each platform makes its own calls there: Databricks' HTTP requests into the driver,
+  Dataproc's metadata and GCS calls, Spark's calls to the Kubernetes API server. Each became a
+  one-span trace, about 320 of them beside one Flare trace in a three-minute Databricks run. On the
+  driver, a span with no parent is now dropped unless it is one of Flare's `spark.*` spans. Spans
+  with a parent are unaffected, so calls made inside Spark work still nest under Flare's spans, and
+  a request carrying a `traceparent` still continues its caller's trace. Executors are unchanged.
+  Set `FLARE_DROP_NON_SPARK_ROOTS=false` to keep the old behaviour, for example on a driver that
+  serves HTTP ([#123])
 
 ### Fixed
 - **On Java 8 or 11, Flare disabled the whole agent and nothing was exported** — Flare's Java
@@ -477,3 +486,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#111]: https://github.com/Neutrinic/flare/issues/111
 [#114]: https://github.com/Neutrinic/flare/issues/114
 [#120]: https://github.com/Neutrinic/flare/issues/120
+[#123]: https://github.com/Neutrinic/flare/issues/123
