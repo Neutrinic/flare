@@ -41,6 +41,8 @@ class FlareDriverPlugin extends DriverPlugin {
   private var listener: Option[TracingSparkListener] = None
 
   override def init(sc: SparkContext, pluginContext: PluginContext): ju.Map[String, String] = {
+    FlareConfig.warnIfSamplingRatioSet(w => logger.warn(w))
+
     // Dedup guard: if ByteBuddy advice already initialized (Phase 2), skip plugin init.
     if (FlareDriverState.initialized) {
       logger.info("[Flare] Already initialized by ByteBuddy advice, skipping plugin init")
@@ -93,7 +95,6 @@ class FlareDriverPlugin extends DriverPlugin {
     logger.info(s"[Flare] Driver plugin initialized — " +
       s"traceId=${appSpan.getSpanContext.getTraceId}, " +
       s"granularity=${config.granularity}, " +
-      s"sampling=${config.samplingRatio}, " +
       s"maxSpans=${config.maxSpansPerTrace}")
 
     ju.Collections.emptyMap()

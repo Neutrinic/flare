@@ -16,7 +16,6 @@ class FlareConfigTest extends FunSuite {
     FlareConfig(
       enabled          = true,
       granularity      = granularity,
-      samplingRatio    = 1.0,
       maxSpansPerTrace = 10000,
       slowTaskMs       = slowTaskMs,
       retryTasksOnly   = retryTasksOnly,
@@ -172,18 +171,33 @@ class FlareConfigTest extends FunSuite {
     }
   }
 
-  test("load() throws on out-of-range FLARE_SAMPLING_RATIO") {
-    sys.props("FLARE_SAMPLING_RATIO") = "1.5"
-    interceptMessage[IllegalArgumentException]("Flare config error: FLARE_SAMPLING_RATIO must be 0.0-1.0, got 1.5") {
+  test("FLARE_SAMPLING_RATIO in any form no longer fails start-up (#130)") {
+    // It used to throw on these; a deployment that set it must keep starting after the upgrade.
+    for (v <- Seq("0.1", "1.5", "abc", "")) {
+      sys.props("FLARE_SAMPLING_RATIO") = v
       FlareConfig.load()
     }
   }
 
-  test("load() throws on non-numeric FLARE_SAMPLING_RATIO") {
-    sys.props("FLARE_SAMPLING_RATIO") = "abc"
-    interceptMessage[IllegalArgumentException]("Flare config error: FLARE_SAMPLING_RATIO 'abc' is not a number") {
-      FlareConfig.load()
-    }
+  test("the FLARE_SAMPLING_RATIO warning is logged once per JVM, however many start-up paths run") {
+    FlareConfig.resetSamplingRatioWarning()
+    val logged = scala.collection.mutable.ListBuffer.empty[String]
+    FlareConfig.warnIfSamplingRatioSet(logged += _)
+    assertEquals(logged.size, 0, "nothing to warn about while the key is unset")
+
+    sys.props("FLARE_SAMPLING_RATIO") = "0.5"
+    FlareConfig.warnIfSamplingRatioSet(logged += _) // e.g. the driver plugin
+    FlareConfig.warnIfSamplingRatioSet(logged += _) // e.g. the scheduler hook, same JVM
+    assertEquals(logged.size, 1)
+    FlareConfig.resetSamplingRatioWarning()
+  }
+
+  test("FLARE_SAMPLING_RATIO produces a warning naming the agent's sampler, and only when set (#130)") {
+    assertEquals(FlareConfig.samplingRatioWarning(), None, "no warning when the key is unset")
+    sys.props("FLARE_SAMPLING_RATIO") = "0.25"
+    val warning = FlareConfig.samplingRatioWarning().getOrElse(fail("expected a warning"))
+    assert(warning.contains("FLARE_SAMPLING_RATIO=0.25"))
+    assert(warning.contains("otel.traces.sampler=parentbased_traceidratio"))
   }
 
   test("load() FLARE_ENABLED=false disables everything") {
@@ -197,7 +211,6 @@ class FlareConfigTest extends FunSuite {
     val config = FlareConfig.load()
     assert(config.enabled)
     assertEquals(config.granularity, TraceGranularity.Stages)
-    assertEquals(config.samplingRatio, 0.1)
     assertEquals(config.maxSpansPerTrace, 10000)
     assertEquals(config.slowTaskMs, 0L)
     assert(!config.retryTasksOnly)

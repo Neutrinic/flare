@@ -22,7 +22,6 @@ object TraceGranularity {
 final case class FlareConfig(
   enabled:          Boolean,
   granularity:      TraceGranularity,
-  samplingRatio:    Double,
   maxSpansPerTrace: Int,
   slowTaskMs:       Long,    // 0 = disabled, >0 = only emit task spans slower than this
   retryTasksOnly:   Boolean, // true = only emit spans for retries and speculative tasks
@@ -131,6 +130,33 @@ object FlareConfig {
   private def envOrProp(key: String): Option[String] =
     sys.props.get(key).orElse(sys.env.get(key))
 
+  /**
+   * FLARE_SAMPLING_RATIO was read and validated but never applied: the agent's sampler decided, and
+   * its default traces every application (#130). The key is no longer read. It is still accepted in
+   * any form, so a deployment that sets it does not fail start-up, and this warning says what to use.
+   */
+  def samplingRatioWarning(): Option[String] =
+    envOrProp("FLARE_SAMPLING_RATIO").map { v =>
+      s"[Flare] FLARE_SAMPLING_RATIO=$v has no effect and is ignored. To trace a fraction of " +
+        "applications, set -Dotel.traces.sampler=parentbased_traceidratio " +
+        "-Dotel.traces.sampler.arg=<ratio> on the driver (#130)"
+    }
+
+  private val samplingRatioWarned = new java.util.concurrent.atomic.AtomicBoolean(false)
+
+  /**
+   * Logs [[samplingRatioWarning]] at most once per JVM. Called first thing on every start-up path,
+   * before the dedup and FLARE_ENABLED checks, so the warning is not skipped when Flare is disabled,
+   * and the driver's two start-up paths (plugin and scheduler hook) cannot both emit it.
+   */
+  def warnIfSamplingRatioSet(log: String => Unit): Unit =
+    samplingRatioWarning().foreach { w =>
+      if (samplingRatioWarned.compareAndSet(false, true)) log(w)
+    }
+
+  /** Visible for testing. */
+  private[config] def resetSamplingRatioWarning(): Unit = samplingRatioWarned.set(false)
+
   /** Load and validate config from system properties / env vars. Throws at startup on invalid config. */
   def load(): FlareConfig = {
     // Kept deliberately in step with FlareAutoConfig.isFlareEnabled(), which parses the same key
@@ -144,17 +170,6 @@ object FlareConfig {
         case Right(g)  => g
         case Left(err) => throw new IllegalArgumentException(s"Flare config error: $err")
       }
-
-    val samplingRatio = envOrProp("FLARE_SAMPLING_RATIO")
-      .map { s =>
-        val d = Try(s.toDouble).getOrElse(
-          throw new IllegalArgumentException(s"Flare config error: FLARE_SAMPLING_RATIO '$s' is not a number")
-        )
-        if (d < 0.0 || d > 1.0)
-          throw new IllegalArgumentException(s"Flare config error: FLARE_SAMPLING_RATIO must be 0.0-1.0, got $d")
-        d
-      }
-      .getOrElse(0.1)
 
     val maxSpansPerTrace = envOrProp("FLARE_MAX_SPANS_PER_TRACE")
       .map { s =>
@@ -225,7 +240,6 @@ object FlareConfig {
     FlareConfig(
       enabled          = enabled,
       granularity      = granularity,
-      samplingRatio    = samplingRatio,
       maxSpansPerTrace = maxSpansPerTrace,
       slowTaskMs       = slowTaskMs,
       retryTasksOnly   = retryTasksOnly,
