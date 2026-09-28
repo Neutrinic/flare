@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serves HTTP ([#123])
 
 ### Fixed
+- **Root span and executor task metrics lost when the cluster is torn down after a run.** A
+  Databricks job cluster stops the driver with SIGTERM and never stops the SparkContext, so Flare
+  ended the root `spark.application` span from its JVM shutdown hook while the agent's hook shut
+  the span processor down. The agent's hook won and the root was dropped, every run. Flare now
+  wraps the driver's span processors so the agent's own shutdown ends Flare's open spans first,
+  and they go out in the final export whichever hook fires first. Executors are killed without a
+  shutdown call, so their task metrics waited for a 60s export that never came; each executor now
+  flushes through the agent's `OpenTelemetrySdkAccess.forceFlush` one second after its last task
+  ends, and the driver flushes on shutdown too. Closes the race in #83 as well ([#122], [#83])
 - **On Java 8 or 11, Flare disabled the whole agent and nothing was exported** — Flare's Java
   sources, the agent-extension half, were compiled for Java 17 because the build never set a javac
   target and CI builds on 17. Spark 3.x runs on Java 8 and 11, where the agent cannot load
@@ -486,4 +495,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#111]: https://github.com/Neutrinic/flare/issues/111
 [#114]: https://github.com/Neutrinic/flare/issues/114
 [#120]: https://github.com/Neutrinic/flare/issues/120
+[#122]: https://github.com/Neutrinic/flare/issues/122
 [#123]: https://github.com/Neutrinic/flare/issues/123

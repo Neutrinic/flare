@@ -204,7 +204,12 @@ lazy val root = (project in file("."))
         "-Dotel.exporter.otlp.traces.compression=none",
         "-Dotel.bsp.schedule.delay=100",
         "-Dotel.instrumentation.java-http-server.enabled=false",
-        "-Dotel.metrics.exporter=none",
+        // Metrics go to the stub collector on a ten-minute interval, so AgentFlushTest can tell
+        // a flush from a periodic export.
+        "-Dotel.metrics.exporter=otlp",
+        s"-Dotel.exporter.otlp.metrics.endpoint=http://127.0.0.1:$collectorPort/v1/metrics",
+        "-Dotel.exporter.otlp.metrics.compression=none",
+        "-Dotel.metric.export.interval=600000",
         "-Dotel.logs.exporter=none",
         "-Dotel.traces.sampler=always_on",
         "-Dotel.service.name=flare-agent-test",

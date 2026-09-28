@@ -102,40 +102,19 @@ class FlareDriverPlugin extends DriverPlugin {
   override def shutdown(): Unit = {
     // Delegate to FlareDriverState which coordinates with both SparkPlugin and
     // ByteBuddy paths. FlareDriverState.shutdown() calls listener.shutdown()
-    // which ends all open spans (stages, jobs, app).
+    // which ends all open spans (stages, jobs, app), then flushes.
     FlareDriverState.shutdown()
 
     // Only end the application span directly if the listener was never registered
     // (e.g., init failed partway through before addSparkListener, or FlareDriverState
-    // was never initialized because config was invalid/disabled).
+    // was never initialized because config was invalid/disabled). FlareDriverState did not
+    // flush in that case, so flush here.
     if (listener.isEmpty) {
       applicationSpan.foreach { span =>
         span.setStatus(StatusCode.OK)
         span.end()
       }
-    }
-
-    // Force-flush TracerProvider and MeterProvider to push buffered spans/metrics.
-    try {
-      GlobalOpenTelemetry.get() match {
-        case sdk: io.opentelemetry.sdk.OpenTelemetrySdk =>
-          sdk.getSdkTracerProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
-          sdk.getSdkMeterProvider.forceFlush().join(5, ju.concurrent.TimeUnit.SECONDS)
-          logger.info("[Flare] Forced flush of TracerProvider and MeterProvider completed")
-        case other =>
-          // Under the javaagent GlobalOpenTelemetry is an API bridge, not the SDK, so there is
-          // nothing here to flush and this branch is the normal case rather than an error. The
-          // agent flushes from its own shutdown hook. Logged so the path is visible, since a
-          // silent no-op here previously looked like a flush that ran (#83).
-          logger.debug(
-            s"[Flare] Shutdown flush skipped: GlobalOpenTelemetry is ${other.getClass.getName}, " +
-              "not an SDK; flushing is left to the agent's shutdown hook")
-      }
-    } catch {
-      case _: NoClassDefFoundError =>
-        logger.debug("[Flare] SDK classes not accessible, relying on agent shutdown hook")
-      case e: Exception =>
-        logger.warn(s"[Flare] Error during shutdown flush: {}", e.getMessage)
+      TelemetryFlush.flush("driver plugin shutdown", verbose = true)
     }
 
     logger.info("[Flare] Driver plugin shutdown complete")

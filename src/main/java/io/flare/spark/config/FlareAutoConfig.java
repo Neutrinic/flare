@@ -38,8 +38,12 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
     customizer.addResourceCustomizer(
         (resource, config) -> Resource.create(flareResourceAttributes()).merge(resource));
 
-    if ("driver".equals(detectRole()) && dropsNonSparkRoots()) {
-      customizer.addSamplerCustomizer((sampler, config) -> new SparkRootSampler(sampler));
+    if ("driver".equals(detectRole())) {
+      customizer.addSpanProcessorCustomizer(
+          (processor, config) -> new EndDriverSpansOnShutdown(processor));
+      if (dropsNonSparkRoots()) {
+        customizer.addSamplerCustomizer((sampler, config) -> new SparkRootSampler(sampler));
+      }
     }
   }
 
