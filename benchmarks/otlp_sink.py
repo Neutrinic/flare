@@ -175,7 +175,7 @@ class Otlp(Base):
         records = log_record_count(raw) if signal == "logs" else 0
         if request_log:
             with lock:
-                request_log.write(json.dumps({"t": time.time(), "signal": signal, "wire": len(wire),
+                request_log.write(json.dumps({"t": time.time(), "client": self.client_address[0], "signal": signal, "wire": len(wire),
                                               "bytes": len(raw), "spans": len(names)}) + "\n")
                 request_log.flush()
         with lock:
