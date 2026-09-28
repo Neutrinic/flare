@@ -33,13 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copy comes first on `extraClassPath` and pins that version. Anyone resolving through Maven
   stops receiving the API as a transitive dependency, which is correct now that it ships
   inside the JAR ([#107])
-- **The driver no longer exports traces that are not Spark's.** The agent instruments the whole
+- **Spark JVMs no longer export traces that are not Spark's.** The agent instruments the whole
   driver, and each platform makes its own calls there: Databricks' HTTP requests into the driver,
   Dataproc's metadata and GCS calls, Spark's calls to the Kubernetes API server. Each became a
   one-span trace, about 320 of them beside one Flare trace in a three-minute Databricks run. On the
   driver, a span with no parent is now dropped unless it is one of Flare's `spark.*` spans. Spans
   with a parent are unaffected, so calls made inside Spark work still nest under Flare's spans, and
-  a request carrying a `traceparent` still continues its caller's trace. Executors are unchanged.
+  a request carrying a `traceparent` still continues its caller's trace. The same applies on
+  executors, which traced their own start-up, three one-span traces each on EMR Serverless ([#127]).
+  Work a task hands to a thread pool or `CompletableFuture` keeps its parent; a span on a raw
+  `new Thread` has none and is dropped, where it was previously a detached trace.
   Set `FLARE_DROP_NON_SPARK_ROOTS=false` to keep the old behaviour, for example on a driver that
   serves HTTP ([#123])
 
@@ -497,3 +500,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#120]: https://github.com/Neutrinic/flare/issues/120
 [#122]: https://github.com/Neutrinic/flare/issues/122
 [#123]: https://github.com/Neutrinic/flare/issues/123
+[#127]: https://github.com/Neutrinic/flare/issues/127
