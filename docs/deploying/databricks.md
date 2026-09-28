@@ -62,6 +62,14 @@ Add a cluster environment variable `FLARE_OTLP_TOKEN={{secrets/flare/otlp-token}
 resolves it and redacts it in its UI and logs. The init script turns it into the agent's
 configuration file:
 
+!!! warning "Dedicated clusters only"
+    Redaction hides the value from the UI and logs, not from code. Any user who can run code on the
+    cluster can read a secret-backed environment variable, and the configuration file the script
+    writes. That is fine on a Dedicated cluster, where that user is you. On a **Standard (shared)**
+    cluster every attached user could reuse the credential: send telemetry to a collector that
+    holds it instead, and point the agent at the collector with no credential of its own.
+
+
 ```bash
 if [ -n "${FLARE_OTLP_TOKEN:-}" ]; then
   T=$(printf '%s' "$FLARE_OTLP_TOKEN" | tr -d '\r\n')

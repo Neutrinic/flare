@@ -4,7 +4,8 @@ name: Documentation
 #
 # The site describes the released JAR, so it deploys on release tags, not on every push to main:
 # docs for an unreleased install would be wrong for everyone using the version on Maven Central.
-# A manual run republishes, for a fix that should not wait for the next release.
+# A manual run republishes a given release tag, for example after a failed deploy. It never builds
+# a branch, which would publish docs for changes not in any released JAR.
 #
 # Pull requests that touch the docs only build them, in strict mode, so a broken link or page fails
 # the PR instead of the release.
@@ -13,6 +14,10 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, e.g. v1.3.0"
+        required: true
   pull_request:
     paths:
       - "docs/**"
@@ -31,8 +36,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - if: github.event_name == 'workflow_dispatch' && !startsWith(inputs.tag, 'v')
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          echo "::error::'$TAG' is not a release tag; manual runs publish a v* tag only"
+          exit 1
+
       - uses: actions/checkout@v7
         with:
+          # A manual run builds the requested release tag, not the branch it was started from.
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
           persist-credentials: false
 
       - uses: actions/setup-python@v6

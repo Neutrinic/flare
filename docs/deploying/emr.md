@@ -69,6 +69,12 @@ sudo chmod 644 /opt/flare/otel.properties
 unset V
 ```
 
+`0644` is what was run, on a cluster with no other users. On a cluster where other people can log
+in to the nodes, the header in that file is readable by all of them: restrict it to the group the
+Spark JVMs run as, for example `sudo chown root:hadoop` and `sudo chmod 640` on EMR, and check that
+jobs still export. That variant was not run here. A collector on the node that holds the
+credential avoids the file entirely.
+
 Checked leak-free: no trace of the token, the encoded header or even the `otel.exporter.otlp.headers`
 key in any of 154 files, including both Spark event logs, every container and step log, and the
 bootstrap output.

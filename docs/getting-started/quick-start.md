@@ -64,6 +64,11 @@ Some platforms already put a directory on Spark's classpath, such as `/databrick
 Databricks or `/usr/lib/spark/jars` in an EMR Serverless image. Copying the Flare JAR there
 replaces the two `extraClassPath` settings. The platform pages say where.
 
+!!! warning "Use TLS across untrusted networks"
+    `http://` sends telemetry unencrypted, which is fine for a collector on the same node or a
+    private network. Telemetry includes SQL plans, failure messages and, with log export, your logs,
+    so use an `https://` endpoint for a collector reached over anything you do not control.
+
 !!! tip "Compression"
     `otel.exporter.otlp.compression` defaults to `none`. Spark telemetry is unusually repetitive:
     every export repeats the resource block, which on Spark carries the whole command line and

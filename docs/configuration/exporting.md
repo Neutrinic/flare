@@ -16,6 +16,10 @@ page covers what matters for Spark.
 The agent's default protocol is `http/protobuf` on port 4318. Use `grpc` with port 4317 if your
 collector expects gRPC.
 
+`http://` endpoints are unencrypted. Use them only for a collector on the same node or a private
+network, and `https://` for anything else: the telemetry carries SQL plans, failure messages and,
+with log export, your logs.
+
 Turn on `gzip`. Every export repeats the resource block, and on Spark that includes the whole
 command line and classpath. On the local stack, three matched runs each way sent 244,660 bytes
 uncompressed against 106,480 with gzip, 56% less, with identical traces.
@@ -81,8 +85,10 @@ To turn logs off: `-Dotel.logs.exporter=none`.
 ## Metrics
 
 Metrics are exported every 60 seconds by default (`otel.metric.export.interval`). Flare also flushes
-at shutdown, and each executor flushes about a second after its last task ends, so short jobs and
-executors that are killed without warning still report their final values.
+at shutdown, and each executor flushes about a second after its last task ends, so a short job, or an
+executor that is later killed without a shutdown call, still reports its final values. An executor
+killed within that second of its last task, or while a task is still running, can lose the metrics
+it had not exported yet.
 
 ## Checking what is exported
 

@@ -8,7 +8,7 @@ often with an unhelpful error, so match it to what the cluster runs.
 | 3.3 | `flare-spark-3-3_2.12` | `flare-spark-3-3_2.13` |
 | 3.4 | `flare-spark-3-4_2.12` | `flare-spark-3-4_2.13` |
 | 3.5 | `flare-spark-3-5_2.12` | `flare-spark-3-5_2.13` |
-| 4.0 and later | | `flare-spark-4-0_2.13` |
+| 4.0, 4.1 | | `flare-spark-4-0_2.13` |
 
 All are under the Maven group `io.github.neutrinic`, for example
 `io.github.neutrinic:flare-spark-3-5_2.12:<version>`. The JAR is self-contained: it bundles the
@@ -38,11 +38,12 @@ Dataproc Serverless 2.3 is Scala 2.13 while Dataproc on Compute Engine 2.3 is 2.
 ## Spark 4.1 and later
 
 There is no separate artifact yet. The `4-0_2.13` JAR has been run on Spark 4.1.2 (Dataproc 3.0)
-with a complete trace.
+with a complete trace. Later Spark releases have not been run.
 
 ## Java
 
 Every Spark 3.x artifact runs on Java 8 and later, and the 4.0 artifact on Java 17 and later, the
 same floors as Spark itself. This matters on Databricks Runtime 14 and 15, which default to Java 8,
-and on Dataproc 2.x, which runs Java 11. Releases before 1.3.0 exported nothing on Java 8 or 11; see
+and on Dataproc on Compute Engine 2.x, which runs Java 11. Dataproc Serverless 2.3 runs Java 17.
+Releases before 1.3.0 exported nothing on Java 8 or 11; see
 [Upgrading](../upgrading.md).

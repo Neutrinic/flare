@@ -54,7 +54,9 @@ One per `SparkListenerSQLExecutionStart`. `N` is the execution id.
 *SpanKind INTERNAL, child of `spark.job.N`.*
 
 Metrics below are Spark's own sums across every task in the stage, so they are directly comparable
-with each other. All are set at `onStageCompleted` from `StageInfo.taskMetrics`.
+with each other. All are set at `onStageCompleted` from `StageInfo.taskMetrics`, except
+`spark.stage.scheduler.delay_ms`, which Spark does not report and Flare derives from task ends; see
+below.
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
@@ -130,7 +132,8 @@ fields (host, locality, speculative) are not available to it.
 
 `error.type`, `error.message` and the `exception` event.
 
-A failed job, stage or task span carries `error.type` and `error.message`, and status `ERROR`.
+A failed job, stage or task span carries `error.message` and status `ERROR`, and `error.type` when
+the failure's type can be recovered, which on stage spans it sometimes cannot (see below).
 Where a stack trace is available it is attached as an OTEL `exception` span event with
 `exception.type`, `exception.message` and `exception.stacktrace` (capped at 8000 chars).
 
