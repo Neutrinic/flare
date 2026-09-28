@@ -59,6 +59,7 @@ parser.add_argument("--nodes", default="local", help="hosts to sample CPU on; 'l
 parser.add_argument("--ssh-key")
 parser.add_argument("--ssh-user", default=None)
 parser.add_argument("--no-warmup", action="store_true")
+parser.add_argument("--extra-java-opts", default="", help="appended to every configuration but off, on driver and executors")
 args = parser.parse_args()
 
 args.event_dir.mkdir(parents=True, exist_ok=True)
@@ -76,6 +77,7 @@ def java_opts(config, role):
             "-Dotel.exporter.otlp.compression=gzip",
             "-Dotel.logs.exporter=none",
             f"-Dotel.service.name=bench-{role}"]
+    opts += shlex.split(args.extra_java_opts)
     if config == "agent":
         return " ".join(opts)
     opts.append(f"-Dotel.javaagent.extensions={args.flare}")

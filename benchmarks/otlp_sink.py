@@ -22,6 +22,7 @@ ExportTraceServiceRequest.resource_spans(1) -> ScopeSpans(2) -> Span(2), name in
 import argparse
 import json
 import threading
+import time
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -34,6 +35,7 @@ def empty_stats():
 
 
 stats = empty_stats()
+request_log = None  # --log-requests: one JSON line per export, for sizes over time
 MAX_BYTES = 64 * 1024 * 1024  # replaced from --max-bytes
 
 
@@ -163,6 +165,11 @@ class Otlp(Base):
             self.close_connection = True
             return self._send(413)
         names = list(span_names(raw)) if signal == "traces" else []
+        if request_log:
+            with lock:
+                request_log.write(json.dumps({"t": time.time(), "signal": signal, "wire": len(wire),
+                                              "bytes": len(raw), "spans": len(names)}) + "\n")
+                request_log.flush()
         with lock:
             s = stats[signal]
             s["requests"] += 1
@@ -184,8 +191,11 @@ if __name__ == "__main__":
     parser.add_argument("--admin-port", type=int, default=4319, help="stats and reset, localhost only")
     parser.add_argument("--max-bytes", type=int, default=MAX_BYTES,
                         help="largest request body accepted, as sent and decompressed")
+    parser.add_argument("--log-requests", help="append one JSON line per export request to this file")
     args = parser.parse_args()
     MAX_BYTES = args.max_bytes
+    if args.log_requests:
+        request_log = open(args.log_requests, "a")
     admin = ThreadingHTTPServer(("127.0.0.1", args.admin_port), Admin)
     threading.Thread(target=admin.serve_forever, daemon=True).start()
     print(f"OTLP sink on {args.host}:{args.port}, admin on 127.0.0.1:{args.admin_port}", flush=True)
