@@ -117,7 +117,9 @@ overheads and the per-task costs are what to read.
   start-up cost, mostly the agent instrumenting classes as each of the four JVMs (driver and three
   executors) starts, about 15 s of CPU per JVM.
 - **On the realistic workload the cost is small:** TPC-H queries took 1.8% longer with every span
-  traced, of which 0.9% is the agent alone.
+  traced, of which 0.9% is the agent alone. Cluster CPU rose 12%, but CPU inside tasks (from the
+  event logs) was 423 s with no agent and 421 s with everything traced: the extra CPU is the fixed
+  per-JVM cost, spent outside tasks, and shrinks as a share of longer applications.
 - **No listener-bus drops** in any of the 78 runs, including 100,000-task stages with a span for
   every task.
 - **Telemetry volume:** a task span costs about 37 bytes after gzip, 3.6 MiB for 100,000. TPC-H spans average about 260
