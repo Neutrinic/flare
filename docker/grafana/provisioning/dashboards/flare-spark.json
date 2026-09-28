@@ -326,7 +326,7 @@
           "unit": "ms"
         }
       },
-      "title": "Task Duration by Stage (heatmap)",
+      "title": "Task Duration (heatmap)",
       "description": "Task execution time distribution. Purple dots are exemplars — click to open the trace in Tempo.",
       "type": "heatmap",
       "targets": [
@@ -335,10 +335,10 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(flare_task_duration_bucket) by (le, stage_id)",
+          "expr": "sum(flare_task_duration_bucket) by (le)",
           "refId": "A",
           "format": "heatmap",
-          "legendFormat": "stage {{stage_id}}",
+          "legendFormat": "tasks",
           "exemplar": true
         }
       ]
@@ -507,7 +507,7 @@
         },
         "xTickLabelSpacing": 100
       },
-      "title": "Shuffle by Stage",
+      "title": "Shuffle by Query",
       "type": "barchart",
       "targets": [
         {
@@ -515,20 +515,20 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(max_over_time(flare_task_shuffle_read_bytes[$__range])) by (stage_id)",
+          "expr": "sum(max_over_time(flare_stage_shuffle_read_bytes[$__range])) by (sql_description, stage_name)",
           "refId": "A",
           "instant": true,
-          "legendFormat": "Read — stage {{stage_id}}"
+          "legendFormat": "Read — {{sql_description}} {{stage_name}}"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(max_over_time(flare_task_shuffle_write_bytes[$__range])) by (stage_id)",
+          "expr": "sum(max_over_time(flare_stage_shuffle_write_bytes[$__range])) by (sql_description, stage_name)",
           "refId": "B",
           "instant": true,
-          "legendFormat": "Write — stage {{stage_id}}"
+          "legendFormat": "Write — {{sql_description}} {{stage_name}}"
         }
       ],
       "transformations": [
@@ -761,7 +761,7 @@
         "showHeader": true,
         "sortBy": [
           {
-            "displayName": "stage_id",
+            "displayName": "Query",
             "desc": false
           }
         ]
@@ -774,7 +774,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "histogram_quantile(0.95, sum(max_over_time(flare_stage_executor_run_time_bucket[$__range])) by (le, stage_id, stage_name, sql_description, instance))",
+          "expr": "histogram_quantile(0.95, sum(max_over_time(flare_stage_executor_run_time_bucket[$__range])) by (le, stage_name, sql_description, instance))",
           "refId": "A",
           "instant": true,
           "legendFormat": "Executor Run Time p95",
@@ -785,7 +785,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(max_over_time(flare_stage_input_bytes[$__range])) by (stage_id, stage_name, sql_description, instance)",
+          "expr": "sum(max_over_time(flare_stage_input_bytes[$__range])) by (stage_name, sql_description, instance)",
           "refId": "B",
           "instant": true,
           "legendFormat": "Input",
@@ -796,7 +796,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(max_over_time(flare_stage_shuffle_read_bytes[$__range])) by (stage_id, stage_name, sql_description, instance)",
+          "expr": "sum(max_over_time(flare_stage_shuffle_read_bytes[$__range])) by (stage_name, sql_description, instance)",
           "refId": "C",
           "instant": true,
           "legendFormat": "Shuffle Read",
@@ -807,7 +807,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "expr": "sum(max_over_time(flare_stage_shuffle_write_bytes[$__range])) by (stage_id, stage_name, sql_description, instance)",
+          "expr": "sum(max_over_time(flare_stage_shuffle_write_bytes[$__range])) by (stage_name, sql_description, instance)",
           "refId": "D",
           "instant": true,
           "legendFormat": "Shuffle Write",
@@ -835,18 +835,17 @@
               "stage_name": "Stage Name (Spark)"
             },
             "indexByName": {
-              "stage_id": 0,
-              "sql_description": 1,
-              "stage_name": 2,
-              "Value #A": 3,
-              "Value #B": 4,
-              "Value #C": 5,
-              "Value #D": 6
+              "sql_description": 0,
+              "stage_name": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5
             }
           }
         }
       ],
-      "description": "Grouped by instance (per-JVM UUID) as well as stage_id, because stage ids restart per application — without it, stage 4 of one run is summed into stage 4 of another. The Query column is sql.description; Stage Name is Spark’s own value, which for async subquery and broadcast stages reads $anonfun$withThreadLocalCaptured$2."
+      "description": "One row per call site and application: stages are grouped by what ran them, not by stage id, which is new for every stage and restarts per application (#136). instance (the per-JVM UUID) keeps applications apart. The Query column is sql.description; Stage Name is Spark’s own value, which for async subquery and broadcast stages reads $anonfun$withThreadLocalCaptured$2. A single stage is on its span in Tempo."
     },
     {
       "collapsed": false,
@@ -1043,7 +1042,7 @@
       "id": 42,
       "type": "stat",
       "title": "Task Duration Skew (p99 / p50)",
-      "description": "Ratio of the 99th-percentile task duration to the median, over every individual task observation in the histogram. 1.0 means uniform; higher means a tail of stragglers. Computed from flare_task_duration_bucket because that is the only task metric with per-task granularity — the shuffle byte counters are pre-aggregated per (executor_id, stage_id), so a ratio over them cannot see partition-level imbalance.",
+      "description": "Ratio of the 99th-percentile task duration to the median, over every individual task observation in the histogram. 1.0 means uniform; higher means a tail of stragglers. Computed from flare_task_duration_bucket because that is the only task metric with per-task granularity — the shuffle byte counters are pre-aggregated per (executor_id, task_result), so a ratio over them cannot see partition-level imbalance.",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"

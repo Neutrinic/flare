@@ -5,15 +5,15 @@ Seventeen instruments, all under the `io.flare.spark` meter, all turned off by
 
 | Instrument | Kind | Unit | Labels |
 |------------|------|------|--------|
-| `flare.task.duration` | histogram | `ms` | `executor.id`, `stage.id`, `task.result` |
-| `flare.task.records_throughput` | histogram | `{records}/s` | `executor.id`, `stage.id`, `task.result` |
-| `flare.task.shuffle.read_bytes` | counter | `By` | `executor.id`, `stage.id`, `task.result` |
-| `flare.task.shuffle.write_bytes` | counter | `By` | `executor.id`, `stage.id`, `task.result` |
-| `flare.stage.executor.run_time` | histogram | `ms` | `stage.id`, `stage.name`, `sql.description` |
-| `flare.stage.input.bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
-| `flare.stage.output.bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
-| `flare.stage.shuffle.read_bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
-| `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
+| `flare.task.duration` | histogram | `ms` | `executor.id`, `task.result` |
+| `flare.task.records_throughput` | histogram | `{records}/s` | `executor.id`, `task.result` |
+| `flare.task.shuffle.read_bytes` | counter | `By` | `executor.id`, `task.result` |
+| `flare.task.shuffle.write_bytes` | counter | `By` | `executor.id`, `task.result` |
+| `flare.stage.executor.run_time` | histogram | `ms` | `stage.name`, `sql.description` |
+| `flare.stage.input.bytes` | counter | `By` | `stage.name`, `sql.description` |
+| `flare.stage.output.bytes` | counter | `By` | `stage.name`, `sql.description` |
+| `flare.stage.shuffle.read_bytes` | counter | `By` | `stage.name`, `sql.description` |
+| `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.name`, `sql.description` |
 | `flare.executor.count` | updowncounter | `{executor}` | `executor.id` |
 | `flare.executor.removed` | counter | `{executor}` | `executor.id`, `reason` |
 | `flare.executor.excluded` | counter | `{executor}` | `executor.id` |
@@ -22,6 +22,12 @@ Seventeen instruments, all under the `io.flare.spark` meter, all turned off by
 | `flare.storage.memory.bytes` | updowncounter | `By` | `executor.id` |
 | `flare.storage.disk.bytes` | updowncounter | `By` | `executor.id` |
 | `flare.storage.blocks` | updowncounter | `{block}` | `executor.id` |
+
+No label is new for every stage. `stage.name` and `sql.description` are call sites, such as
+`collect at Job.scala:42`, so stages from the same line of code share a series, and the number of
+series depends on the code, not on how long the application runs. A single stage is on its
+`spark.stage` span. Up to 1.2.0 the task and stage metrics also carried `stage.id`, which made one
+series per stage ([#136](https://github.com/Neutrinic/flare/issues/136)).
 
 The counters are only incremented for non-zero values, so a stage that read nothing produces no
 `flare.stage.input.bytes` series rather than a flat zero one.
