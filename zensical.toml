@@ -1,0 +1,90 @@
+# Documentation site, built by .github/workflows/docs.yml and published to GitHub Pages (#129).
+[project]
+site_name = "Flare"
+site_description = "OpenTelemetry tracing, metrics and logs for Apache Spark, across driver and executors"
+site_url = "https://neutrinic.github.io/flare/"
+repo_url = "https://github.com/Neutrinic/flare"
+repo_name = "Neutrinic/flare"
+edit_uri = "edit/main/docs/"
+copyright = "Apache License 2.0"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = [
+    "getting-started/quick-start.md",
+    "getting-started/choosing-a-jar.md",
+    "getting-started/local-stack.md",
+  ] },
+  { "Deploying" = [
+    "deploying/index.md",
+    "deploying/standalone.md",
+    "deploying/yarn.md",
+    "deploying/kubernetes.md",
+    "deploying/emr.md",
+    "deploying/emr-serverless.md",
+    "deploying/dataproc.md",
+    "deploying/dataproc-serverless.md",
+    "deploying/databricks.md",
+    "deploying/hdinsight.md",
+    "deploying/unsupported.md",
+  ] },
+  { "Configuration" = [
+    "configuration/index.md",
+    "configuration/exporting.md",
+    "configuration/noise.md",
+  ] },
+  { "Reference" = [
+    "reference/spans.md",
+    "reference/metrics.md",
+    "reference/compatibility.md",
+  ] },
+  { "Upgrading" = "upgrading.md" },
+  { "Troubleshooting" = "troubleshooting.md" },
+  { "Privacy" = "privacy.md" },
+  { "Building Flare" = "building.md" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+def_list = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.inlinehilite = {}
+pymdownx.superfences = {}
+pymdownx.tabbed.alternate_style = true

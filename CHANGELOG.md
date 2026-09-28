@@ -95,6 +95,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never ran and nothing said so. It is now logged at debug; flushing is left to the agent ([#83])
 
 ### Documentation
+- **Documentation site.** Install recipes for every verified platform, configuration, the telemetry
+  reference, upgrading and troubleshooting, published to GitHub Pages on each release tag. Built
+  in strict mode on every docs pull request ([#129])
 - **The previous thin-JAR install needed the OpenTelemetry API on the Spark classpath** — without
   `opentelemetry-api`, `-context` and `-common`, the driver crashed with
   `NoClassDefFoundError: io/opentelemetry/context/ImplicitContextKeyed`. The published assembly
@@ -511,4 +514,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#122]: https://github.com/Neutrinic/flare/issues/122
 [#123]: https://github.com/Neutrinic/flare/issues/123
 [#127]: https://github.com/Neutrinic/flare/issues/127
+[#129]: https://github.com/Neutrinic/flare/issues/129
 [#130]: https://github.com/Neutrinic/flare/issues/130
