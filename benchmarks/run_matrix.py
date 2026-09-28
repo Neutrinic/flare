@@ -19,6 +19,8 @@ Configurations, from nothing to everything:
     tasks             everything traced, every task span, under the default span cap
     tasks-uncapped    as tasks, with the span cap raised so every task gets a span. For the
                       per-task cost of tracing: `tasks` stops at 10,000 task spans per executor
+    tasks-lean        as tasks, with the agent's own instrumentations off, leaving only Flare's.
+                      How much of the agent's start-up cost is avoidable
 
 The cost of tracing a fraction p of applications is then (1-p) x tasks-unsampled + p x tasks.
 Running at p=0.1 directly would leave most repeats unsampled and the average would be noise.
@@ -35,7 +37,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CONFIGS = ["off", "agent", "stages", "tasks-unsampled", "tasks"]
-OPTIONAL_CONFIGS = ["tasks-uncapped"]
+OPTIONAL_CONFIGS = ["tasks-uncapped", "tasks-lean"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--spark-submit", default="spark-submit",
@@ -52,6 +54,7 @@ parser.add_argument("--configs", default=",".join(CONFIGS))
 parser.add_argument("--repeats", type=int, default=3)
 parser.add_argument("--tpch-data")
 parser.add_argument("--tpch-queries")
+parser.add_argument("--tpch-minutes", type=float, default=0, help="loop TPC-H passes for this long")
 parser.add_argument("--nodes", default="local", help="hosts to sample CPU on; 'local' is this host")
 parser.add_argument("--ssh-key")
 parser.add_argument("--ssh-user", default=None)
@@ -77,6 +80,11 @@ def java_opts(config, role):
         return " ".join(opts)
     opts.append(f"-Dotel.javaagent.extensions={args.flare}")
     opts.append("-DFLARE_TRACE_GRANULARITY=" + ("stages" if config == "stages" else "all"))
+    if config == "tasks-lean":
+        opts += ["-Dotel.instrumentation.common.default-enabled=false",
+                 "-Dotel.instrumentation.flare-spark.enabled=true",
+                 # Flare calls the OpenTelemetry API; this bridges it to the agent's SDK
+                 "-Dotel.instrumentation.opentelemetry-api.enabled=true"]
     if config == "tasks-uncapped":
         opts.append("-DFLARE_MAX_SPANS_PER_TRACE=100000000")
     if config == "tasks-unsampled" and role == "driver":
@@ -111,7 +119,7 @@ def workload_args(workload, result):
         return [str(HERE / "many_tasks.py"), "--tasks", workload.split("-", 1)[1], "--result", str(result)]
     if workload == "tpch":
         return [str(HERE / "tpch.py"), "--data", args.tpch_data, "--queries", args.tpch_queries,
-                "--result", str(result)]
+                "--result", str(result), "--minutes", str(args.tpch_minutes)]
     raise SystemExit(f"unknown workload {workload}")
 
 
@@ -230,6 +238,11 @@ def run(config, workload, repeat, order, record=True):
         wl = json.loads(result.read_text())
         rec["seconds"] = wl["seconds"]
         rec["app_id"] = wl["app_id"]
+        for key in ("passes", "at_start", "at_end"):
+            if key in wl:
+                rec[key] = wl[key]
+        for p in rec.get("passes", []):
+            p.pop("queries", None)
         rec.update(event_log(wl["app_id"]))
     rec["telemetry"] = telemetry
     print(f"{name}: exit={proc.returncode} seconds={rec.get('seconds', 0):.1f} "
