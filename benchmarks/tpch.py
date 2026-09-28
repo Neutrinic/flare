@@ -33,6 +33,8 @@ parser.add_argument("--queries", required=True)
 parser.add_argument("--result", required=True)
 parser.add_argument("--minutes", type=float, default=0, help="run passes until this long has gone")
 parser.add_argument("--stats-url", help="OTLP sink admin URL to read telemetry totals from at the end")
+parser.add_argument("--log-level", default="WARN",
+                    help="Spark log level to set, or 'default' to leave the cluster's own")
 parser.add_argument("--no-stop", action="store_true", help="leave the session running (Databricks jobs)")
 args = parser.parse_args()
 
@@ -114,7 +116,8 @@ class StageCpu:
 
 app_started = time.time()
 spark = SparkSession.builder.appName("flare-bench tpch").getOrCreate()
-spark.sparkContext.setLogLevel("WARN")
+if args.log_level != "default":
+    spark.sparkContext.setLogLevel(args.log_level)
 for table in TABLES:
     spark.read.parquet(f"{args.data.rstrip('/')}/{table}").createOrReplaceTempView(table)
 queries = {n: open(os.path.join(args.queries, f"q{n}.sql")).read() for n in range(1, 23)}

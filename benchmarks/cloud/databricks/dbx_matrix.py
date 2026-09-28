@@ -32,6 +32,7 @@ parser.add_argument("--spark-version", default="15.4.x-scala2.12")
 parser.add_argument("--node-type", default="m5d.xlarge")
 parser.add_argument("--workers", type=int, default=3)
 parser.add_argument("--photon", action="store_true")
+parser.add_argument("--log-level", default="WARN", help="Spark log level for tpch.py, or 'default'")
 parser.add_argument("--tag", default="", help="suffix for run names and result files")
 parser.add_argument("--generate", action="store_true", help="generate TPC-H into the volume first")
 parser.add_argument("--max-failures", type=int, default=3)
@@ -53,7 +54,11 @@ def java_opts(config, role):
     opts = [AGENT, f"-Dotel.service.name=bench-{role}"]
     if config != "agent":
         opts += ["-Dotel.javaagent.extensions=/opt/flare/flare-spark.jar", "-DFLARE_TRACE_GRANULARITY=all"]
-    if config == "tasks-lean":
+    if config.endswith("-logs"):
+        opts.append("-Dotel.logs.exporter=otlp")  # overrides the init script's configuration file
+    if config == "tasks-lean-logs":
+        opts.append("-Dotel.instrumentation.log4j-appender.enabled=true")
+    if config in ("tasks-lean", "tasks-lean-logs"):
         opts += ["-Dotel.instrumentation.common.default-enabled=false",
                  "-Dotel.instrumentation.flare-spark.enabled=true",
                  # Flare calls the OpenTelemetry API; this bridges it to the agent's SDK
@@ -125,7 +130,7 @@ def one(config, repeat, order):
             "spark_python_task": {"python_file": f"{args.workspace_dir}/tpch.py", "parameters": [
                 "--data", f"{args.bench}/tpch/sf{args.scale_factor}", "--queries", f"{args.bench}/tpch/queries",
                 "--result", result, "--minutes", str(args.minutes),
-                "--stats-url", "http://127.0.0.1:4319", "--no-stop"]}}
+                "--stats-url", "http://127.0.0.1:4319", "--no-stop", "--log-level", args.log_level]}}
     with lock:
         if failures >= args.max_failures:
             print(f"{name}: skipped, {failures} failures already", flush=True)

@@ -21,6 +21,8 @@ Configurations, from nothing to everything:
                       per-task cost of tracing: `tasks` stops at 10,000 task spans per executor
     tasks-lean        as tasks, with the agent's own instrumentations off, leaving only Flare's.
                       How much of the agent's start-up cost is avoidable
+    tasks-logs        as tasks, with log export on (the agent's default): the cost of log capture
+    tasks-lean-logs   as tasks-lean, with the agent's Log4j capture turned back on
 
 The cost of tracing a fraction p of applications is then (1-p) x tasks-unsampled + p x tasks.
 Running at p=0.1 directly would leave most repeats unsampled and the average would be noise.
@@ -37,7 +39,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CONFIGS = ["off", "agent", "stages", "tasks-unsampled", "tasks"]
-OPTIONAL_CONFIGS = ["tasks-uncapped", "tasks-lean"]
+OPTIONAL_CONFIGS = ["tasks-uncapped", "tasks-lean", "tasks-logs", "tasks-lean-logs"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--spark-submit", default="spark-submit",
@@ -54,6 +56,7 @@ parser.add_argument("--configs", default=",".join(CONFIGS))
 parser.add_argument("--repeats", type=int, default=3)
 parser.add_argument("--tpch-data")
 parser.add_argument("--tpch-queries")
+parser.add_argument("--tpch-log-level", default="WARN", help="Spark log level, or 'default'")
 parser.add_argument("--tpch-minutes", type=float, default=0, help="loop TPC-H passes for this long")
 parser.add_argument("--nodes", default="local", help="hosts to sample CPU on; 'local' is this host")
 parser.add_argument("--ssh-key")
@@ -75,18 +78,20 @@ def java_opts(config, role):
             f"-Dotel.exporter.otlp.endpoint={args.sink}",
             "-Dotel.exporter.otlp.protocol=http/protobuf",
             "-Dotel.exporter.otlp.compression=gzip",
-            "-Dotel.logs.exporter=none",
+            "-Dotel.logs.exporter=" + ("otlp" if config.endswith("-logs") else "none"),
             f"-Dotel.service.name=bench-{role}"]
     opts += shlex.split(args.extra_java_opts)
     if config == "agent":
         return " ".join(opts)
     opts.append(f"-Dotel.javaagent.extensions={args.flare}")
     opts.append("-DFLARE_TRACE_GRANULARITY=" + ("stages" if config == "stages" else "all"))
-    if config == "tasks-lean":
+    if config in ("tasks-lean", "tasks-lean-logs"):
         opts += ["-Dotel.instrumentation.common.default-enabled=false",
                  "-Dotel.instrumentation.flare-spark.enabled=true",
                  # Flare calls the OpenTelemetry API; this bridges it to the agent's SDK
                  "-Dotel.instrumentation.opentelemetry-api.enabled=true"]
+    if config == "tasks-lean-logs":
+        opts.append("-Dotel.instrumentation.log4j-appender.enabled=true")
     if config == "tasks-uncapped":
         opts.append("-DFLARE_MAX_SPANS_PER_TRACE=100000000")
     if config == "tasks-unsampled" and role == "driver":
@@ -121,7 +126,7 @@ def workload_args(workload, result):
         return [str(HERE / "many_tasks.py"), "--tasks", workload.split("-", 1)[1], "--result", str(result)]
     if workload == "tpch":
         return [str(HERE / "tpch.py"), "--data", args.tpch_data, "--queries", args.tpch_queries,
-                "--result", str(result), "--minutes", str(args.tpch_minutes)]
+                "--result", str(result), "--minutes", str(args.tpch_minutes), "--log-level", args.tpch_log_level]
     raise SystemExit(f"unknown workload {workload}")
 
 

@@ -31,7 +31,7 @@ lock = threading.Lock()
 
 def empty_stats():
     return {sig: {"requests": 0, "wire_bytes": 0, "bytes": 0} for sig in ("traces", "metrics", "logs")} | {
-        "spans": 0, "spark_spans": 0, "span_names": {}}
+        "spans": 0, "spark_spans": 0, "span_names": {}, "log_records": 0}
 
 
 stats = empty_stats()
@@ -81,6 +81,13 @@ def fields(buf):
             i += length
         else:
             raise ValueError(f"unsupported wire type {wire}")
+
+
+def log_record_count(request):
+    """ExportLogsServiceRequest.resource_logs(1) -> ScopeLogs(2) -> LogRecord(2)."""
+    return sum(1 for n1, rl in fields(request) if n1 == 1
+               for n2, sl in fields(rl) if n2 == 2
+               for n3, _ in fields(sl) if n3 == 2)
 
 
 def span_names(request):
@@ -165,6 +172,7 @@ class Otlp(Base):
             self.close_connection = True
             return self._send(413)
         names = list(span_names(raw)) if signal == "traces" else []
+        records = log_record_count(raw) if signal == "logs" else 0
         if request_log:
             with lock:
                 request_log.write(json.dumps({"t": time.time(), "signal": signal, "wire": len(wire),
@@ -176,6 +184,7 @@ class Otlp(Base):
             s["wire_bytes"] += len(wire)
             s["bytes"] += len(raw)
             stats["spans"] += len(names)
+            stats["log_records"] += records
             for name in names:
                 key = name.rstrip("0123456789").rstrip(".") if name.startswith("spark.") else name
                 stats["span_names"][key] = stats["span_names"].get(key, 0) + 1
