@@ -28,3 +28,6 @@ docker/*.jar
 
 # Built documentation site (zensical build)
 site/
+
+# Python bytecode (benchmarks/)
+__pycache__/
