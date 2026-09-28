@@ -489,6 +489,19 @@ so a fast task still contributes to the histogram but carries no exemplar pointi
 was never exported. Note that some backends drop exemplars by default — Mimir's
 `max_global_exemplars_per_user` is `0` unless you set it.
 
+## Overhead
+
+Measured on a three-node lab cluster against the same jobs with no agent at all, Spark 4.0.4
+([method and full results](benchmarks/README.md)):
+
+- **TPC-H SF5, 22 queries:** +1.8% query time with every span traced, of which +0.9% is the
+  OpenTelemetry agent alone. +12% cluster CPU, of which +11% is the agent.
+- **Per task:** about 0.5 ms of CPU and 44 µs of wall time with task spans on; about 0.3 ms and
+  26 µs at the default granularity.
+- **Per application:** about 5 s more start-up and 15 s of CPU per JVM, almost all of it the agent
+  instrumenting classes as the JVM starts.
+- **No listener-bus event drops** in 60 runs, up to 100,000 tasks in one stage.
+
 ## OTEL Agent Compatibility
 
 Flare is an OTEL Java agent **extension** — not a standalone library. It is loaded by the agent's `AgentClassLoader` and shares the agent's ByteBuddy and SDK classes at runtime. This means the agent version matters.
