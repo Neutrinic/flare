@@ -46,6 +46,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Set `FLARE_DROP_NON_SPARK_ROOTS=false` to keep the old behaviour, for example on a driver that
   serves HTTP ([#123])
 
+### Removed
+- **`FLARE_SAMPLING_RATIO`.** It was read and validated at start-up, then never applied: the
+  agent's sampler decided, and its default, `parentbased_always_on`, traced every application
+  whatever the setting said. The key is now ignored with a warning, and no longer fails start-up
+  on any value. To trace a fraction of applications, set
+  `-Dotel.traces.sampler=parentbased_traceidratio -Dotel.traces.sampler.arg=<ratio>` on the
+  driver. Executors follow the driver's decision, so an application is traced whole or not at
+  all: ten lab runs at 0.5 gave 7 complete traces and 3 with nothing exported, from the driver or
+  the executors ([#130])
+
 ### Fixed
 - **Root span and executor task metrics lost when the cluster is torn down after a run.** A
   Databricks job cluster stops the driver with SIGTERM and never stops the SparkContext, so Flare
@@ -501,3 +511,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#122]: https://github.com/Neutrinic/flare/issues/122
 [#123]: https://github.com/Neutrinic/flare/issues/123
 [#127]: https://github.com/Neutrinic/flare/issues/127
+[#130]: https://github.com/Neutrinic/flare/issues/130

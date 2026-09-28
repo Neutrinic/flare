@@ -40,7 +40,7 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 - **Per-stage context** — each task inherits its specific stage span as parent, including AQE sub-jobs
 - **W3C trace continuity** — `traceparent` propagated via Spark's local property channel
 - **Granularity control** — jobs, stages, tasks, or all; plus slow-task and retry-only filters
-- **Sampling** — consistent across the JVM boundary via W3C traceparent flags
+- **Sampling** — the agent's sampler decides per application, and executors follow the driver's decision through the W3C traceparent
 
 ![Traces](screenshots/traces.png)
 
@@ -166,7 +166,7 @@ trace.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FLARE_TRACE_GRANULARITY` | `stages` | `jobs` / `stages` / `tasks` / `all` |
-| `FLARE_SAMPLING_RATIO` | `0.1` | 0.0-1.0, validated at startup |
+| `FLARE_SAMPLING_RATIO` | | **Removed**: it never had an effect ([#130](https://github.com/Neutrinic/flare/issues/130)). Ignored with a warning. To trace a fraction of applications, set `-Dotel.traces.sampler=parentbased_traceidratio -Dotel.traces.sampler.arg=0.1` on the driver |
 | `FLARE_SLOW_TASK_MS` | `0` (disabled) | Only emit task spans exceeding this ms |
 | `FLARE_RETRY_TASKS_ONLY` | `false` | Only emit spans for retries and speculative tasks |
 | `FLARE_MAX_SPANS_PER_TRACE` | `10000` | Circuit breaker for high-cardinality jobs |

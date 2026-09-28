@@ -24,7 +24,6 @@ class TracingSparkListenerTest extends FunSuite {
   val config: FlareConfig = FlareConfig(
     enabled          = true,
     granularity      = TraceGranularity.All,
-    samplingRatio    = 1.0,
     maxSpansPerTrace = 10000,
     slowTaskMs       = 0L,
     retryTasksOnly   = false,

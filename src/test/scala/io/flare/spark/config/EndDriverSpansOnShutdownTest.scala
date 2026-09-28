@@ -23,8 +23,7 @@ import scala.collection.JavaConverters._
 class EndDriverSpansOnShutdownTest extends FunSuite {
 
   private val config = FlareConfig(
-    enabled = true, granularity = TraceGranularity.Stages, samplingRatio = 1.0,
-    maxSpansPerTrace = 10000, slowTaskMs = 0L, retryTasksOnly = false,
+    enabled = true, granularity = TraceGranularity.Stages, maxSpansPerTrace = 10000, slowTaskMs = 0L, retryTasksOnly = false,
     taskStageIds = Set.empty, taskStagePattern = None, metricsEnabled = false,
   )
 

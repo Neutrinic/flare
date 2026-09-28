@@ -70,15 +70,16 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       case e: IllegalArgumentException =>
         logger.error(s"[Flare] Configuration error — executor task spans disabled: ${e.getMessage}")
         FlareConfig(enabled = false, granularity = TraceGranularity.Stages,
-          samplingRatio = 0.0, maxSpansPerTrace = 0, slowTaskMs = 0L,
+          maxSpansPerTrace = 0, slowTaskMs = 0L,
           retryTasksOnly = false, taskStageIds = Set.empty, taskStagePattern = None,
           metricsEnabled = false)
     }
     metrics = FlareMetrics.create(config.metricsEnabled)
     executorId = ctx.executorID()
     logger.info(s"[Flare] Executor plugin initialized (executorId=$executorId, granularity=${config.granularity}, " +
-      s"sampling=${config.samplingRatio}, maxSpans=${config.maxSpansPerTrace}, " +
+      s"maxSpans=${config.maxSpansPerTrace}, " +
       s"taskTracing=${config.tracesTasks}, metrics=${config.metricsEnabled})")
+    FlareConfig.samplingRatioWarning().foreach(w => logger.warn(w))
 
     // Stage name is not available on the executor in Phase 1 (ExecutorPlugin has no access to
     // stage metadata — only stageId from TaskContext). Warn if someone configures the pattern

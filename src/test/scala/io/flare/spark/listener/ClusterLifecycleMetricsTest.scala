@@ -21,8 +21,7 @@ import scala.collection.JavaConverters._
 class ClusterLifecycleMetricsTest extends FunSuite {
 
   private def baseConfig(trackBlocks: Boolean) = FlareConfig(
-    enabled = true, granularity = TraceGranularity.All, samplingRatio = 1.0,
-    maxSpansPerTrace = 10000, slowTaskMs = 0L, retryTasksOnly = false,
+    enabled = true, granularity = TraceGranularity.All, maxSpansPerTrace = 10000, slowTaskMs = 0L, retryTasksOnly = false,
     taskStageIds = Set.empty, taskStagePattern = None, metricsEnabled = true,
     trackBlockUpdates = trackBlocks,
   )

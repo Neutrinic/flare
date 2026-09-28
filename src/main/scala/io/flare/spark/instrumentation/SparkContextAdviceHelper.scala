@@ -86,9 +86,9 @@ object SparkContextAdviceHelper {
         s"[Flare] ByteBuddy advice initialized — " +
         s"traceId=${appSpan.getSpanContext.getTraceId}, " +
         s"granularity=${config.granularity}, " +
-        s"sampling=${config.samplingRatio}, " +
         s"maxSpans=${config.maxSpansPerTrace}"
       )
+      FlareConfig.samplingRatioWarning().foreach(w => logger.warning(w))
 
     } catch {
       case e: IllegalArgumentException =>
