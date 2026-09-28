@@ -41,8 +41,9 @@ When a cluster manager stops the driver with SIGTERM, as a Databricks job cluste
 run, the root `spark.application` span used to be lost, and executor task metrics from the run's
 last minute with it. Both now arrive.
 
-### `FLARE_SAMPLING_RATIO`
+### `FLARE_SAMPLING_RATIO` is removed
 
 It never had an effect ([#130](https://github.com/Neutrinic/flare/issues/130)): every application
-was traced whatever its value. Use the agent's sampler instead; see
+was traced whatever its value. It is now ignored with a warning, and no longer fails start-up on a
+value it used to reject. Use the agent's sampler instead; see
 [Sampling](configuration/index.md#sampling).

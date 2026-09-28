@@ -7,7 +7,7 @@ agent's own `otel.*` keys, see [Exporting](exporting.md).
 | Key | Default | Description |
 |---|---|---|
 | `FLARE_TRACE_GRANULARITY` | `stages` | `jobs`, `stages`, `tasks` or `all`. Task spans need `tasks` or `all` |
-| `FLARE_SAMPLING_RATIO` | `0.1` | **Has no effect** ([#130](https://github.com/Neutrinic/flare/issues/130)). Validated at start-up, then ignored. See [Sampling](#sampling) |
+| `FLARE_SAMPLING_RATIO` | | **Removed** in 1.3.0: it never had an effect ([#130](https://github.com/Neutrinic/flare/issues/130)). Ignored with a warning. See [Sampling](#sampling) |
 | `FLARE_SLOW_TASK_MS` | `0` (off) | Only emit task spans that took longer than this |
 | `FLARE_RETRY_TASKS_ONLY` | `false` | Only emit task spans for retries and speculative tasks |
 | `FLARE_MAX_SPANS_PER_TRACE` | `10000` | Circuit breaker for jobs with very many tasks. When reached, no more task spans; job and stage spans continue |
@@ -34,7 +34,8 @@ application. To trace a fraction of applications, use the agent's ratio sampler:
 
 Every Flare span descends from the `spark.application` root, and the executors inherit the root's
 decision through the trace context, so this samples whole applications, never parts of one. Set it
-on the driver; on the executors the parent decides.
+on the driver; on the executors the parent decides. Ten lab runs at `0.5` gave seven complete traces
+and three with nothing exported from the driver or the executors, and none partial.
 
 ## SQL plans
 
