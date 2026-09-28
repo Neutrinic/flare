@@ -496,11 +496,11 @@ Measured on a three-node lab cluster against the same jobs with no agent at all,
 
 - **TPC-H SF5, 22 queries:** +1.8% query time with every span traced, of which +0.9% is the
   OpenTelemetry agent alone. +12% cluster CPU, of which +11% is the agent.
-- **Per task:** about 0.5 ms of CPU and 44 µs of wall time with task spans on; about 0.3 ms and
-  26 µs at the default granularity.
+- **Per task:** about 0.6 ms of CPU and 54 µs of wall time with a span for every task; about
+  0.3 ms and 26 µs at the default granularity. These move by about 0.1 ms between sessions.
 - **Per application:** about 5 s more start-up and 15 s of CPU per JVM, almost all of it the agent
   instrumenting classes as the JVM starts.
-- **No listener-bus event drops** in 60 runs, up to 100,000 tasks in one stage.
+- **No listener-bus event drops** in 78 runs, up to 100,000 tasks and task spans in one stage.
 
 ## OTEL Agent Compatibility
 

@@ -16,7 +16,9 @@ Configurations, from nothing to everything:
     agent             the OpenTelemetry agent alone, to separate its cost from Flare's
     stages            Flare at its default granularity: spans down to stages, no task spans
     tasks-unsampled   task spans configured, but the application not sampled (ratio 0)
-    tasks             everything traced, every task span
+    tasks             everything traced, every task span, under the default span cap
+    tasks-uncapped    as tasks, with the span cap raised so every task gets a span. For the
+                      per-task cost of tracing: `tasks` stops at 10,000 task spans per executor
 
 The cost of tracing a fraction p of applications is then (1-p) x tasks-unsampled + p x tasks.
 Running at p=0.1 directly would leave most repeats unsampled and the average would be noise.
@@ -33,6 +35,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CONFIGS = ["off", "agent", "stages", "tasks-unsampled", "tasks"]
+OPTIONAL_CONFIGS = ["tasks-uncapped"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--spark-submit", default="spark-submit",
@@ -40,6 +43,8 @@ parser.add_argument("--spark-submit", default="spark-submit",
 parser.add_argument("--agent", required=True)
 parser.add_argument("--flare", required=True)
 parser.add_argument("--sink", required=True, help="OTLP sink base URL, reachable from every node")
+parser.add_argument("--sink-admin", default="http://127.0.0.1:4319",
+                    help="the sink's admin URL; it listens on localhost of the driver host")
 parser.add_argument("--event-dir", type=Path, required=True)
 parser.add_argument("--out", type=Path, required=True)
 parser.add_argument("--workloads", default="tasks-1000,tasks-10000,tasks-100000,tpch")
@@ -72,6 +77,8 @@ def java_opts(config, role):
         return " ".join(opts)
     opts.append(f"-Dotel.javaagent.extensions={args.flare}")
     opts.append("-DFLARE_TRACE_GRANULARITY=" + ("stages" if config == "stages" else "all"))
+    if config == "tasks-uncapped":
+        opts.append("-DFLARE_MAX_SPANS_PER_TRACE=100000000")
     if config == "tasks-unsampled" and role == "driver":
         # The same code path as the unsampled 90% at a 10% ratio. Executors keep the default and
         # follow the driver's decision through each task's traceparent.
@@ -121,17 +128,27 @@ def cpu_sample(node):
 
 
 def cpu_all(nodes):
-    result = {}
-    threads = [threading.Thread(target=lambda n=n: result.__setitem__(n, cpu_sample(n))) for n in nodes]
+    result, errors = {}, {}
+
+    def sample(n):
+        try:
+            result[n] = cpu_sample(n)
+        except Exception as e:  # reported below, with the node that failed
+            errors[n] = e
+
+    threads = [threading.Thread(target=sample, args=(n,)) for n in nodes]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
+    if errors:
+        raise RuntimeError("CPU sampling failed: " + "; ".join(f"{n}: {e!r}" for n, e in errors.items()))
     return result
 
 
 def sink(path, method="GET"):
-    req = urllib.request.Request(args.sink.rstrip("/") + path, method=method, data=b"" if method == "POST" else None)
+    req = urllib.request.Request(args.sink_admin.rstrip("/") + path, method=method,
+                                 data=b"" if method == "POST" else None)
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.load(r)
 
@@ -225,6 +242,9 @@ def run(config, workload, repeat, order, record=True):
 
 workloads = args.workloads.split(",")
 configs = args.configs.split(",")
+unknown = set(configs) - set(CONFIGS + OPTIONAL_CONFIGS)
+if unknown:
+    parser.error(f"unknown configs: {', '.join(sorted(unknown))}")
 if not args.no_warmup:
     for w in workloads:
         run("off", w, 0, 0, record=False)  # page cache, JIT on the hosts, first-touch effects

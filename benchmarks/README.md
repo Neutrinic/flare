@@ -5,7 +5,8 @@ against the same job with no agent at all (#89).
 
 ## Configurations
 
-Five configurations, from nothing to everything, so each layer's cost can be told apart:
+Five configurations, from nothing to everything, so each layer's cost can be told apart, and a sixth
+for measuring the per-task cost of task spans:
 
 | Config | What runs |
 |---|---|
@@ -14,6 +15,7 @@ Five configurations, from nothing to everything, so each layer's cost can be tol
 | `stages` | Flare at its default granularity: application, SQL, job and stage spans, no task spans. Metrics on |
 | `tasks-unsampled` | Task spans configured, but the application not sampled (`parentbased_traceidratio` at `0`). What an unsampled application costs |
 | `tasks` | Everything traced, including one span per task. Metrics on |
+| `tasks-uncapped` | As `tasks`, with the span cap raised so every task gets a span, however many there are |
 
 The cost of tracing a fraction `p` of applications is `(1 - p) × tasks-unsampled + p × tasks`,
 shown as the **10% sampled** column. Running at 10% directly would leave most repeats unsampled
@@ -26,6 +28,7 @@ and the average would be noise.
   in the job time. At 100,000 tasks the span cap (`FLARE_MAX_SPANS_PER_TRACE`, 10,000) stops task
   spans partway, so that run also covers the circuit breaker. The cap applies per executor, not per
   trace ([#101](https://github.com/Neutrinic/flare/issues/101)): three executors emitted 30,000.
+  `tasks-uncapped` lifts the cap, for a per-task cost that is all task spans.
 - **`tpch`** ([`tpch.py`](tpch.py)): the 22 TPC-H queries at scale factor 5, one pass. A realistic
   mix of scans, joins, shuffles and spills. Data and queries from
   [`tpch_generate.py`](tpch_generate.py). Not an audited TPC-H run; a fixed query mix.
@@ -34,7 +37,7 @@ and the average would be noise.
 
 | Measure | How |
 |---|---|
-| Job time | The measured job only, timed inside the application, after a warm-up job |
+| Job time | For `tasks-N`, the measured stage only, timed inside the application after a small warm-up job. For `tpch`, the 22 queries from the first one, with no warm-up in that application |
 | Application time | `spark-submit` start to exit, including JVM and executor start-up |
 | Driver CPU | User plus system CPU of the driver process tree, from `/usr/bin/time -v` |
 | Driver peak RSS | From `/usr/bin/time -v` |
@@ -49,7 +52,8 @@ between configurations measured the same way, never read as an absolute.
 
 - Every configuration runs every workload, three times. The configuration order rotates each
   repeat, so drift over the session (thermal, page cache) falls on all of them alike.
-- One unrecorded `off` run per workload first, to warm the page cache and the hosts.
+- One unrecorded `off` run per workload first, to warm the page cache and the hosts. It does not
+  warm the JVMs of later applications, which each start cold.
 - Figures are medians over the repeats. Overheads are relative to `off` for the same workload.
 - Telemetry goes to the sink on the driver host, over the LAN, with gzip, as a collector would.
 
@@ -72,7 +76,9 @@ Client deploy mode is required: the driver has to run on the host where `run_mat
 
 ## Results
 
-Run on 2026-09-28. Raw data: [`results/2026-09-28-lab-spark-4.0.4.jsonl`](results/2026-09-28-lab-spark-4.0.4.jsonl).
+Run on 2026-09-28, in two sessions. Raw data: [`results/2026-09-28-lab-spark-4.0.4.jsonl`](results/2026-09-28-lab-spark-4.0.4.jsonl),
+the full matrix; and [`results/2026-09-28-lab-spark-4.0.4-uncapped.jsonl`](results/2026-09-28-lab-spark-4.0.4-uncapped.jsonl),
+`off`, `agent` and `tasks-uncapped` at 10,000 and 100,000 tasks.
 
 ### Environment
 
@@ -95,18 +101,26 @@ overheads and the per-task costs are what to read.
 | Agent only | 0.16 ms | 3 µs | 58 s | 4.4 s |
 | Flare, stage spans | 0.32 ms | 26 µs | 64 s | 5.5 s |
 | Flare, task spans, application not sampled | 0.39 ms | 28 µs | 64 s | 5.3 s |
-| Flare, task spans, all traced | 0.53 ms | 44 µs | 67 s | 5.5 s |
+| Flare, task spans, all traced | 0.59 ms | 54 µs | 67 s | 5.5 s |
 
 - **Per-task** figures are the difference between the 100,000-task and 10,000-task runs, over the
   90,000 extra tasks, minus the same difference with no agent. CPU is summed over the whole cluster;
   job time is wall-clock time with 6 cores working in parallel.
+- **The all-traced row comes from the second session**, against that session's own `off` runs. In
+  the first, the span cap stopped task spans at 30,007 of 100,000, so its slope (0.53 ms, 44 µs)
+  was mostly tasks with no span. Within the second session, task spans on every task add 0.25 ms of
+  CPU and 32 µs of job time per task on top of the agent alone.
+- **Read per-task figures to about ±0.1 ms of CPU and ±20 µs of job time.** They are small
+  differences between large totals, and they move between sessions: the agent alone came to 0.16 ms
+  and 3 µs in the first session, 0.34 ms and 22 µs in the second.
 - **Per-application** figures are the 1,000-task run minus the same run with no agent: a fixed
   start-up cost, mostly the agent instrumenting classes as each of the four JVMs (driver and three
   executors) starts, about 15 s of CPU per JVM.
 - **On the realistic workload the cost is small:** TPC-H queries took 1.8% longer with every span
   traced, of which 0.9% is the agent alone.
-- **No listener-bus drops** in any of the 60 runs, including 100,000-task stages.
-- **Telemetry volume:** a task span costs about 38 bytes after gzip. TPC-H spans average about 260
+- **No listener-bus drops** in any of the 78 runs, including 100,000-task stages with a span for
+  every task.
+- **Telemetry volume:** a task span costs about 37 bytes after gzip, 3.6 MiB for 100,000. TPC-H spans average about 260
   bytes, because SQL spans carry plans; the plan caps bound that.
 - **Sampling saves export, not work.** An unsampled application still runs Flare's per-task hooks,
   so it costs most of what a traced one does.
@@ -141,6 +155,8 @@ configuration, so differences within that range are noise.
 | Spans exported | 0 | 0 | 7 | 0 | 30,007 | |
 | Telemetry sent, gzip | 0 KiB | 7 KiB | 23 KiB | 20 KiB | 1,143 KiB | |
 
+`tasks` stopped at the span cap here. The uncapped rerun is below.
+
 #### 10,000 tasks
 
 | | off | agent | stages | tasks-unsampled | tasks | 10% sampled |
@@ -164,6 +180,27 @@ configuration, so differences within that range are noise.
 | Driver peak RSS | 526 MB | 556 (+5.6%) | 612 (+16.2%) | 655 (+24.5%) | 563 (+7.0%) | +22.7% |
 | Spans exported | 0 | 0 | 7 | 0 | 1,017 | |
 | Telemetry sent, gzip | 0 KiB | 6 KiB | 22 KiB | 16 KiB | 62 KiB | |
+
+#### Span cap raised, second session
+
+| | off | agent | tasks-uncapped |
+|---|---|---|---|
+| **10,000 tasks** | | | |
+| Job time | 10.8 s | 12.2 (+12.2%) | 13.1 (+21.2%) |
+| Application time | 20.7 s | 26.3 (+27.1%) | 28.2 (+36.4%) |
+| Driver CPU | 53.5 s | 72.0 (+34.5%) | 74.6 (+39.5%) |
+| Cluster CPU | 174.0 s | 241.7 (+38.9%) | 260.3 (+49.6%) |
+| Driver peak RSS | 589 MB | 609 (+3.4%) | 700 (+18.9%) |
+| Spans exported | 0 | 0 | 10,017 |
+| Telemetry sent, gzip | 0 KiB | 6 KiB | 402 KiB |
+| **100,000 tasks** | | | |
+| Job time | 41.5 s | 44.7 (+7.9%) | 48.6 (+17.3%) |
+| Application time | 51.2 s | 58.5 (+14.1%) | 62.5 (+22.0%) |
+| Driver CPU | 113.2 s | 136.1 (+20.2%) | 138.8 (+22.5%) |
+| Cluster CPU | 397.0 s | 495.2 (+24.7%) | 536.0 (+35.0%) |
+| Driver peak RSS | 898 MB | 923 (+2.8%) | 898 (+0.0%) |
+| Spans exported | 0 | 0 | 100,017 |
+| Telemetry sent, gzip | 0 KiB | 6 KiB | 3,679 KiB |
 
 The small workloads show large percentages because a 3-second job is dwarfed by the fixed start-up
 cost above; read them for the per-task and per-application figures, not as typical overhead.

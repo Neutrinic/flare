@@ -14,6 +14,9 @@ from collections import defaultdict
 CONFIGS = ["off", "agent", "stages", "tasks-unsampled", "tasks"]
 
 runs = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
+present = {r["config"] for r in runs}
+CONFIGS = [c for c in CONFIGS if c in present] + sorted(present - set(CONFIGS))  # e.g. tasks-uncapped
+SAMPLED = {"tasks-unsampled", "tasks"} <= present
 failed = [r for r in runs if r["exit"] != 0]
 runs = [r for r in runs if r["exit"] == 0]
 by = defaultdict(list)
@@ -55,8 +58,8 @@ metrics = [
 for w in sorted({r["workload"] for r in runs}, key=workload_order):
     tasks = median(w, "off", lambda r: r.get("tasks"))
     print(f"\n### {w}" + (f" ({tasks:,.0f} tasks per run)" if tasks else "") + "\n")
-    print("| | " + " | ".join(CONFIGS) + " | 10% sampled |")
-    print("|---|" + "---|" * (len(CONFIGS) + 1))
+    print("| | " + " | ".join(CONFIGS) + (" | 10% sampled |" if SAMPLED else " |"))
+    print("|---|" + "---|" * (len(CONFIGS) + SAMPLED))
     for label, key, unit in metrics:
         base = median(w, "off", key)
         cells = []
@@ -68,12 +71,13 @@ for w in sorted({r["workload"] for r in runs}, key=workload_order):
                 cells.append(f"{v:.1f} {unit}")
             else:
                 cells.append(f"{v:.1f} ({pct(v, base)})")
-        cells.append(pct(sampled(w, key), base))
+        if SAMPLED:
+            cells.append(pct(sampled(w, key), base))
         print(f"| {label} | " + " | ".join(cells) + " |")
     spans = [median(w, c, lambda r: r["telemetry"]["spans"]) for c in CONFIGS]
-    print("| Spans exported | " + " | ".join("n/a" if s is None else f"{s:,.0f}" for s in spans) + " | |")
+    print("| Spans exported | " + " | ".join("n/a" if s is None else f"{s:,.0f}" for s in spans) + (" | |" if SAMPLED else " |"))
     sent = [median(w, c, telemetry_kib) for c in CONFIGS]
-    print("| Telemetry sent, gzip | " + " | ".join("n/a" if b is None else f"{b:,.0f} KiB" for b in sent) + " | |")
+    print("| Telemetry sent, gzip | " + " | ".join("n/a" if b is None else f"{b:,.0f} KiB" for b in sent) + (" | |" if SAMPLED else " |"))
     print(f"\nRepeats per cell: {len(by.get((w, 'off'), []))}")
 
 dropped = [r for r in runs if r.get("dropped_event_lines")]

@@ -4,19 +4,25 @@
 
 Point the agent at it with -Dotel.exporter.otlp.endpoint=http://<host>:4318
 -Dotel.exporter.otlp.protocol=http/protobuf. It accepts traces, metrics and logs, answers every
-export with an empty success response, and keeps per-signal totals:
+export with an empty success response, and keeps per-signal totals.
+
+The totals are served on a separate admin port bound to localhost only (default 4319), so nothing
+else on the network can read or reset them mid-run:
 
     GET  /stats   the totals as JSON
     POST /reset   zero them
+
+Request bodies are capped (--max-bytes, applied to the body as sent and after decompression), so a
+malformed or hostile request cannot exhaust memory. An oversized request is rejected with 413.
 
 Bytes are counted twice: as received on the wire (after any gzip the exporter applied) and
 decompressed. Spans are counted by walking the protobuf, with no generated classes needed:
 ExportTraceServiceRequest.resource_spans(1) -> ScopeSpans(2) -> Span(2), name in field 5.
 """
 import argparse
-import gzip
 import json
 import threading
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 lock = threading.Lock()
@@ -28,6 +34,20 @@ def empty_stats():
 
 
 stats = empty_stats()
+MAX_BYTES = 64 * 1024 * 1024  # replaced from --max-bytes
+
+
+class TooLarge(Exception):
+    pass
+
+
+def gunzip(data):
+    """Decompress gzip without ever holding more than MAX_BYTES of output."""
+    d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    out = d.decompress(data, MAX_BYTES + 1)
+    if len(out) > MAX_BYTES or d.unconsumed_tail:
+        raise TooLarge()
+    return out
 
 
 def varint(buf, i):
@@ -75,23 +95,29 @@ def span_names(request):
                 yield name.decode("utf-8", "replace")
 
 
-class Handler(BaseHTTPRequestHandler):
+class Base(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
     def _body(self):
         # The agent's exporter sends gzip bodies with chunked transfer encoding and no
-        # Content-Length, so both framings have to be read.
+        # Content-Length, so both framings have to be read. Either way, stop at MAX_BYTES.
         if "Content-Length" in self.headers:
-            return self.rfile.read(int(self.headers["Content-Length"]))
+            length = int(self.headers["Content-Length"])
+            if length > MAX_BYTES:
+                raise TooLarge()
+            return self.rfile.read(length)
         if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
-            parts = []
+            parts, total = [], 0
             while True:
                 size = int(self.rfile.readline().split(b";")[0].strip(), 16)
                 if size == 0:
                     while self.rfile.readline() not in (b"\r\n", b"\n", b""):
                         pass  # trailers
                     return b"".join(parts)
+                total += size
+                if total > MAX_BYTES:
+                    raise TooLarge()
                 parts.append(self.rfile.read(size))
                 self.rfile.readline()  # CRLF after each chunk
         return b""
@@ -103,6 +129,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+
+class Admin(Base):
+    """Reads and resets the totals. Served on localhost only."""
+
     def do_GET(self):
         if self.path != "/stats":
             return self._send(404)
@@ -112,15 +142,26 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global stats
-        wire = self._body()
-        if self.path == "/reset":
-            with lock:
-                stats = empty_stats()
-            return self._send(200, b"{}", "application/json")
+        if self.path != "/reset":
+            return self._send(404)
+        with lock:
+            stats = empty_stats()
+        self._send(200, b"{}", "application/json")
+
+
+class Otlp(Base):
+    """Receives OTLP exports and counts them."""
+
+    def do_POST(self):
         signal = self.path.rsplit("/", 1)[-1]
         if signal not in ("traces", "metrics", "logs"):
             return self._send(404)
-        raw = gzip.decompress(wire) if self.headers.get("Content-Encoding") == "gzip" else wire
+        try:
+            wire = self._body()
+            raw = gunzip(wire) if self.headers.get("Content-Encoding") == "gzip" else wire
+        except TooLarge:
+            self.close_connection = True
+            return self._send(413)
         names = list(span_names(raw)) if signal == "traces" else []
         with lock:
             s = stats[signal]
@@ -138,8 +179,14 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="0.0.0.0", help="where exporters reach the OTLP port")
     parser.add_argument("--port", type=int, default=4318)
+    parser.add_argument("--admin-port", type=int, default=4319, help="stats and reset, localhost only")
+    parser.add_argument("--max-bytes", type=int, default=MAX_BYTES,
+                        help="largest request body accepted, as sent and decompressed")
     args = parser.parse_args()
-    print(f"OTLP sink on {args.host}:{args.port}", flush=True)
-    ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
+    MAX_BYTES = args.max_bytes
+    admin = ThreadingHTTPServer(("127.0.0.1", args.admin_port), Admin)
+    threading.Thread(target=admin.serve_forever, daemon=True).start()
+    print(f"OTLP sink on {args.host}:{args.port}, admin on 127.0.0.1:{args.admin_port}", flush=True)
+    ThreadingHTTPServer((args.host, args.port), Otlp).serve_forever()
