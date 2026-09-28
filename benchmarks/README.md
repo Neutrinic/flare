@@ -212,7 +212,7 @@ cost above; read them for the per-task and per-application figures, not as typic
 - One million tasks: the harness runs it (`--workloads tasks-1000000`), but it was not run here.
 - Heavy skew, retry storms and dynamic allocation churn, all asked for in #89. The harness has no
   workloads for them yet.
-- Larger clusters, and Photon.
+- Larger clusters.
 - Long-running applications, cloud platforms, log export and other job shapes are covered below.
 
 ## Long-running applications, Dataproc and Databricks
@@ -293,6 +293,30 @@ JVM CPU overhead against `off`, for an application running `t` minutes of querie
 Here the steady rate is not free: the agent traces every GCS request as an HTTP `GET` span, about
 60 a second while queries read data, and that costs CPU for as long as the application runs. The
 lean agent does not trace them.
+
+### Databricks with Photon
+
+`off` and `tasks` only, the same cluster with Photon on, three repeats
+([raw](results/2026-09-28-databricks-15.4-photon-tpch-sf10-20min.jsonl)).
+
+| | off | tasks |
+|---|---|---|
+| Passes of 22 queries | 26 | 25 |
+| Later passes, mean s (range over repeats) | 43.2 (42.9 to 46.0) | 45.4 (44.0 to 45.9) |
+| Fixed JVM CPU, s | 284 | 427 |
+| JVM CPU per pass once warm, core-seconds | 291 | 292 |
+| Task spans exported | 0 | about 30,000, then the span cap |
+| Metrics sent, gzip | 0 | 41 to 59 MB |
+
+- **Photon runs the queries 3.5 times faster, and Flare's cost keeps the same shape:** a fixed
+  start-up cost (143 s of CPU) and nothing measurable once warm. Pass times overlap between the two
+  configurations.
+- **The span cap ends task spans within 20 minutes.** Photon runs more tasks per minute, and each
+  executor stops creating task spans at `FLARE_MAX_SPANS_PER_TRACE` (10,000 per executor, #101).
+  For an application that runs for hours, such as an all-purpose cluster that is one trace for its
+  whole life, task spans stop early in the run; job, stage and SQL spans continue.
+- Metric volume is higher than without Photon, for the same reason: more stages per minute, each a
+  new `stage.id` series before #136.
 
 ### What the long runs show
 
