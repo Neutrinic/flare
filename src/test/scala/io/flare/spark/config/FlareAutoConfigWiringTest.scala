@@ -58,18 +58,21 @@ class FlareAutoConfigWiringTest extends FunSuite {
     if (sys.env.contains("SPARK_EXECUTOR_ID")) Seq.empty // role would come from the environment
     else super.munitTests()
 
+  // Guard, not evidence: the driver already had both before #127.
   test("the driver gets the root sampler and the shutdown wrapper") {
     val r = customizeAs(driverCommand)
     assertEquals(r.sampler, 1)
     assertEquals(r.spanProcessor, 1)
   }
 
+  // The regression test for #127: the executor had no sampler before.
   test("an executor gets the root sampler but not the driver's shutdown wrapper (#127)") {
     val r = customizeAs(executorCommand)
     assertEquals(r.sampler, 1, "executors must drop their own start-up traces too")
     assertEquals(r.spanProcessor, 0, "the shutdown wrapper ends driver spans and is driver-only")
   }
 
+  // Guard, not evidence: passes before #127 too, since executors had no sampler to turn off.
   test("FLARE_DROP_NON_SPARK_ROOTS=false turns the sampler off on both") {
     assertEquals(customizeAs(driverCommand, Some("false")).sampler, 0)
     assertEquals(customizeAs(executorCommand, Some("false")).sampler, 0)

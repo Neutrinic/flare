@@ -69,6 +69,10 @@ class AsyncContextAgentTest extends FunSuite {
       val t = new Thread(new Runnable { override def run(): Unit = ctx = work() })
       t.start()
       t.join(10000)
+      // Without these, a thread that had not finished or never ran would leave the invalid context,
+      // which passes the checks below without a span having been made at all.
+      assert(!t.isAlive, "the raw thread did not finish")
+      assert(ctx.isValid, "the raw thread did not produce a span context")
       ctx
     }
     assert(task.isSampled)
