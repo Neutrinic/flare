@@ -95,6 +95,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never ran and nothing said so. It is now logged at debug; flushing is left to the agent ([#83])
 
 ### Documentation
+- **Overhead benchmark.** `benchmarks/` holds a reproducible harness (a many-tasks job, TPC-H, a
+  counting OTLP sink and a matrix runner) and results from a three-node Spark 4.0.4 lab cluster:
+  TPC-H query time +1.8% with every span traced, +0.9% of it the agent alone; about 0.6 ms of CPU
+  per task with a span for every task; no listener-bus drops in 78 runs. Summary in the README ([#89])
 - **Documentation site.** Install recipes for every verified platform, configuration, the telemetry
   reference, upgrading and troubleshooting, published to GitHub Pages on each release tag. Built
   in strict mode on every docs pull request ([#129])
@@ -510,6 +514,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#109]: https://github.com/Neutrinic/flare/issues/109
 [#111]: https://github.com/Neutrinic/flare/issues/111
 [#114]: https://github.com/Neutrinic/flare/issues/114
+[#89]: https://github.com/Neutrinic/flare/issues/89
 [#120]: https://github.com/Neutrinic/flare/issues/120
 [#122]: https://github.com/Neutrinic/flare/issues/122
 [#123]: https://github.com/Neutrinic/flare/issues/123
