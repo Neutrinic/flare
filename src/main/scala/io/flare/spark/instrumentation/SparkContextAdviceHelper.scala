@@ -32,6 +32,8 @@ object SparkContextAdviceHelper {
   private val logger = Logger.getLogger(SparkContextAdviceHelper.getClass.getName)
 
   def onSparkContextInit(sc: SparkContext): Unit = {
+    FlareConfig.warnIfSamplingRatioSet(w => logger.warning(w))
+
     // Fast path: already initialized by SparkPlugin or a previous advice call
     if (FlareDriverState.initialized) {
       logger.fine("[Flare] ByteBuddy advice: already initialized, skipping")
@@ -88,7 +90,6 @@ object SparkContextAdviceHelper {
         s"granularity=${config.granularity}, " +
         s"maxSpans=${config.maxSpansPerTrace}"
       )
-      FlareConfig.samplingRatioWarning().foreach(w => logger.warning(w))
 
     } catch {
       case e: IllegalArgumentException =>

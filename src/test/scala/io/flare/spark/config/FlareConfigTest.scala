@@ -179,6 +179,19 @@ class FlareConfigTest extends FunSuite {
     }
   }
 
+  test("the FLARE_SAMPLING_RATIO warning is logged once per JVM, however many start-up paths run") {
+    FlareConfig.resetSamplingRatioWarning()
+    val logged = scala.collection.mutable.ListBuffer.empty[String]
+    FlareConfig.warnIfSamplingRatioSet(logged += _)
+    assertEquals(logged.size, 0, "nothing to warn about while the key is unset")
+
+    sys.props("FLARE_SAMPLING_RATIO") = "0.5"
+    FlareConfig.warnIfSamplingRatioSet(logged += _) // e.g. the driver plugin
+    FlareConfig.warnIfSamplingRatioSet(logged += _) // e.g. the scheduler hook, same JVM
+    assertEquals(logged.size, 1)
+    FlareConfig.resetSamplingRatioWarning()
+  }
+
   test("FLARE_SAMPLING_RATIO produces a warning naming the agent's sampler, and only when set (#130)") {
     assertEquals(FlareConfig.samplingRatioWarning(), None, "no warning when the key is unset")
     sys.props("FLARE_SAMPLING_RATIO") = "0.25"

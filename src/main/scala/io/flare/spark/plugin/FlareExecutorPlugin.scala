@@ -66,6 +66,8 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     new QuietPeriodAction(1000L, () => TelemetryFlush.flush("executor idle"), "flare-executor-idle-flush")
 
   override def init(ctx: PluginContext, extraConf: ju.Map[String, String]): Unit = {
+    FlareConfig.warnIfSamplingRatioSet(w => logger.warn(w))
+
     config = try FlareConfig.load() catch {
       case e: IllegalArgumentException =>
         logger.error(s"[Flare] Configuration error — executor task spans disabled: ${e.getMessage}")
@@ -79,7 +81,6 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     logger.info(s"[Flare] Executor plugin initialized (executorId=$executorId, granularity=${config.granularity}, " +
       s"maxSpans=${config.maxSpansPerTrace}, " +
       s"taskTracing=${config.tracesTasks}, metrics=${config.metricsEnabled})")
-    FlareConfig.samplingRatioWarning().foreach(w => logger.warn(w))
 
     // Stage name is not available on the executor in Phase 1 (ExecutorPlugin has no access to
     // stage metadata — only stageId from TaskContext). Warn if someone configures the pattern

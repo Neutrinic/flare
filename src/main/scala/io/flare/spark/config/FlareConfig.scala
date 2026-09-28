@@ -142,6 +142,21 @@ object FlareConfig {
         "-Dotel.traces.sampler.arg=<ratio> on the driver (#130)"
     }
 
+  private val samplingRatioWarned = new java.util.concurrent.atomic.AtomicBoolean(false)
+
+  /**
+   * Logs [[samplingRatioWarning]] at most once per JVM. Called first thing on every start-up path,
+   * before the dedup and FLARE_ENABLED checks, so the warning is not skipped when Flare is disabled,
+   * and the driver's two start-up paths (plugin and scheduler hook) cannot both emit it.
+   */
+  def warnIfSamplingRatioSet(log: String => Unit): Unit =
+    samplingRatioWarning().foreach { w =>
+      if (samplingRatioWarned.compareAndSet(false, true)) log(w)
+    }
+
+  /** Visible for testing. */
+  private[config] def resetSamplingRatioWarning(): Unit = samplingRatioWarned.set(false)
+
   /** Load and validate config from system properties / env vars. Throws at startup on invalid config. */
   def load(): FlareConfig = {
     // Kept deliberately in step with FlareAutoConfig.isFlareEnabled(), which parses the same key
