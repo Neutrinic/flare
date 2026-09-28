@@ -1,0 +1,65 @@
+name: Documentation
+
+# Publishes docs/ to GitHub Pages (#129).
+#
+# The site describes the released JAR, so it deploys on release tags, not on every push to main:
+# docs for an unreleased install would be wrong for everyone using the version on Maven Central.
+# A manual run republishes, for a fix that should not wait for the next release.
+#
+# Pull requests that touch the docs only build them, in strict mode, so a broken link or page fails
+# the PR instead of the release.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "zensical.toml"
+      - ".github/workflows/docs.yml"
+
+permissions:
+  contents: read
+
+# One deployment at a time, and never cancel one halfway.
+concurrency:
+  group: docs-${{ github.event_name == 'pull_request' && github.ref || 'pages' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      # Pinned: Zensical is pre-1.0 and its output may change between releases.
+      - run: pip install zensical==0.0.65
+
+      - run: zensical build --strict --clean
+
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v6
+      - uses: actions/deploy-pages@v5
+        id: deployment

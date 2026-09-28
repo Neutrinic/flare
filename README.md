@@ -6,7 +6,7 @@
 
 Full-stack OpenTelemetry observability for Apache Spark — traces, metrics, and logs correlated across driver and executor JVMs.
 
-![Dashboard](screenshots/dashboard.png)
+![Dashboard](docs/assets/dashboard.png)
 
 ```
 spark.application                          (flare-driver)
@@ -42,7 +42,7 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 - **Granularity control** — jobs, stages, tasks, or all; plus slow-task and retry-only filters
 - **Sampling** — the agent's sampler decides per application, and executors follow the driver's decision through the W3C traceparent
 
-![Traces](screenshots/traces.png)
+![Traces](docs/assets/traces.png)
 
 **Metrics**
 - **Task duration histograms** — with exemplar links back to the originating trace
@@ -50,13 +50,13 @@ Flare hooks `DAGScheduler.submitMissingTasks` via ByteBuddy to inject a per-stag
 - **Stage aggregates** — executor run time, input/output bytes, shuffle totals
 - **Records throughput** — histogram of records processed per second
 
-![Metrics](screenshots/metrics.png)
+![Metrics](docs/assets/metrics.png)
 
 **Logs**
 - **Trace-correlated logs** — driver and executor logs linked to spans via OTLP
 - **MDC enrichment** — trace ID and span ID injected into log context during task execution
 
-![Logs](screenshots/logs.png)
+![Logs](docs/assets/logs.png)
 
 **General**
 - **Zero code changes** — five JARs on every node, five `--conf` lines on `spark-submit`
