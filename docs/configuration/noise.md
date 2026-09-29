@@ -19,8 +19,8 @@ run.
 
 What is kept:
 
-- **Calls made inside Spark work.** A JDBC query or an S3 read inside a task has the task span as
-  parent, so it is kept and nests under the task.
+- **Calls made inside Spark work,** when you have turned that instrumentation back on. A JDBC query
+  or an S3 read inside a task has the task span as parent, so it is kept and nests under the task.
 - **Work a task hands to another thread,** through an `ExecutorService` or `CompletableFuture`: the
   agent carries the task's context there, so the child keeps its parent. A raw `new Thread` gets no
   context; its spans have no parent and are dropped. Without this filter they were exported as
