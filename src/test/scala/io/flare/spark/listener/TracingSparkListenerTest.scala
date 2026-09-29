@@ -141,6 +141,35 @@ class TracingSparkListenerTest extends FunSuite {
 
   // ── Tests ───────────────────────────────────────────────────────────────────
 
+  // #136. Stage ids are new for every stage, so as a tag they made one series per stage: past the
+  // SDK's 2,000-series limit a long-lived application's stage metrics folded into an overflow
+  // series. Stages from one call site must share a series however many there are.
+  test("stages from the same call site share one series on the stage metrics") {
+    val reader = InMemoryMetricReader.create()
+    val tp = SdkTracerProvider.builder().build()
+    val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
+    try {
+      val listener = new TracingSparkListener(
+        tp.get("t"), config, Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true,
+      )
+      val stages = 2500
+      (0 until stages).foreach { id =>
+        listener.onJobStart(makeJobStart(id, Seq(id)))
+        listener.onStageSubmitted(makeStageSubmitted(id))
+        listener.onStageCompleted(SparkListenerStageCompleted(FlareTestHelpers.makeStageInfo(
+          id, "collect at Job.scala:42", taskMetrics = FlareTestHelpers.emptyTaskMetrics(),
+        )))
+        listener.onJobEnd(makeJobEnd(id, succeeded = true))
+      }
+      val points = reader.collectAllMetrics().asScala
+        .filter(_.getName == "flare.stage.executor.run_time")
+        .flatMap(_.getHistogramData.getPoints.asScala)
+      assertEquals(points.size, 1)
+      assertEquals(points.head.getCount, stages.toLong)
+      assert(!points.head.getAttributes.asMap.asScala.keys.exists(_.getKey == "stage.id"))
+    } finally { tp.close(); mp.close() }
+  }
+
   test("job span is created as child of application span") {
     withListener { (listener, exporter) =>
       listener.onJobStart(makeJobStart(0, Seq(0)))

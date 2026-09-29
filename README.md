@@ -438,15 +438,15 @@ Nine instruments, all under the `io.flare.spark` meter, disabled wholesale by
 
 | Instrument | Kind | Unit | Labels |
 |------------|------|------|--------|
-| `flare.task.duration` | histogram | `ms` | `executor.id`, `stage.id`, `task.result` |
-| `flare.task.records_throughput` | histogram | `{records}/s` | `executor.id`, `stage.id`, `task.result` |
-| `flare.task.shuffle.read_bytes` | counter | `By` | `executor.id`, `stage.id`, `task.result` |
-| `flare.task.shuffle.write_bytes` | counter | `By` | `executor.id`, `stage.id`, `task.result` |
-| `flare.stage.executor.run_time` | histogram | `ms` | `stage.id`, `stage.name`, `sql.description` |
-| `flare.stage.input.bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
-| `flare.stage.output.bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
-| `flare.stage.shuffle.read_bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
-| `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.id`, `stage.name`, `sql.description` |
+| `flare.task.duration` | histogram | `ms` | `executor.id`, `task.result` |
+| `flare.task.records_throughput` | histogram | `{records}/s` | `executor.id`, `task.result` |
+| `flare.task.shuffle.read_bytes` | counter | `By` | `executor.id`, `task.result` |
+| `flare.task.shuffle.write_bytes` | counter | `By` | `executor.id`, `task.result` |
+| `flare.stage.executor.run_time` | histogram | `ms` | `stage.name`, `sql.description` |
+| `flare.stage.input.bytes` | counter | `By` | `stage.name`, `sql.description` |
+| `flare.stage.output.bytes` | counter | `By` | `stage.name`, `sql.description` |
+| `flare.stage.shuffle.read_bytes` | counter | `By` | `stage.name`, `sql.description` |
+| `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.name`, `sql.description` |
 | `flare.executor.count` | updowncounter | `{executor}` | `executor.id` |
 | `flare.executor.removed` | counter | `{executor}` | `executor.id`, `reason` |
 | `flare.executor.excluded` | counter | `{executor}` | `executor.id` |

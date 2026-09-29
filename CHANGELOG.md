@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `new Thread` has none and is dropped, where it was previously a detached trace.
   Set `FLARE_DROP_NON_SPARK_ROOTS=false` to keep the old behaviour, for example on a driver that
   serves HTTP ([#123])
+- **Task and stage metrics no longer carry `stage.id`.** A stage id is new for every stage and
+  restarts at 0 in every application, so as a label it only made series: one per stage, per
+  executor, per histogram bucket. With cumulative export the SDK re-sends every series it has seen,
+  so each export grew for as long as the application ran; on a lab TPC-H loop the largest metric
+  export went from 34 KB to 522 KB in twelve minutes, and a 22-minute Databricks application sent
+  297 MB of metrics. Past 2,000 series per instrument the SDK folds new ones into a single
+  `otel.metric.overflow` series, so on a long-lived application, such as a Databricks all-purpose
+  cluster, task metrics became unreadable. Stage metrics keep `stage.name` and `sql.description`,
+  which are call sites; task metrics keep `executor.id` and `task.result`. The shipped dashboard
+  groups by those instead. A single stage is on its span ([#136])
 
 ### Removed
 - **`FLARE_SAMPLING_RATIO`.** It was read and validated at start-up, then never applied: the
@@ -521,3 +531,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#127]: https://github.com/Neutrinic/flare/issues/127
 [#129]: https://github.com/Neutrinic/flare/issues/129
 [#130]: https://github.com/Neutrinic/flare/issues/130
+[#136]: https://github.com/Neutrinic/flare/issues/136

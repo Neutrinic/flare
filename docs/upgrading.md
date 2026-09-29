@@ -41,6 +41,20 @@ When a cluster manager stops the driver with SIGTERM, as a Databricks job cluste
 run, the root `spark.application` span used to be lost, and executor task metrics from the run's
 last minute with it. Both now arrive.
 
+### Metrics no longer carry `stage.id`
+
+The task metrics (`flare.task.*`) and stage metrics (`flare.stage.*`) have lost their `stage.id`
+label ([#136](https://github.com/Neutrinic/flare/issues/136)). It made a new series for every
+stage, which grew each export for as long as the application ran and, past 2,000 stages, pushed
+task metrics into the SDK's overflow series.
+
+- **Queries grouping by `stage_id` now see one series** where they saw many. Group stage metrics by
+  `stage_name` and `sql_description` instead, which are call sites and stable across runs. Task
+  metrics have no stage label; group them by `executor_id`.
+- **Per-stage figures** are on the `spark.stage` spans, which carry the same metrics as attributes.
+- **The shipped dashboard** is updated. If you copied an earlier version, re-import it or apply
+  the same change to the Task Duration, Shuffle and Stage Metrics panels.
+
 ### `FLARE_SAMPLING_RATIO` is removed
 
 It never had an effect ([#130](https://github.com/Neutrinic/flare/issues/130)): every application

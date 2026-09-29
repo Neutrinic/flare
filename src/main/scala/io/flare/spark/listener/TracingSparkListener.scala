@@ -310,7 +310,7 @@ class TracingSparkListener(
             // Same lookup the span does at onStageSubmitted. Safe here because a stage always
             // completes before its job ends, and onJobEnd is what drops stageToSql.
             val attrs =
-              MetricAttributes.forStage(stageId, event.stageInfo.name, sqlDescriptionOf(stageId))
+              MetricAttributes.forStage(event.stageInfo.name, sqlDescriptionOf(stageId))
             fm.stageExecutorRunTime.record(m.executorRunTime.toDouble, attrs)
             val inputBytes = m.inputMetrics.bytesRead
             if (inputBytes > 0) fm.stageInputBytes.add(inputBytes, attrs)
