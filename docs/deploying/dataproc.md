@@ -15,7 +15,18 @@ Image 2.3 runs Java 11: Flare releases before 1.3.0 export nothing there. See
 
 Clusters are internal-IP only by default. Nodes reach Google services through Private Google Access
 but not the public internet, so an initialization action cannot download from GitHub or Maven
-Central. Put both JARs in a bucket and copy them from there.
+Central. Put both JARs in a bucket and copy them from there:
+
+```bash
+--8<-- "urls.sh"
+
+curl -fsSL -o opentelemetry-javaagent.jar "$AGENT"
+curl -fsSL -o flare-spark.jar "$FLARE"
+gcloud storage cp opentelemetry-javaagent.jar flare-spark.jar gs://<bucket>/
+```
+
+Replace `3-5_2.12` with the coordinate for your image; see
+[Downloading the JARs](../getting-started/download.md).
 
 ## Initialization action
 

@@ -21,6 +21,8 @@ ENV SPARK_EXTRA_CLASSPATH=/opt/flare/flare-spark.jar
 USER spark
 ```
 
+`opentelemetry-javaagent.jar` and `flare-spark.jar` are the two JARs from [Downloading the JARs](../getting-started/download.md), saved next to the Dockerfile under those names.
+
 - Do **not** put Spark or a JDK in the image. The service mounts both at runtime.
 - The container runs as `spark`, UID and GID 1099, and needs `procps` and `tini`.
 - `SPARK_EXTRA_CLASSPATH` is the documented way to add JARs to the driver and executor classpath in

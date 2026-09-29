@@ -20,8 +20,7 @@ files or a Unity Catalog volume and add it to the cluster.
 ```bash
 #!/bin/bash
 set -euo pipefail
-AGENT=https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.30.0/opentelemetry-javaagent-2.30.0.jar
-FLARE=https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/<version>/flare-spark-3-5_2.12-<version>.jar
+--8<-- "urls.sh"
 
 mkdir -p /opt/flare
 wget -q -O /opt/flare/opentelemetry-javaagent.jar "$AGENT"

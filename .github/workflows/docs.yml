@@ -23,6 +23,7 @@ on:
       - "docs/**"
       - "zensical.toml"
       - ".github/workflows/docs.yml"
+      - ".github/scripts/stamp_docs_version.py"
 
 permissions:
   contents: read
@@ -55,6 +56,13 @@ jobs:
 
       # Pinned: Zensical is pre-1.0 and its output may change between releases.
       - run: pip install zensical==0.0.65
+
+      # The docs name the Flare version in one place, docs/snippets/. Set it from the tag being
+      # published, so a release can never deploy docs that name the previous version (#133).
+      - if: github.event_name != 'pull_request'
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: python .github/scripts/stamp_docs_version.py "$TAG"
 
       - run: zensical build --strict --clean
 

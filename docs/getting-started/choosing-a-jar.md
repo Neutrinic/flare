@@ -10,9 +10,14 @@ often with an unhelpful error, so match it to what the cluster runs.
 | 3.5 | `flare-spark-3-5_2.12` | `flare-spark-3-5_2.13` |
 | 4.0, 4.1 | | `flare-spark-4-0_2.13` |
 
-All are under the Maven group `io.github.neutrinic`, for example
-`io.github.neutrinic:flare-spark-3-5_2.12:<version>`. The JAR is self-contained: it bundles the
-OpenTelemetry API it needs and nothing else.
+All are under the Maven group `io.github.neutrinic`, for example:
+
+```text
+--8<-- "coordinate.txt"
+```
+
+The JAR is self-contained: it bundles the OpenTelemetry API it needs and nothing else. See
+[Downloading the JARs](download.md).
 
 ## Finding your versions
 
