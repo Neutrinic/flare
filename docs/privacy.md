@@ -17,6 +17,7 @@ Your backend receives what Spark reveals about your jobs. Some of it can be sens
 | The JVM command line, including the classpath | resource attributes on every span, metric and log record | The agent's resource detectors; see the [agent configuration](https://opentelemetry.io/docs/zero-code/java/agent/configuration/) |
 | Spark's full configuration, logged at start-up | logs, when log export is on | Keep credentials out of Spark config; see [Credentials](configuration/exporting.md#credentials). Or turn log export off |
 | Spark and application logs | logs, when log export is on | `-Dotel.logs.exporter=none`, or filter in a collector |
+| Database statements, HTTP URLs, storage object keys, message topics | spans from the agent's own instrumentation | Off by default since 1.3.0; only present for the instrumentations you turn back on. See [Agent instrumentation](configuration/volume.md#agent-instrumentation) |
 
 Secure your backend as you would the data the jobs process.
 

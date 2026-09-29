@@ -44,8 +44,10 @@ Jaeger, Honeycomb, Datadog and others.
 Flare runs inside the [OpenTelemetry Java agent](https://opentelemetry.io/docs/zero-code/java/agent/).
 On the driver it hooks the scheduler, so every stage gets its own W3C `traceparent`, which Spark
 carries to the executors inside each task's properties. On the executor, Flare restores that
-context before the task runs and opens the task span under it. Anything else the agent instruments
-inside the task, a JDBC query or an S3 read, nests under the task span.
+context before the task runs and opens the task span under it. Anything else traced inside the
+task nests under the task span: your own spans, or a JDBC query or HTTP call once you turn the
+agent's instrumentation for it back on, which Flare keeps off by default
+([Agent instrumentation](configuration/volume.md#agent-instrumentation)).
 
 ## Where it runs
 
