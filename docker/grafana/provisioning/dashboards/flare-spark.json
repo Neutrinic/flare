@@ -507,6 +507,7 @@
         },
         "xTickLabelSpacing": 100
       },
+      "description": "Shuffle bytes per call site (sql.description and Spark's stage name), summed over the applications in the time range. Each application's counters are totals since it started, read with max_over_time so the panel does not blank once a batch job ends: select a range that covers the applications you mean.",
       "title": "Shuffle by Query",
       "type": "barchart",
       "targets": [
@@ -845,7 +846,7 @@
           }
         }
       ],
-      "description": "One row per call site and application: stages are grouped by what ran them, not by stage id, which is new for every stage and restarts per application (#136). instance (the per-JVM UUID) keeps applications apart. The Query column is sql.description; Stage Name is Spark’s own value, which for async subquery and broadcast stages reads $anonfun$withThreadLocalCaptured$2. A single stage is on its span in Tempo."
+      "description": "One row per call site and application: stages are grouped by what ran them, not by stage id, which is new for every stage and restarts per application (#136). instance (the per-JVM UUID) keeps applications apart. The Query column is sql.description; Stage Name is Spark’s own value, which for async subquery and broadcast stages reads $anonfun$withThreadLocalCaptured$2. A single stage is on its span in Tempo. Totals are since each application started, not only within the time range, so select a range that covers the application."
     },
     {
       "collapsed": false,
