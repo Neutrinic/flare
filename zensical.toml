@@ -32,11 +32,13 @@ nav = [
     "configuration/index.md",
     "configuration/exporting.md",
     "configuration/noise.md",
+    "configuration/volume.md",
   ] },
   { "Reference" = [
     "reference/spans.md",
     "reference/metrics.md",
     "reference/compatibility.md",
+    "reference/overhead.md",
   ] },
   { "Upgrading" = "upgrading.md" },
   { "Troubleshooting" = "troubleshooting.md" },

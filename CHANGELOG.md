@@ -115,6 +115,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counting OTLP sink and a matrix runner) and results from a three-node Spark 4.0.4 lab cluster:
   TPC-H query time +1.8% with every span traced, +0.9% of it the agent alone; about 0.6 ms of CPU
   per task with a span for every task; no listener-bus drops in 78 runs. Summary in the README ([#89])
+- **Overhead of long-running applications, on Dataproc and Databricks.** 20-minute TPC-H SF10
+  applications on Dataproc 2.2 and Databricks 15.4 (with and without Photon), plus log export, many
+  small jobs and Scala RDD applications on the lab. Most of the cost is fixed at start-up: with every
+  task traced, JVM CPU was +15% for a two-minute Databricks application and about 1% at twenty
+  minutes, and query time once warm was within 2%. The agent's own instrumentation traced every S3
+  or GCS request, which on Dataproc cost about 2% CPU while data was read ([#135])
+- **Overhead and telemetry volume pages.** Overhead summarises the benchmarks. Telemetry volume
+  covers log volume at `INFO` (1 to 1.5 GB a day for an always-on application), the lean agent
+  settings that keep only Flare's spans, including the one without which nothing is exported, and
+  the per-executor span cap. The configuration page now says the cap is per executor ([#141],
+  [#101])
 - **Documentation site.** Install recipes for every verified platform, configuration, the telemetry
   reference, upgrading and troubleshooting, published to GitHub Pages on each release tag. Built
   in strict mode on every docs pull request ([#129])
@@ -531,11 +542,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#111]: https://github.com/Neutrinic/flare/issues/111
 [#114]: https://github.com/Neutrinic/flare/issues/114
 [#89]: https://github.com/Neutrinic/flare/issues/89
+[#101]: https://github.com/Neutrinic/flare/issues/101
 [#120]: https://github.com/Neutrinic/flare/issues/120
 [#122]: https://github.com/Neutrinic/flare/issues/122
 [#123]: https://github.com/Neutrinic/flare/issues/123
 [#127]: https://github.com/Neutrinic/flare/issues/127
 [#129]: https://github.com/Neutrinic/flare/issues/129
 [#130]: https://github.com/Neutrinic/flare/issues/130
+[#135]: https://github.com/Neutrinic/flare/issues/135
 [#136]: https://github.com/Neutrinic/flare/issues/136
 [#139]: https://github.com/Neutrinic/flare/issues/139
+[#141]: https://github.com/Neutrinic/flare/issues/141
