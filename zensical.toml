@@ -14,6 +14,7 @@ nav = [
     "getting-started/quick-start.md",
     "getting-started/download.md",
     "getting-started/choosing-a-jar.md",
+    "getting-started/python.md",
     "getting-started/local-stack.md",
   ] },
   { "Deploying" = [
