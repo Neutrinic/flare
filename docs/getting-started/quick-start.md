@@ -14,16 +14,15 @@ part; [Deploying](../deploying/index.md) has a recipe for each platform.
 ## Download
 
 ```bash
+--8<-- "urls.sh"
+
 mkdir -p /opt/flare
-curl -fsSL -o /opt/flare/opentelemetry-javaagent.jar \
-  https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.30.0/opentelemetry-javaagent-2.30.0.jar
-curl -fsSL -o /opt/flare/flare-spark.jar \
-  https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/<version>/flare-spark-3-5_2.12-<version>.jar
+curl -fsSL -o /opt/flare/opentelemetry-javaagent.jar "$AGENT"
+curl -fsSL -o /opt/flare/flare-spark.jar "$FLARE"
 ```
 
-Replace `3-5_2.12` with the coordinate for your cluster and `<version>` with the
-[latest release](https://github.com/Neutrinic/flare/releases/latest). Every release also attaches
-each Flare JAR as a download.
+Replace `3-5_2.12` with the coordinate for your cluster. [Downloading the JARs](download.md) covers
+Windows, Maven, checksums and clusters without internet access.
 
 ## Submit
 

@@ -9,22 +9,28 @@ place at start-up, for the driver (the ApplicationMaster, in cluster mode) and f
 
 ## Submit
 
-Pass both JARs as URLs in `--files`, and refer to them by relative path:
+Pass both JARs as URLs in `--files`, and refer to them by relative path. Each file is named after
+the last segment of its URL, which `${AGENT##*/}` and `${FLARE##*/}` give:
 
 ```bash
+--8<-- "urls.sh"
+
 spark-submit --master yarn --deploy-mode cluster \
-  --files https://<host>/opentelemetry-javaagent.jar,https://<host>/flare-spark.jar \
+  --files "$AGENT,$FLARE" \
   --conf "spark.plugins=io.flare.spark.plugin.FlareSparkPlugin" \
-  --conf "spark.driver.extraClassPath=./flare-spark.jar" \
-  --conf "spark.executor.extraClassPath=./flare-spark.jar" \
-  --conf "spark.driver.extraJavaOptions=-javaagent:./opentelemetry-javaagent.jar \
-    -Dotel.javaagent.extensions=./flare-spark.jar -Dotel.service.name=my-app-driver \
-    -Dotel.exporter.otlp.endpoint=http://your-collector:4317" \
-  --conf "spark.executor.extraJavaOptions=-javaagent:./opentelemetry-javaagent.jar \
-    -Dotel.javaagent.extensions=./flare-spark.jar -Dotel.service.name=my-app-executor \
-    -Dotel.exporter.otlp.endpoint=http://your-collector:4317" \
+  --conf "spark.driver.extraClassPath=./${FLARE##*/}" \
+  --conf "spark.executor.extraClassPath=./${FLARE##*/}" \
+  --conf "spark.driver.extraJavaOptions=-javaagent:./${AGENT##*/} \
+    -Dotel.javaagent.extensions=./${FLARE##*/} -Dotel.service.name=my-app-driver \
+    -Dotel.exporter.otlp.endpoint=http://your-collector:4318" \
+  --conf "spark.executor.extraJavaOptions=-javaagent:./${AGENT##*/} \
+    -Dotel.javaagent.extensions=./${FLARE##*/} -Dotel.service.name=my-app-executor \
+    -Dotel.exporter.otlp.endpoint=http://your-collector:4318" \
   my-app.jar
 ```
+
+Replace `3-5_2.12` with the coordinate for your cluster. An internal mirror works the same way; see
+[Downloading the JARs](../getting-started/download.md).
 
 The file name in the container is the last segment of the URL. If your URL ends in a versioned
 name such as `flare-spark-3-5_2.12-1.3.0.jar`, use that name in the relative paths. `--files` also

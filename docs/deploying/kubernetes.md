@@ -15,6 +15,8 @@ The JARs must be in the driver and executor containers when they start. Either:
     COPY opentelemetry-javaagent.jar flare-spark.jar /opt/flare/
     ```
 
+    `opentelemetry-javaagent.jar` and `flare-spark.jar` are the two JARs from [Downloading the JARs](../getting-started/download.md), saved next to the Dockerfile under those names.
+
 - or **mount them from a volume**. Spark mounts volumes declared in its config itself:
 
     ```properties
@@ -55,14 +57,14 @@ spec:
     javaOptions: >-
       -javaagent:/opt/flare/opentelemetry-javaagent.jar
       -Dotel.javaagent.extensions=/opt/flare/flare-spark.jar
-      -Dotel.exporter.otlp.endpoint=http://otel-collector:4317
+      -Dotel.exporter.otlp.endpoint=http://otel-collector:4318
       -Dotel.service.name=my-app-driver
   executor:
     instances: 2
     javaOptions: >-
       -javaagent:/opt/flare/opentelemetry-javaagent.jar
       -Dotel.javaagent.extensions=/opt/flare/flare-spark.jar
-      -Dotel.exporter.otlp.endpoint=http://otel-collector:4317
+      -Dotel.exporter.otlp.endpoint=http://otel-collector:4318
       -Dotel.service.name=my-app-executor
 ```
 

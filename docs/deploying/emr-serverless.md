@@ -16,6 +16,8 @@ RUN chmod 755 /opt/flare && chmod 644 /opt/flare/*.jar \
 USER hadoop:hadoop
 ```
 
+`opentelemetry-javaagent.jar` and `flare-spark.jar` are the two JARs from [Downloading the JARs](../getting-started/download.md), saved next to the Dockerfile under those names.
+
 - `/usr/lib/spark/jars` is already on the driver and executor classpath. The image's
   `spark-defaults.conf` sets a long `extraClassPath` (Spark Connect, Hadoop AWS, EMRFS, the AWS SDK),
   so putting Flare there avoids repeating and appending to it.

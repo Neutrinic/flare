@@ -12,6 +12,7 @@ nav = [
   { "Home" = "index.md" },
   { "Getting started" = [
     "getting-started/quick-start.md",
+    "getting-started/download.md",
     "getting-started/choosing-a-jar.md",
     "getting-started/local-stack.md",
   ] },
@@ -88,5 +89,6 @@ toc.permalink = true
 pymdownx.details = {}
 pymdownx.highlight.anchor_linenums = true
 pymdownx.inlinehilite = {}
+pymdownx.snippets = { base_path = ["docs/snippets"], check_paths = true }
 pymdownx.superfences = {}
 pymdownx.tabbed.alternate_style = true

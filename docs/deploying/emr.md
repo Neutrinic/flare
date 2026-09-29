@@ -21,9 +21,11 @@ every node before YARN starts:
 ```bash
 #!/bin/bash
 set -euo pipefail
+--8<-- "urls.sh"
+
 sudo mkdir -p /opt/flare
-sudo curl -fsSL -o /opt/flare/opentelemetry-javaagent.jar <agent-url>
-sudo curl -fsSL -o /opt/flare/flare-spark.jar <flare-url>
+sudo curl -fsSL -o /opt/flare/opentelemetry-javaagent.jar "$AGENT"
+sudo curl -fsSL -o /opt/flare/flare-spark.jar "$FLARE"
 sudo chmod 644 /opt/flare/*.jar
 ```
 

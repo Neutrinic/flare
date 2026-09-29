@@ -10,12 +10,21 @@ agent. Copy both JARs onto every node at the same path instead, for example with
 management or a one-off loop:
 
 ```bash
+--8<-- "urls.sh"
+
 for host in node1 node2 node3; do
-  ssh "$host" 'mkdir -p /opt/flare \
-    && curl -fsSL -o /opt/flare/opentelemetry-javaagent.jar <agent-url> \
-    && curl -fsSL -o /opt/flare/flare-spark.jar <flare-url>'
+  ssh "$host" "sudo mkdir -p /opt/flare \
+    && sudo curl -fsSL -o /opt/flare/opentelemetry-javaagent.jar $AGENT \
+    && sudo curl -fsSL -o /opt/flare/flare-spark.jar $FLARE"
 done
 ```
+
+Replace `3-5_2.12` with the coordinate for your cluster; see
+[Downloading the JARs](../getting-started/download.md).
+
+Writing to `/opt` needs `sudo` without a password prompt on each node. Where you do not have that,
+use a directory the SSH user can write to, at the same path on every node, such as
+`/home/spark/flare`, drop `sudo`, and use that path in the settings below.
 
 ## Submit
 
