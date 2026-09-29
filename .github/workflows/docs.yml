@@ -4,8 +4,10 @@ name: Documentation
 #
 # The site describes the released JAR, so it deploys on release tags, not on every push to main:
 # docs for an unreleased install would be wrong for everyone using the version on Maven Central.
-# A manual run republishes a given release tag, for example after a failed deploy. It never builds
-# a branch, which would publish docs for changes not in any released JAR.
+# A manual run republishes a given release tag, for example after a failed deploy, or publishes
+# main when only documentation has changed since the latest release (#155): nothing under src/,
+# build.sbt or project/, so the docs still describe exactly the released JAR. It refuses main as
+# soon as main carries unreleased code.
 #
 # Pull requests that touch the docs only build them, in strict mode, so a broken link or page fails
 # the PR instead of the release.
@@ -15,8 +17,8 @@ on:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag to publish, e.g. v1.3.0"
+      ref:
+        description: "A release tag, e.g. v1.3.0, or main for documentation changed since the latest release"
         required: true
   pull_request:
     paths:
@@ -37,18 +39,42 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - if: github.event_name == 'workflow_dispatch' && !startsWith(inputs.tag, 'v')
+      - if: github.event_name == 'workflow_dispatch' && !startsWith(inputs.ref, 'v') && inputs.ref != 'main'
         env:
-          TAG: ${{ inputs.tag }}
+          REF: ${{ inputs.ref }}
         run: |
-          echo "::error::'$TAG' is not a release tag; manual runs publish a v* tag only"
+          echo "::error::'$REF' is neither a release tag nor main"
           exit 1
 
       - uses: actions/checkout@v7
         with:
-          # A manual run builds the requested release tag, not the branch it was started from.
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
+          # A manual run builds what it was asked for, not the branch it was started from.
+          ref: >-
+            ${{ github.event_name == 'workflow_dispatch' && (inputs.ref == 'main' && 'refs/heads/main'
+            || format('refs/tags/{0}', inputs.ref)) || '' }}
+          # main is checked against the latest release, which needs the tags and history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && inputs.ref == 'main' && '0' || '1' }}
           persist-credentials: false
+
+      # Which release these docs describe: the tag itself, or for main the latest release, and then
+      # only if nothing that ships in the JAR has changed since it.
+      - if: github.event_name != 'pull_request'
+        env:
+          REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+        run: |
+          if [ "$REF" != main ]; then
+            echo "PUBLISH_TAG=$REF" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          latest=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)
+          shipped=$(git diff --name-only "$latest" HEAD -- src build.sbt project)
+          if [ -n "$shipped" ]; then
+            echo "::error::main has changes that ship in the JAR since $latest, so its docs would describe an unreleased version:"
+            echo "$shipped"
+            exit 1
+          fi
+          echo "main has only documentation changes since $latest; publishing them as $latest"
+          echo "PUBLISH_TAG=$latest" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v6
         with:
@@ -60,9 +86,7 @@ jobs:
       # The docs name the Flare version in one place, docs/snippets/. Set it from the tag being
       # published, so a release can never deploy docs that name the previous version (#133).
       - if: github.event_name != 'pull_request'
-        env:
-          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-        run: python .github/scripts/stamp_docs_version.py "$TAG"
+        run: python .github/scripts/stamp_docs_version.py "$PUBLISH_TAG"
 
       # On a pull request, prove the stamping still works on the snippets as they are, then put
       # them back, so the build below checks the committed docs.
