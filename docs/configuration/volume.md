@@ -12,9 +12,10 @@ Measured on 20-minute TPC-H applications ([overhead](../reference/overhead.md)),
 
 ## Logs
 
-The agent exports logs by default, and Spark at `INFO` writes a line for every task's start and end:
-7,000 to 13,000 records a minute on a small cluster, 1 to 1.5 GB a day for an application that runs
-all day. Capturing them costs no measurable CPU; the volume is the cost.
+The agent exports logs by default, and Spark at `INFO` writes a line for every task's start and end.
+In the TPC-H benchmarks that was 7,000 to 13,000 records a minute on small clusters, or for an
+application running all day about 0.9 GB a day on the lab and 1.5 GB on Databricks, gzipped. Other
+workloads log more or less. Capturing them costs no measurable CPU; the volume is the cost.
 
 - Raise Spark's log level to `WARN` for production jobs.
 - Or filter in a collector, keeping `WARN` and above and the lines you need.
@@ -72,6 +73,7 @@ volume stays flat: on a lab TPC-H application each export stayed at 10 to 13 KB 
 Up to 1.2.0 the task and stage metrics also carried `stage.id`, which grew every export for the life
 of the application; see [Upgrading](../upgrading.md).
 
-Executors also flush when they go quiet, so a job's last metrics survive clusters that kill
-executors without warning; see [Metrics](exporting.md#metrics). Most gaps between stages are too
+Executors also flush when they go quiet, so a job's last metrics can reach the backend on clusters
+that kill executors without warning, provided the executor is still alive when the flush completes;
+see [Metrics](exporting.md#metrics). Most gaps between stages are too
 short to trigger it, so an executor exports metrics a few times a minute rather than once.

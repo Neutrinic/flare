@@ -122,7 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   minutes, and query time once warm was within 2%. The agent's own instrumentation traced every S3
   or GCS request, which on Dataproc cost about 2% CPU while data was read ([#135])
 - **Overhead and telemetry volume pages.** Overhead summarises the benchmarks. Telemetry volume
-  covers log volume at `INFO` (1 to 1.5 GB a day for an always-on application), the lean agent
+  covers log volume at `INFO` (0.9 to 1.5 GB a day for an always-on TPC-H application), the lean agent
   settings that keep only Flare's spans, including the one without which nothing is exported, and
   the per-executor span cap. The configuration page now says the cap is per executor ([#141],
   [#101])

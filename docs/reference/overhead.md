@@ -6,9 +6,11 @@ method, every table and the raw results are in
 
 ## In short
 
-- **Most of the cost is fixed, at start-up.** The agent instruments classes as each JVM loads them,
-  about 15 s of CPU per JVM. It does not grow with the application, so it matters for short jobs
-  and fades on long ones.
+- **Most of the cost is fixed, at start-up.** The agent instruments classes as each JVM loads them.
+  With every task traced that was about 15 s of CPU per JVM on the lab (Spark 4.0.4), and more on
+  the platforms with larger runtimes: 176 s across four JVMs on Databricks and 160 s across five on
+  Dataproc, including the first queries' warm-up. It does not grow with the application, so it
+  matters for short jobs and fades on long ones.
 - **Once warm, Flare adds nothing measurable.** CPU inside tasks is unchanged, query time is within
   2%, and driver memory stays flat.
 - **The default agent's own instrumentation can cost more than Flare.** It traces every S3 or GCS

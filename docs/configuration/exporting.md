@@ -72,8 +72,9 @@ lines this way.
 
 Before leaving it on:
 
-- **Volume.** Spark logs a line for every task's start and end at `INFO`: 7,000 to 13,000 lines a
-  minute on a small cluster running queries, over 1 GB a day for an application that runs all day.
+- **Volume.** Spark logs a line for every task's start and end at `INFO`. In the TPC-H benchmarks
+  that was 7,000 to 13,000 lines a minute on small clusters, or for an application running all day
+  about 0.9 GB a day on the lab and 1.5 GB on Databricks, gzipped. Other workloads differ.
   Raise Spark's log level to `WARN`, or filter in a collector, on real workloads. See
   [Telemetry volume](volume.md#logs).
 - **Spark logs its whole configuration at start-up.** With log export on, anything secret in Spark
