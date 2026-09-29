@@ -22,6 +22,7 @@ ExportTraceServiceRequest.resource_spans(1) -> ScopeSpans(2) -> Span(2), name in
 import argparse
 import json
 import threading
+import time
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -30,10 +31,11 @@ lock = threading.Lock()
 
 def empty_stats():
     return {sig: {"requests": 0, "wire_bytes": 0, "bytes": 0} for sig in ("traces", "metrics", "logs")} | {
-        "spans": 0, "spark_spans": 0, "span_names": {}}
+        "spans": 0, "spark_spans": 0, "span_names": {}, "log_records": 0}
 
 
 stats = empty_stats()
+request_log = None  # --log-requests: one JSON line per export, for sizes over time
 MAX_BYTES = 64 * 1024 * 1024  # replaced from --max-bytes
 
 
@@ -79,6 +81,13 @@ def fields(buf):
             i += length
         else:
             raise ValueError(f"unsupported wire type {wire}")
+
+
+def log_record_count(request):
+    """ExportLogsServiceRequest.resource_logs(1) -> ScopeLogs(2) -> LogRecord(2)."""
+    return sum(1 for n1, rl in fields(request) if n1 == 1
+               for n2, sl in fields(rl) if n2 == 2
+               for n3, _ in fields(sl) if n3 == 2)
 
 
 def span_names(request):
@@ -163,12 +172,20 @@ class Otlp(Base):
             self.close_connection = True
             return self._send(413)
         names = list(span_names(raw)) if signal == "traces" else []
+        records = log_record_count(raw) if signal == "logs" else 0
+        if request_log:
+            with lock:
+                request_log.write(json.dumps({"t": time.time(), "client": self.client_address[0], "signal": signal, "wire": len(wire),
+                                              "bytes": len(raw), "spans": len(names),
+                                              "log_records": records}) + "\n")
+                request_log.flush()
         with lock:
             s = stats[signal]
             s["requests"] += 1
             s["wire_bytes"] += len(wire)
             s["bytes"] += len(raw)
             stats["spans"] += len(names)
+            stats["log_records"] += records
             for name in names:
                 key = name.rstrip("0123456789").rstrip(".") if name.startswith("spark.") else name
                 stats["span_names"][key] = stats["span_names"].get(key, 0) + 1
@@ -184,8 +201,11 @@ if __name__ == "__main__":
     parser.add_argument("--admin-port", type=int, default=4319, help="stats and reset, localhost only")
     parser.add_argument("--max-bytes", type=int, default=MAX_BYTES,
                         help="largest request body accepted, as sent and decompressed")
+    parser.add_argument("--log-requests", help="append one JSON line per export request to this file")
     args = parser.parse_args()
     MAX_BYTES = args.max_bytes
+    if args.log_requests:
+        request_log = open(args.log_requests, "a")
     admin = ThreadingHTTPServer(("127.0.0.1", args.admin_port), Admin)
     threading.Thread(target=admin.serve_forever, daemon=True).start()
     print(f"OTLP sink on {args.host}:{args.port}, admin on 127.0.0.1:{args.admin_port}", flush=True)

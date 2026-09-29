@@ -39,7 +39,10 @@ def sampled(workload, key, p=0.1):
 
 
 def workload_order(w):
-    return (1, 0) if w == "tpch" else (0, int(w.split("-")[1]))
+    head, _, n = w.rpartition("-")
+    if w == "tpch":
+        return (1, w, 0)
+    return (0, head, int(n)) if n.isdigit() else (0, w, 0)
 
 
 def telemetry_kib(r):

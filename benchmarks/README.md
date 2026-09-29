@@ -210,7 +210,232 @@ cost above; read them for the per-task and per-application figures, not as typic
 ### Not covered
 
 - One million tasks: the harness runs it (`--workloads tasks-1000000`), but it was not run here.
-- Heavy skew, retry storms, dynamic allocation churn and long-lived applications, all asked for in
-  #89. The harness has no workloads for them yet.
-- Other Spark versions, cluster managers and larger clusters.
-- Log export, which was off. Its volume depends on Spark's log level, not on Flare.
+- Heavy skew, retry storms and dynamic allocation churn, all asked for in #89. The harness has no
+  workloads for them yet.
+- Larger clusters.
+- Long-running applications, cloud platforms, log export and other job shapes are covered below.
+
+## Long-running applications, Dataproc and Databricks
+
+Run on 2026-09-28 for [#135](https://github.com/Neutrinic/flare/issues/135). The lab results above
+are from applications of a few minutes, where a fixed start-up cost looks like a large percentage.
+These runs keep one application going for 20 minutes, on managed platforms with server CPUs.
+
+### Method
+
+- **Workload.** TPC-H at scale factor 10, the 22 queries looped for 20 minutes (`tpch.py --minutes 20`),
+  read from object storage. Each pass records its time, the CPU of every Spark JVM so far, and the
+  driver's heap after a full GC.
+- **CPU inside the application.** Managed platforms offer no SSH or `/usr/bin/time`, so each JVM's
+  CPU is read from `/proc/<pid>/stat`: the driver's directly, each executor's through a small probe
+  job. It counts every thread of the JVM since it started. On the lab it agreed with
+  `/usr/bin/time` and `/proc/stat` to within 3%.
+- **Fixed and steady cost.** [`report_long.py`](report_long.py) splits each run's JVM CPU into a
+  steady rate, per second of query time from the second pass on, and a fixed part: everything above
+  that rate, which is JVM start-up and the first pass's warm-up. Total CPU after `t` seconds is then
+  about fixed + rate × t, which gives the overhead for any application length.
+- **Configurations.** `off`, `agent`, `tasks` as above, and `tasks-lean`: everything traced, with
+  the agent's own instrumentations off (see [Lean agent](#lean-agent)). Three repeats each, the
+  order rotated.
+
+| | Dataproc | Databricks on AWS |
+|---|---|---|
+| Runtime | Image 2.2: Spark 3.5, Scala 2.12, Java 11 | DBR 15.4 LTS: Spark 3.5, Scala 2.12, Java 8, Photon off |
+| Nodes | Master and 2 workers, n2-standard-4 | Driver and 3 workers, m5d.xlarge |
+| Executors | 4 of 2 cores (8 cores) | 3 of 4 cores (12 cores) |
+| Data | GCS | Unity Catalog volume on S3 |
+| Runs | [raw](results/2026-09-28-dataproc-2.2-tpch-sf10-20min.jsonl) | [raw](results/2026-09-28-databricks-15.4-tpch-sf10-20min.jsonl) |
+
+### Databricks
+
+| | off | agent | tasks | tasks-lean |
+|---|---|---|---|---|
+| Passes of 22 queries | 7 | 7 | 7 | 7 |
+| First pass, s | 253.2 | 267.5 (+5.6%) | 261.3 (+3.2%) | 256.3 (+1.2%) |
+| Later passes, mean s | 169.4 | 168.9 (-0.3%) | 172.4 (+1.8%) | 172.5 (+1.8%) |
+| Fixed JVM CPU, s | 119 | 173 | 295 | 200 |
+| Steady JVM CPU, cores busy | 8.16 | 8.18 (+0.2%) | 8.10 (-0.7%) | 8.09 (-0.8%) |
+| Driver heap after GC, first and last pass, MB | 257, 295 | 279, 295 | 275, 309 | 258, 304 |
+| Spans exported | 0 | 15,157 | 23,312 | 11,358 |
+| Traces sent, gzip | 0 | 1.8 MB | 4.5 MB | 3.8 MB |
+| Metrics sent, gzip | 0 | 0.4 MB | 31 MB | 29 MB |
+
+JVM CPU overhead against `off`, for an application running `t` minutes of queries:
+
+| | 2 min | 5 min | 20 min | 60 min |
+|---|---|---|---|---|
+| agent | +5.1% | +2.3% | +0.8% | +0.4% |
+| tasks | +15.4% | +6.2% | +1.1% | about 0 |
+| tasks-lean | +6.7% | +2.4% | about 0 | about 0 |
+
+### Dataproc
+
+| | off | agent | tasks | tasks-lean |
+|---|---|---|---|---|
+| Passes of 22 queries | 4 | 4 | 4 | 4 |
+| First pass, s | 377.9 | 379.0 (+0.3%) | 380.3 (+0.6%) | 378.2 (+0.1%) |
+| Later passes, mean s | 327.1 | 330.5 (+1.1%) | 329.9 (+0.9%) | 329.4 (+0.7%) |
+| Fixed JVM CPU, s | 332 | 435 | 492 | 436 |
+| Steady JVM CPU, cores busy | 5.23 | 5.30 (+1.3%) | 5.35 (+2.3%) | 5.26 (+0.6%) |
+| Driver heap after GC, first and last pass, MB | 152, 177 | 166, 195 | 198, 226 | 192, 192 |
+| Spans exported | 0 | 82,537 | 88,199 | 5,739 |
+| Traces sent, gzip | 0 | 5.6 MB | 7.5 MB | 3.6 MB |
+| Metrics sent, gzip | 0 | 0.5 MB | 28.6 MB | 25.2 MB |
+
+JVM CPU overhead against `off`, for an application running `t` minutes of queries:
+
+| | 2 min | 5 min | 20 min | 60 min | 240 min |
+|---|---|---|---|---|---|
+| agent | +11.5% | +6.4% | +2.7% | +1.8% | +1.4% |
+| tasks | +18.1% | +10.3% | +4.6% | +3.1% | +2.5% |
+| tasks-lean | +11.2% | +5.9% | +2.1% | +1.1% | +0.7% |
+
+Here the steady rate is not free: the agent traces every GCS request as an HTTP `GET` span, about
+60 a second while queries read data, and that costs CPU for as long as the application runs. The
+lean agent does not trace them.
+
+### Databricks with Photon
+
+`off` and `tasks` only, the same cluster with Photon on, three repeats
+([raw](results/2026-09-28-databricks-15.4-photon-tpch-sf10-20min.jsonl)).
+
+| | off | tasks |
+|---|---|---|
+| Passes of 22 queries | 26 | 25 |
+| Later passes, mean s (range over repeats) | 43.2 (42.9 to 46.0) | 45.4 (44.0 to 45.9) |
+| Fixed JVM CPU, s | 284 | 427 |
+| JVM CPU per pass once warm, core-seconds | 291 | 292 |
+| Task spans exported | 0 | about 30,000, then the span cap |
+| Metrics sent, gzip | 0 | 41 to 59 MB |
+
+- **Photon runs the queries 3.5 times faster, and Flare's cost keeps the same shape:** a fixed
+  start-up cost (143 s of CPU) and nothing measurable once warm. Pass times overlap between the two
+  configurations.
+- **The span cap ends task spans within 20 minutes.** Photon runs more tasks per minute, and each
+  executor stops creating task spans at `FLARE_MAX_SPANS_PER_TRACE` (10,000 per executor, #101).
+  For an application that runs for hours, such as an all-purpose cluster that is one trace for its
+  whole life, task spans stop early in the run; job, stage and SQL spans continue.
+- Metric volume is higher than without Photon, for the same reason: more stages per minute, each a
+  new `stage.id` series before #136.
+
+### What the long runs show
+
+- **Most of the CPU overhead is a fixed cost per application.** It is start-up: the agent
+  instrumenting classes as each JVM loads them, and the first pass's warm-up. `tasks` spends 176 s
+  of CPU more than `off` before settling on Databricks and 160 s on Dataproc, across four and five
+  JVMs. On Databricks that is 15% of a two-minute application and 1% of a twenty-minute one.
+- **Once warm, Flare itself costs about nothing; the default agent can.** On Databricks, JVM CPU
+  per second is within 1% of `off` for every configuration. On Dataproc the agent alone adds 1.3%
+  and `tasks` 2.3%, because the agent traces every GCS request; with the lean agent it is 0.6%.
+  CPU inside tasks does not change on either platform.
+- **Query time once warm is within 2%** on both platforms.
+- **Driver memory does not grow.** Heap after a full GC was flat across 20 minutes in every
+  configuration.
+- **The agent's own instrumentation is most of the trace volume.** With the default agent, Spark
+  reading its input became spans: 8,900 `S3.GetObject` and 3,000 HTTP `PUT` spans per Databricks
+  run, 82,000 HTTP `GET` spans per Dataproc run, outnumbering Flare's own. The lean agent drops
+  them, removes about half of the fixed cost on Databricks (200 s of CPU against 295 s) and most
+  of the steady cost on Dataproc.
+- **Metric volume grew with the application's age**, 25 to 31 MB of metrics (gzip) in a 22-minute
+  application on either platform. The cause was the `stage.id` label, fixed in
+  [#136](https://github.com/Neutrinic/flare/issues/136); see [Metric volume](#metric-volume).
+- **No listener-bus drops** in any run.
+
+### Job shapes
+
+TPC-H is SQL. These lab runs cover the other shapes an application takes: many small jobs, and
+RDD code with no SQL at all. Spark 4.0.4 on the lab, three repeats, raw data
+[here](results/2026-09-28-lab-spark-4.0.4-job-shapes.jsonl).
+
+- **`many-jobs-2000`** ([`many_jobs.py`](many_jobs.py)): 2,000 DataFrame counts over a small cached
+  table in one application, like a notebook or an ETL loop firing one action after another. Each
+  is its own SQL execution, job and stage, so this is the heaviest case for Flare's driver side.
+- **`rdd-groupby`** and **`rdd-tc`**: Spark's own Scala examples `GroupByTest` (a shuffle-heavy RDD
+  pipeline) and `SparkTC` (a transitive closure, dozens of small iterative jobs). JVM only, with a
+  Scala driver and no SQL executions.
+
+| | off | agent | tasks | tasks-lean |
+|---|---|---|---|---|
+| **many-jobs-2000**, time for the 2,000 jobs | 135.8 s | 136.5 (+0.5%) | 135.9 (+0.1%) | 136.6 (+0.6%) |
+| driver CPU | 217 s | 238 | 246 | 232 |
+| cluster CPU | 435 s | 519 | 542 | 490 |
+| spans | 0 | 0 | 20,017 | 20,017 |
+| **rdd-groupby**, application time | 19.0 s | 27.1 | 27.6 | 23.9 |
+| cluster CPU | 168 s | 233 | 238 | 208 |
+| **rdd-tc**, application time | 17.7 s | 25.3 | 26.1 | 22.3 |
+| cluster CPU | 154 s | 224 | 232 | 195 |
+
+- **Per job, Flare costs about 4 ms of driver CPU** (246 s against 238 s with the agent alone,
+  over 2,000 SQL executions, including plan capture) and **no measurable time**: the 2,000 jobs
+  took as long traced as not.
+- **RDD applications are traced the same way.** The two RDD examples are 20-second applications,
+  so their overhead is the fixed start-up cost: about 65 s of CPU for the agent and 5 to 9 s more
+  for Flare, of which the lean agent saves about 30 s.
+- No listener-bus drops in any of the 36 runs.
+
+### Lean agent
+
+The agent instruments far more than Spark: HTTP clients, the AWS and GCS SDKs, JDBC, Kafka and
+more. In a Spark JVM those mostly trace Spark reading its own files. To keep only Flare:
+
+```text
+-Dotel.instrumentation.common.default-enabled=false
+-Dotel.instrumentation.opentelemetry-api.enabled=true
+-Dotel.instrumentation.flare-spark.enabled=true
+```
+
+The second line is required: it bridges Flare's calls to the agent's SDK, and without it nothing at
+all is exported. Add `-Dotel.instrumentation.log4j-appender.enabled=true` to keep log export, and
+re-enable any instrumentation you want by name, such as `-Dotel.instrumentation.jdbc.enabled=true`.
+
+### Metric volume
+
+Up to #136, task and stage metrics carried `stage.id`, which is new for every stage. With
+cumulative export every series is re-sent each time, so each export grew for as long as the
+application ran: 25 to 31 MB of metrics (gzip) in a 22-minute application on either platform. With
+#136, on a 10-minute lab TPC-H loop, each metric export stayed at 10 to 13 KB from start to end,
+and the whole application sent 1.6 MB (gzip) of metrics
+([raw](results/2026-09-28-lab-spark-4.0.4-fix136.jsonl)).
+
+What remains is how often executors export. Each flushes about a second after its last task ends
+(1.3.0), so it can end a run on a cluster that kills executors without warning. Between the stages
+of a query, that is every few seconds: 461 metric exports in twelve minutes, against about 36 from
+the 60-second periodic export alone. Each is small, but a backend that bills per data point per
+minute sees each series many times a minute.
+
+### Log export
+
+The agent exports logs by default. The runs above had it off; these compare `tasks` with and
+without it, at Spark's default `INFO` level:
+
+| | Lab, Spark 4.0.4, SF5 | Databricks 15.4, SF10 |
+|---|---|---|
+| JVM CPU per second of queries, logs off and on | 6.28, 6.28 cores (+0.1%) | 8.25, 8.31 cores (+0.7%) |
+| Later passes, logs off and on | 94.7 s, 95.5 s | 174.0 s, 170.1 s |
+| Log records per minute | 12,800 | 7,000 |
+| Size per record, uncompressed | 190 bytes | 755 bytes |
+| Sent per hour, gzip (uncompressed) | 39 MB (140 MB) | 63 MB (304 MB) |
+| Per day, always on, gzip | about 0.9 GB | about 1.5 GB |
+
+Three 10-minute runs per configuration on the lab, three 20-minute runs on Databricks. Raw data:
+[lab](results/2026-09-28-lab-spark-4.0.4-log-export.jsonl),
+[Databricks](results/2026-09-28-databricks-15.4-log-export.jsonl). On the lab, the lean agent with
+`log4j-appender` re-enabled exported the same logs (12,900 records a minute), which confirms that
+flag. Databricks' records are four times larger: its Log4j configuration and MDC add many
+attributes to each line.
+
+Capturing logs costs no measurable CPU or query time. Their volume is the cost: at `INFO`, Spark
+logs every task's start and end, so an always-on application sends gigabytes of logs a day, far
+more than its traces or metrics. Raise Spark's log level to `WARN`, or filter in a collector.
+
+### Reproducing on Dataproc and Databricks
+
+- **Dataproc** ([`cloud/dataproc/`](cloud/dataproc/)): `init.sh` is an initialization action that
+  installs the agent, Flare and the harness; `launch.py`, submitted as a PySpark job, starts
+  `run.sh` detached on the master, which generates TPC-H into the bucket if needed and runs
+  `run_matrix.py` in client mode. Progress and results are copied to `gs://<bucket>/bench/out/`.
+- **Databricks** ([`cloud/databricks/`](cloud/databricks/)): `dbx_matrix.py` runs from any machine
+  with the Databricks CLI and submits one job cluster per run, since JVM options are fixed when a
+  cluster starts. `init.sh` installs the JARs and starts `otlp_sink.py` on the driver. Results land
+  in a volume and are appended locally.
+- Summarise either with `python report_long.py <results.jsonl>`.

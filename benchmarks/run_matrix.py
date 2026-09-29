@@ -19,6 +19,10 @@ Configurations, from nothing to everything:
     tasks             everything traced, every task span, under the default span cap
     tasks-uncapped    as tasks, with the span cap raised so every task gets a span. For the
                       per-task cost of tracing: `tasks` stops at 10,000 task spans per executor
+    tasks-lean        as tasks, with the agent's own instrumentations off, leaving only Flare's.
+                      How much of the agent's start-up cost is avoidable
+    tasks-logs        as tasks, with log export on (the agent's default): the cost of log capture
+    tasks-lean-logs   as tasks-lean, with the agent's Log4j capture turned back on
 
 The cost of tracing a fraction p of applications is then (1-p) x tasks-unsampled + p x tasks.
 Running at p=0.1 directly would leave most repeats unsampled and the average would be noise.
@@ -35,7 +39,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CONFIGS = ["off", "agent", "stages", "tasks-unsampled", "tasks"]
-OPTIONAL_CONFIGS = ["tasks-uncapped"]
+OPTIONAL_CONFIGS = ["tasks-uncapped", "tasks-lean", "tasks-logs", "tasks-lean-logs"]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--spark-submit", default="spark-submit",
@@ -52,11 +56,19 @@ parser.add_argument("--configs", default=",".join(CONFIGS))
 parser.add_argument("--repeats", type=int, default=3)
 parser.add_argument("--tpch-data")
 parser.add_argument("--tpch-queries")
+parser.add_argument("--examples-jar", help="Spark's examples JAR, for the rdd-* workloads")
+parser.add_argument("--tpch-log-level", default="WARN", help="Spark log level, or 'default'")
+parser.add_argument("--tpch-minutes", type=float, default=0, help="loop TPC-H passes for this long")
 parser.add_argument("--nodes", default="local", help="hosts to sample CPU on; 'local' is this host")
 parser.add_argument("--ssh-key")
 parser.add_argument("--ssh-user", default=None)
 parser.add_argument("--no-warmup", action="store_true")
+parser.add_argument("--extra-java-opts", default="", help="appended to every configuration but off, on driver and executors")
 args = parser.parse_args()
+if any(w.startswith("rdd-") for w in args.workloads.split(",")) and not args.examples_jar:
+    parser.error("the rdd-* workloads need --examples-jar")
+if "tpch" in args.workloads.split(",") and not (args.tpch_data and args.tpch_queries):
+    parser.error("the tpch workload needs --tpch-data and --tpch-queries")
 
 args.event_dir.mkdir(parents=True, exist_ok=True)
 work = args.out.parent / "runs"
@@ -71,12 +83,20 @@ def java_opts(config, role):
             f"-Dotel.exporter.otlp.endpoint={args.sink}",
             "-Dotel.exporter.otlp.protocol=http/protobuf",
             "-Dotel.exporter.otlp.compression=gzip",
-            "-Dotel.logs.exporter=none",
+            "-Dotel.logs.exporter=" + ("otlp" if config.endswith("-logs") else "none"),
             f"-Dotel.service.name=bench-{role}"]
+    opts += shlex.split(args.extra_java_opts)
     if config == "agent":
         return " ".join(opts)
     opts.append(f"-Dotel.javaagent.extensions={args.flare}")
     opts.append("-DFLARE_TRACE_GRANULARITY=" + ("stages" if config == "stages" else "all"))
+    if config in ("tasks-lean", "tasks-lean-logs"):
+        opts += ["-Dotel.instrumentation.common.default-enabled=false",
+                 "-Dotel.instrumentation.flare-spark.enabled=true",
+                 # Flare calls the OpenTelemetry API; this bridges it to the agent's SDK
+                 "-Dotel.instrumentation.opentelemetry-api.enabled=true"]
+    if config == "tasks-lean-logs":
+        opts.append("-Dotel.instrumentation.log4j-appender.enabled=true")
     if config == "tasks-uncapped":
         opts.append("-DFLARE_MAX_SPANS_PER_TRACE=100000000")
     if config == "tasks-unsampled" and role == "driver":
@@ -109,9 +129,16 @@ def submit_args(config):
 def workload_args(workload, result):
     if workload.startswith("tasks-"):
         return [str(HERE / "many_tasks.py"), "--tasks", workload.split("-", 1)[1], "--result", str(result)]
+    if workload.startswith("many-jobs-"):
+        return [str(HERE / "many_jobs.py"), "--jobs", workload.rsplit("-", 1)[1], "--result", str(result)]
+    # RDD workloads from Spark's own examples: JVM only, no SQL executions, so no plan capture.
+    if workload == "rdd-groupby":  # 60 mappers x 200,000 pairs of 100 bytes, grouped into 60
+        return ["--class", "org.apache.spark.examples.GroupByTest", args.examples_jar, "60", "200000", "100", "60"]
+    if workload == "rdd-tc":  # transitive closure of a random graph: dozens of small iterative jobs
+        return ["--class", "org.apache.spark.examples.SparkTC", args.examples_jar, "12"]
     if workload == "tpch":
         return [str(HERE / "tpch.py"), "--data", args.tpch_data, "--queries", args.tpch_queries,
-                "--result", str(result)]
+                "--result", str(result), "--minutes", str(args.tpch_minutes), "--log-level", args.tpch_log_level]
     raise SystemExit(f"unknown workload {workload}")
 
 
@@ -226,13 +253,31 @@ def run(config, workload, repeat, order, record=True):
     rec["node_cpu_s"] = {n: (after[n][0] - before[n][0]) / CLK_TCK for n in nodes}
     rec["cluster_cpu_s"] = sum(rec["node_cpu_s"].values())
     rec["dropped_event_lines"] = [l for l in proc.stderr.splitlines() if re.search(r"Dropp(ed|ing) .*event", l)]
+    if not result.exists():
+        # The rdd-* workloads write no result: take the application id from spark-submit's log,
+        # or failing that, the newest event log written during the run.
+        m = re.search(r"\b(app-\d{14}-\d{4}|application_\d+_\d+|local-\d+)\b", proc.stderr)
+        app_id = m.group(1) if m else None
+        if not app_id:
+            fresh = [p for p in args.event_dir.iterdir() if p.stat().st_mtime >= started]
+            if fresh:
+                newest = max(fresh, key=lambda p: p.stat().st_mtime).name
+                app_id = newest.removeprefix("eventlog_v2_").split(".")[0]
+        if app_id and proc.returncode == 0:
+            rec["app_id"] = app_id
+            rec.update(event_log(app_id))
     if result.exists():
         wl = json.loads(result.read_text())
         rec["seconds"] = wl["seconds"]
         rec["app_id"] = wl["app_id"]
+        for key in ("passes", "at_start", "at_end"):
+            if key in wl:
+                rec[key] = wl[key]
+        for p in rec.get("passes", []):
+            p.pop("queries", None)
         rec.update(event_log(wl["app_id"]))
     rec["telemetry"] = telemetry
-    print(f"{name}: exit={proc.returncode} seconds={rec.get('seconds', 0):.1f} "
+    print(f"{name}: exit={proc.returncode} seconds={rec.get('seconds') or 0:.1f} "
           f"cluster_cpu={rec['cluster_cpu_s']:.1f}s spans={telemetry['spans']} "
           f"dropped={len(rec['dropped_event_lines'])}", flush=True)
     if record:
