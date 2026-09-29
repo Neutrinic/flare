@@ -101,8 +101,22 @@ private[spark] object TelemetryFlush {
  * moving, so a busy executor does not flush at all and the periodic exporters cover it. Once the
  * last task ends, the flush follows `delayMs` later, which is the last point Flare can act on a
  * cluster that kills executors without a shutdown call.
+ *
+ * Within `minIntervalMs` of the previous run, the quiet has to last `throttledDelayMs` instead, or
+ * until the interval ends if that comes sooner, but never less than `delayMs` (#139). Executors
+ * also go quiet between the stages of every query, every few seconds, and each flush re-sends every
+ * cumulative metric series. Those gaps are mostly shorter than `throttledDelayMs`, so they no
+ * longer flush; the end of a run is not, so it still does, at most `throttledDelayMs` after the
+ * last task. Deferring to the end of the interval instead would be too late: a Databricks job
+ * cluster starts tearing down about 8.6s after the last job ends.
  */
-private[plugin] final class QuietPeriodAction(delayMs: Long, action: () => Unit, name: String) {
+private[plugin] final class QuietPeriodAction(
+  delayMs: Long,
+  action: () => Unit,
+  name: String,
+  minIntervalMs: Long = 0L,
+  throttledDelayMs: Long = 0L,
+) {
 
   // Started on the first request, so an executor that never runs a task never starts a thread.
   private lazy val scheduler: ScheduledExecutorService =
@@ -116,14 +130,23 @@ private[plugin] final class QuietPeriodAction(delayMs: Long, action: () => Unit,
 
   private var pending: Option[ScheduledFuture[_]] = None
   private var closed = false
+  // When the action last started, from System.nanoTime. None until it first runs.
+  private var lastRun: Option[Long] = None
 
   def request(): Unit = synchronized {
     if (closed) return
     pending.foreach(_.cancel(false))
+    val sinceLastMs = lastRun.map(t => (System.nanoTime() - t) / 1000000L)
+    // Inside the interval: the longer quiet, or the end of the interval if that comes first.
+    val waitMs = sinceLastMs.filter(_ < minIntervalMs)
+      .fold(delayMs)(since => math.max(delayMs, math.min(throttledDelayMs, minIntervalMs - since)))
     pending =
       try Some(scheduler.schedule(new Runnable {
-        override def run(): Unit = action()
-      }, delayMs, TimeUnit.MILLISECONDS))
+        override def run(): Unit = {
+          QuietPeriodAction.this.synchronized { lastRun = Some(System.nanoTime()) }
+          action()
+        }
+      }, waitMs, TimeUnit.MILLISECONDS))
       catch {
         // Closed by shutdown, which flushes on its own.
         case _: java.util.concurrent.RejectedExecutionException => None
