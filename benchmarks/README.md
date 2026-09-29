@@ -376,7 +376,9 @@ RDD code with no SQL at all. Spark 4.0.4 on the lab, three repeats, raw data
 ### Lean agent
 
 The agent instruments far more than Spark: HTTP clients, the AWS and GCS SDKs, JDBC, Kafka and
-more. In a Spark JVM those mostly trace Spark reading its own files. To keep only Flare:
+more. In a Spark JVM those mostly trace Spark reading its own files. These runs kept only Flare with
+the settings below. Since 1.3.0 Flare applies a similar set by default, which also keeps
+thread-pool context, `@WithSpan` and JVM metrics, so none of this needs setting by hand:
 
 ```text
 -Dotel.instrumentation.common.default-enabled=false
