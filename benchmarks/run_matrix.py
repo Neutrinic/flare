@@ -65,6 +65,10 @@ parser.add_argument("--ssh-user", default=None)
 parser.add_argument("--no-warmup", action="store_true")
 parser.add_argument("--extra-java-opts", default="", help="appended to every configuration but off, on driver and executors")
 args = parser.parse_args()
+if any(w.startswith("rdd-") for w in args.workloads.split(",")) and not args.examples_jar:
+    parser.error("the rdd-* workloads need --examples-jar")
+if "tpch" in args.workloads.split(",") and not (args.tpch_data and args.tpch_queries):
+    parser.error("the tpch workload needs --tpch-data and --tpch-queries")
 
 args.event_dir.mkdir(parents=True, exist_ok=True)
 work = args.out.parent / "runs"

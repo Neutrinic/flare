@@ -35,6 +35,7 @@ $PY $B/run_matrix.py \
   --event-dir $W/events --out $W/results.jsonl \
   --workloads tpch --tpch-data "gs://$BUCKET/tpch/sf$SF" --tpch-queries $W/queries --tpch-minutes $MINUTES \
   --nodes local --no-warmup --repeats $REPEATS --configs "$CONFIGS"
-echo "$(date -u +%T) matrix exit $?"
+rc=$?
+echo "$(date -u +%T) matrix exit $rc"
 kill $SYNC; sync_out
 echo done | gsutil -q cp - "$OUT/DONE"

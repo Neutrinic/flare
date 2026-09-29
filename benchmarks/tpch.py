@@ -66,18 +66,24 @@ def jvm_cpu(spark):
     sc = spark.sparkContext
     jvm = sc._jvm
     driver_pid = int(jvm.java.lang.management.ManagementFactory.getRuntimeMXBean().getName().split("@")[0])
-    tasks = 8 * sc.defaultParallelism
-    seen = {}
-    for host, pid, start, cpu in sc.parallelize(range(tasks), tasks).mapPartitions(executor_jvm).collect():
-        if pid is not None:
-            seen[(host, pid, start)] = max(cpu, seen.get((host, pid, start), 0))
     try:
         expected = sc._jsc.sc().getExecutorMemoryStatus().size() - 1  # minus the driver
     except Exception:
         expected = None
+    # Spark may put every probe task on some executors and none on others. Probe again until each
+    # executor has answered, a few times at most, and record whether they all did.
+    tasks = 8 * sc.defaultParallelism
+    seen = {}
+    for _ in range(5):
+        for host, pid, start, cpu in sc.parallelize(range(tasks), tasks).mapPartitions(executor_jvm).collect():
+            if pid is not None:
+                seen[(host, pid, start)] = max(cpu, seen.get((host, pid, start), 0))
+        if expected is None or len(seen) >= expected:
+            break
     return {"driver_cpu_s": proc_cpu(driver_pid)[0],
             "executor_cpu_s": sum(seen.values()),
-            "executors_seen": len(seen), "executors_expected": expected}
+            "executors_seen": len(seen), "executors_expected": expected,
+            "executors_complete": expected is None or len(seen) >= expected}
 
 
 def driver_heap_mb(spark):

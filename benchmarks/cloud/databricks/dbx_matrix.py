@@ -96,8 +96,13 @@ def submit_and_wait(name, task, timeout_s):
     body = {"run_name": name, "timeout_seconds": timeout_s, "tasks": [task]}
     run_id = cli("api", "post", "/api/2.1/jobs/runs/submit", "--json", json.dumps(body))["run_id"]
     print(f"{time.strftime('%H:%M:%S')} {name}: submitted run {run_id}", flush=True)
+    # The run's own timeout does not stop this loop if polling itself keeps failing, such as when
+    # the CLI profile's token expires, so it has a deadline of its own.
+    deadline = time.time() + timeout_s + 900
     while True:
         time.sleep(30)
+        if time.time() > deadline:
+            raise RuntimeError(f"{name}: run {run_id} not finished {timeout_s + 900}s after submission")
         try:
             run = cli("api", "get", f"/api/2.1/jobs/runs/get?run_id={run_id}")
         except RuntimeError as e:

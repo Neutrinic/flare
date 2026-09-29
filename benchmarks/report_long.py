@@ -124,3 +124,11 @@ if base:
             cells.append(pct(med[c]["fixed_cpu"] + med[c]["steady_rate"] * s,
                              base["fixed_cpu"] + base["steady_rate"] * s))
         print(f"| {c} | " + " | ".join(cells) + " |")
+
+# A probe that missed an executor under-counts that sample's CPU, so say so rather than hide it.
+short = [f"{r['config']} r{r.get('repeat')}" for r in runs
+         for s in [r["at_start"]] + r["passes"]
+         if s.get("executors_expected") is not None and s.get("executors_seen", 0) < s["executors_expected"]]
+if short:
+    print(f"\nIncomplete executor coverage in {len(short)} samples, JVM CPU under-counted: "
+          + ", ".join(sorted(set(short))))

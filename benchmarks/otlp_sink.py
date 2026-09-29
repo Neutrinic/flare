@@ -176,7 +176,8 @@ class Otlp(Base):
         if request_log:
             with lock:
                 request_log.write(json.dumps({"t": time.time(), "client": self.client_address[0], "signal": signal, "wire": len(wire),
-                                              "bytes": len(raw), "spans": len(names)}) + "\n")
+                                              "bytes": len(raw), "spans": len(names),
+                                              "log_records": records}) + "\n")
                 request_log.flush()
         with lock:
             s = stats[signal]
