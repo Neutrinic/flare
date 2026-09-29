@@ -43,3 +43,7 @@ example on the driver only:
 
 Disabling an instrumentation also hides your own calls through that library, which is why the
 filter is the default rather than these switches.
+
+The filter keeps calls made inside Spark work, and Spark's own reads of its input are such calls:
+one span per S3 or GCS request, under the task that made it. To keep only Flare's spans, see the
+[lean agent](volume.md#traces-use-the-lean-agent).

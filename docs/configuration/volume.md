@@ -1,0 +1,79 @@
+# Telemetry volume
+
+An always-on Spark application can send gigabytes of telemetry a day, and most of it is not Flare's.
+Measured on 20-minute TPC-H applications ([overhead](../reference/overhead.md)), on Databricks with
+4 nodes unless noted:
+
+| Signal | What drives it | Per hour, gzip | Lever |
+|---|---|---|---|
+| Logs | Spark's log level | 63 MB at `INFO` | Log level, collector filters |
+| Traces | Tasks, and the agent's own instrumentation | about 12 MB with the default agent | [Lean agent](#traces-use-the-lean-agent), sampling, granularity |
+| Metrics | Series count and export frequency | about 8 MB (lab, 3 nodes) | Nothing needed |
+
+## Logs
+
+The agent exports logs by default, and Spark at `INFO` writes a line for every task's start and end.
+In the TPC-H benchmarks that was 7,000 to 13,000 records a minute on small clusters, or for an
+application running all day about 0.9 GB a day on the lab and 1.5 GB on Databricks, gzipped. Other
+workloads log more or less. Capturing them costs no measurable CPU; the volume is the cost.
+
+- Raise Spark's log level to `WARN` for production jobs.
+- Or filter in a collector, keeping `WARN` and above and the lines you need.
+- Or turn log export off: `-Dotel.logs.exporter=none`.
+
+See also [Logs](exporting.md#logs) for what else reaches your log backend.
+
+## Traces: use the lean agent
+
+The agent instruments far more than Spark: HTTP clients, the AWS and Google Cloud SDKs, JDBC, Kafka.
+In a Spark JVM these mostly trace Spark reading its own input, one span per S3 or GCS request. They
+nest under Flare's task spans, so [noise filtering](noise.md) keeps them, and they outnumber Flare's
+own spans:
+
+| Platform, 20-minute TPC-H application | Agent spans | Flare spans |
+|---|---|---|
+| Databricks, S3 | 12,000 | 11,000 |
+| Dataproc, GCS | 82,000 | 5,700 |
+
+On Dataproc they also cost about 2% CPU for as long as the job reads data.
+
+To keep only Flare's spans, add to both the driver and executor options:
+
+```text
+-Dotel.instrumentation.common.default-enabled=false
+-Dotel.instrumentation.opentelemetry-api.enabled=true
+-Dotel.instrumentation.flare-spark.enabled=true
+-Dotel.instrumentation.log4j-appender.enabled=true
+```
+
+- **The second line is required.** It connects Flare to the agent's SDK; without it nothing at all
+  is exported.
+- **The last line keeps log export.** Leave it out if logs are off.
+- **Turn back on anything you want traced** by name, such as
+  `-Dotel.instrumentation.jdbc.enabled=true` for database calls made from tasks.
+
+The lean agent also cuts start-up CPU on Databricks by about half. It exported the same Flare spans
+as the default agent on the lab, Dataproc and Databricks, and the same logs with the last line on the
+lab.
+
+Beyond that:
+
+- **Granularity.** The default, `FLARE_TRACE_GRANULARITY=stages`, has no task spans, which are most
+  of Flare's own volume.
+- **Sampling** traces a fraction of applications, whole or not at all. See
+  [Sampling](index.md#sampling).
+- **`FLARE_MAX_SPANS_PER_TRACE`** caps task spans per executor. On an application that runs for
+  hours, task spans stop once each executor reaches it; job, stage and SQL spans continue. With
+  Photon, which runs more tasks a minute, that was within 20 minutes.
+
+## Metrics
+
+Flare's metric labels are bounded by the code, not by how long the application runs, so metric
+volume stays flat: on a lab TPC-H application each export stayed at 10 to 13 KB from start to end.
+Up to 1.2.0 the task and stage metrics also carried `stage.id`, which grew every export for the life
+of the application; see [Upgrading](../upgrading.md).
+
+Executors also flush when they go quiet, so a job's last metrics can reach the backend on clusters
+that kill executors without warning, provided the executor is still alive when the flush completes;
+see [Metrics](exporting.md#metrics). Most gaps between stages are too
+short to trigger it, so an executor exports metrics a few times a minute rather than once.

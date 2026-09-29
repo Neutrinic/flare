@@ -72,8 +72,11 @@ lines this way.
 
 Before leaving it on:
 
-- **Volume.** Spark logs a lot at `INFO`, about 500 lines a minute on a small job. Raise Spark's log
-  level to `WARN`, or filter in a collector, on real workloads.
+- **Volume.** Spark logs a line for every task's start and end at `INFO`. In the TPC-H benchmarks
+  that was 7,000 to 13,000 lines a minute on small clusters, or for an application running all day
+  about 0.9 GB a day on the lab and 1.5 GB on Databricks, gzipped. Other workloads differ.
+  Raise Spark's log level to `WARN`, or filter in a collector, on real workloads. See
+  [Telemetry volume](volume.md#logs).
 - **Spark logs its whole configuration at start-up.** With log export on, anything secret in Spark
   config reaches your log backend. Another reason to keep credentials in the agent configuration
   file.
@@ -85,10 +88,12 @@ To turn logs off: `-Dotel.logs.exporter=none`.
 ## Metrics
 
 Metrics are exported every 60 seconds by default (`otel.metric.export.interval`). Flare also flushes
-at shutdown, and each executor flushes about a second after its last task ends, so a short job, or an
-executor that is later killed without a shutdown call, still reports its final values. An executor
-killed within that second of its last task, or while a task is still running, can lose the metrics
-it had not exported yet.
+at shutdown, and each executor flushes a second after its last task ends, or three seconds if it
+already flushed in the previous 30, so that pauses between stages do not flush every few seconds
+([#139](https://github.com/Neutrinic/flare/issues/139)). A short job, or an executor that is later
+killed without a shutdown call, still reports its final values: a Databricks job cluster starts
+tearing down about 8.6 seconds after its last job. An executor killed sooner than that after its
+last task, or while a task is still running, can lose the metrics it had not exported yet.
 
 ## Checking what is exported
 
