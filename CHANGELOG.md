@@ -79,8 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Executors also go quiet between the stages of every query, so within 30 seconds of a flush the
   next one waits for 3 seconds of quiet instead of 1, longer than most gaps between stages; a
   TPC-H loop otherwise flushed every few seconds, re-sending every metric series each time. The
-  last flush of a run still lands 3 seconds after its last task, ahead of a Databricks job
-  cluster's teardown, which starts about 8.6 seconds after the last job ends ([#139])
+  last flush of a run still lands at most 3 seconds after its last task (1 second outside that
+  window), ahead of a Databricks job cluster's teardown, which starts about 8.6 seconds after the
+  last job ends ([#139])
 - **On Java 8 or 11, Flare disabled the whole agent and nothing was exported** — Flare's Java
   sources, the agent-extension half, were compiled for Java 17 because the build never set a javac
   target and CI builds on 17. Spark 3.x runs on Java 8 and 11, where the agent cannot load

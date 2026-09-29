@@ -81,6 +81,30 @@ class TelemetryFlushTest extends FunSuite {
     } finally quiet.close()
   }
 
+  // The least obvious branch: late in the interval, its end comes before the longer quiet would,
+  // and wins. Neither the full longer quiet nor the short one applies.
+  test("late in the interval, the action runs when the interval ends if that is sooner") {
+    val runs  = new AtomicInteger(0)
+    val times = new java.util.concurrent.ConcurrentLinkedQueue[java.lang.Long]()
+    val quiet = new QuietPeriodAction(20L, () => {
+      times.add(System.nanoTime()); runs.incrementAndGet(); ()
+    }, "test-quiet", minIntervalMs = 400L, throttledDelayMs = 300L)
+    try {
+      quiet.request()
+      awaitCount(runs, 1, 2000L)
+      val first = times.peek().longValue
+      Thread.sleep(250) // 250ms into the 400ms interval: 150ms left, less than the 300ms quiet
+      val requested = System.nanoTime()
+      quiet.request()
+      awaitCount(runs, 2, 2000L)
+      val second = times.toArray.last.asInstanceOf[java.lang.Long].longValue
+      val afterRequestMs = (second - requested) / 1000000L
+      val afterFirstMs   = (second - first) / 1000000L
+      assert(afterRequestMs < 280L, s"waited ${afterRequestMs}ms, the full 300ms quiet instead of the interval's end")
+      assert(afterFirstMs >= 380L, s"ran ${afterFirstMs}ms after the previous run, before the 400ms interval ended")
+    } finally quiet.close()
+  }
+
   test("once the interval has passed, the short quiet applies again") {
     val runs = new AtomicInteger(0)
     val quiet = new QuietPeriodAction(20L, () => { runs.incrementAndGet(); () }, "test-quiet",

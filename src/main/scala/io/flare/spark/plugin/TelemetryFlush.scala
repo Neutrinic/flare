@@ -102,13 +102,13 @@ private[spark] object TelemetryFlush {
  * last task ends, the flush follows `delayMs` later, which is the last point Flare can act on a
  * cluster that kills executors without a shutdown call.
  *
- * Within `minIntervalMs` of the previous run, the quiet has to last `throttledDelayMs` instead
- * (#139). Executors also go quiet between the stages of every query, every few seconds, and each
- * flush re-sends every cumulative metric series. Those gaps are mostly shorter than
- * `throttledDelayMs`, so they no longer flush; the end of a run is not, so it still does, just
- * `throttledDelayMs` after the last task rather than `delayMs`. Deferring to the end of the
- * interval instead would be too late: a Databricks job cluster starts tearing down about 8.6s
- * after the last job ends.
+ * Within `minIntervalMs` of the previous run, the quiet has to last `throttledDelayMs` instead, or
+ * until the interval ends if that comes sooner, but never less than `delayMs` (#139). Executors
+ * also go quiet between the stages of every query, every few seconds, and each flush re-sends every
+ * cumulative metric series. Those gaps are mostly shorter than `throttledDelayMs`, so they no
+ * longer flush; the end of a run is not, so it still does, at most `throttledDelayMs` after the
+ * last task. Deferring to the end of the interval instead would be too late: a Databricks job
+ * cluster starts tearing down about 8.6s after the last job ends.
  */
 private[plugin] final class QuietPeriodAction(
   delayMs: Long,
