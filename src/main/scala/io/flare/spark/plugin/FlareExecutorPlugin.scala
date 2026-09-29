@@ -296,7 +296,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   private def recordTaskMetrics(tc: TaskContext, durationMs: Long, success: Boolean): Unit = {
     try {
       val eid = this.executorId
-      val attrs = MetricAttributes.forTask(eid, tc.stageId(), if (success) "SUCCESS" else "FAILED")
+      val attrs = MetricAttributes.forTask(eid, if (success) "SUCCESS" else "FAILED")
 
       if (durationMs >= 0) {
         metrics.taskDuration.record(durationMs.toDouble, attrs)

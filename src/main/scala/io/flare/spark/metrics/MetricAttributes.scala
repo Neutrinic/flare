@@ -15,10 +15,19 @@ object MetricAttributes {
   private val SqlDescription = AttributeKey.stringKey("sql.description")
   private val Result         = AttributeKey.stringKey("task.result")
 
-  def forTask(executorId: String, stageId: Int, result: String): Attributes =
+  /**
+   * Tags for task-level instruments, recorded on the executor.
+   *
+   * No stage id, and nothing else that is new for every stage (#136). A stage id is used once and
+   * restarts at 0 in every application, so it cannot be compared across runs, and as a tag it only
+   * creates series: the SDK re-exports every series it has seen on each cumulative export, and past
+   * its limit of 2,000 per instrument folds new ones into a single overflow series. A long-lived
+   * application, such as a Databricks all-purpose cluster, reaches that in hours. The executor's
+   * TaskContext has no stage name to use instead; per-stage detail is on the stage span.
+   */
+  def forTask(executorId: String, result: String): Attributes =
     Attributes.builder()
       .put(ExecutorId, executorId)
-      .put("stage.id", stageId.toLong)
       .put(Result, result)
       .build()
 
@@ -32,18 +41,16 @@ object MetricAttributes {
    * carries the SQL execution's own label (`show at PipelineJob.scala:58`). Same fix as #48
    * applied to the metric surface; see #75.
    *
-   * Adding it costs **zero** additional series. Every series already carries `instance`
-   * (`service.instance.id`, a per-JVM UUID), and a given stage in a given JVM has exactly one
-   * SQL description — so `sql.description` is functionally determined by labels that are
-   * already present. Verified against Mimir: `(stage_id, instance)` and
-   * `(stage_id, instance, stage_name)` both yield 6 series over two applications.
+   * Both tags are call sites (`collect at Job.scala:42`), bounded by the code rather than by how
+   * long the application runs. There is deliberately no stage id (#136): see [[forTask]]. Stages
+   * from the same call site share series, which is the aggregation a metric should give; a single
+   * stage is on its span.
    *
    * Omitted rather than defaulted when the stage belongs to no SQL execution — a pure-RDD
    * stage has no description, and an empty tag would read as one that exists and is blank.
    */
-  def forStage(stageId: Int, stageName: String, sqlDescription: Option[String]): Attributes = {
+  def forStage(stageName: String, sqlDescription: Option[String]): Attributes = {
     val b = Attributes.builder()
-      .put("stage.id", stageId.toLong)
       .put(StageName, stageName)
     sqlDescription.filter(_.nonEmpty).foreach(b.put(SqlDescription, _))
     b.build()
