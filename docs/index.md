@@ -4,6 +4,15 @@ Flare is an OpenTelemetry Java agent extension for Apache Spark. It gives you on
 application, from the driver down to the individual task on the executor, plus task and stage
 metrics and trace-linked logs. No code changes: you add two JARs and a few Spark settings.
 
+--8<-- "docs-version.txt"
+
+| If you want to | Start with |
+|---|---|
+| See Flare working on your machine, with Grafana | [Local stack](getting-started/local-stack.md) |
+| Add it to a Spark you already run | [Quick start](getting-started/quick-start.md) |
+| Run it on Kubernetes, EMR, Dataproc or Databricks | [Deploying](deploying/index.md) |
+| Find out why nothing arrives | [Troubleshooting](troubleshooting.md) |
+
 ![Dashboard](assets/dashboard.png)
 
 ## What you get
@@ -23,6 +32,9 @@ spark.application                          (driver)
         └── spark.stage.4                  (driver)
             └── spark.task.executor        (executor)
 ```
+
+Task spans need `FLARE_TRACE_GRANULARITY=all`, or `tasks`. The default, `stages`, stops at the stage
+spans, which keeps volume down; see [Configuration](configuration/index.md).
 
 Most Spark observability stops at the driver. You get a stage with an aggregate duration, but not
 which executor ran slow, which partition was skewed, or where a retry happened. Flare creates the
