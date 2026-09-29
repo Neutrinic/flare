@@ -27,10 +27,13 @@ replacements = [
     (re.compile(rf"/download/v{V}/({COORD})-{V}\.jar"), rf"/download/v{version}/\g<1>-{version}.jar"),
     # Maven coordinates: io.github.neutrinic:flare-spark-3-5_2.12:1.3.0
     (re.compile(rf"(io\.github\.neutrinic:{COORD}):{V}"), rf"\g<1>:{version}"),
+    # The release the docs describe, in prose: **Flare 1.3.0**
+    (re.compile(rf"(\*\*Flare ){V}(\*\*)"), rf"\g<1>{version}\g<2>"),
 ]
 # Every Flare version the snippets name, in any of the forms above.
 any_version = re.compile(
-    rf"{COORD}/({V})/|{COORD}-({V})\.jar|/download/v({V})/|io\.github\.neutrinic:{COORD}:({V})")
+    rf"{COORD}/({V})/|{COORD}-({V})\.jar|/download/v({V})/|io\.github\.neutrinic:{COORD}:({V})"
+    rf"|\*\*Flare ({V})\*\*")
 
 changed = 0
 for path in sorted(SNIPPETS.iterdir()):

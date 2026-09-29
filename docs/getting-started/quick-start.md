@@ -76,7 +76,12 @@ replaces the two `extraClassPath` settings. The platform pages say where.
 ## Check it worked
 
 In your backend, search for the service `my-app-driver`. There should be one trace whose root span
-is `spark.application`, with `spark.task.executor` spans from `my-app-executor` under their stages.
+is `spark.application`, with SQL, job and stage spans under it.
+
+These settings leave `FLARE_TRACE_GRANULARITY` at its default, `stages`, which stops there. To see
+every task as a `spark.task.executor` span from `my-app-executor` under its stage, add
+`-DFLARE_TRACE_GRANULARITY=all` to both `extraJavaOptions`. Task spans are most of Flare's own
+volume; see [Telemetry volume](../configuration/volume.md#flares-own-spans).
 
 If the trace is missing or looks wrong, see [Troubleshooting](../troubleshooting.md).
 

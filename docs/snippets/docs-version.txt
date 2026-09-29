@@ -1,0 +1,1 @@
+These docs describe **Flare 1.3.0**. [Upgrading](upgrading.md) lists what changed between releases.
