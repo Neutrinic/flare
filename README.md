@@ -76,7 +76,7 @@ Serverless and Databricks.
 | [Quick start](https://neutrinic.github.io/flare/getting-started/quick-start/) | What each setting does, and choosing a JAR |
 | [Deploying](https://neutrinic.github.io/flare/deploying/) | A verified recipe for each platform |
 | [Configuration](https://neutrinic.github.io/flare/configuration/) | Flare's settings, sampling, SQL plans, exporting, noise |
-| [Telemetry volume](https://neutrinic.github.io/flare/configuration/volume/) | Where the volume comes from, and the lean agent |
+| [Telemetry volume](https://neutrinic.github.io/flare/configuration/volume/) | Where the volume comes from, and what is turned off by default |
 | [Spans](https://neutrinic.github.io/flare/reference/spans/) and [metrics](https://neutrinic.github.io/flare/reference/metrics/) | Every span, attribute and instrument |
 | [Overhead](https://neutrinic.github.io/flare/reference/overhead/) | What Flare costs, measured |
 | [Upgrading](https://neutrinic.github.io/flare/upgrading/) | What changes between releases |
@@ -90,7 +90,7 @@ Serverless and Databricks.
 - **Once warm, Flare adds nothing measurable.** CPU inside tasks is unchanged, and query time is
   within 2%.
 - **The agent's own instrumentation can cost more than Flare** when data is read from object
-  storage; the lean agent turns it off.
+  storage, so Flare turns it off by default and keeps only what it and your code need.
 
 Method, tables and raw results: [Overhead](https://neutrinic.github.io/flare/reference/overhead/) and
 [`benchmarks/`](benchmarks/README.md).

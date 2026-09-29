@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the gap ([#109])
 
 ### Changed
+- **The agent's own instrumentation is off by default.** In a Spark JVM it mostly traced Spark
+  reading its own input, one span per S3 or GCS request under each task: 12,000 such spans in a
+  20-minute Databricks application and 82,000 on Dataproc, more than Flare's own, costing about 2%
+  CPU on Dataproc while data was read. Flare now supplies agent defaults that keep only what it and
+  your code need: the OpenTelemetry API bridge, `@WithSpan`, Flare's own instrumentation, context
+  across thread pools, Log4j capture for log export, and JVM metrics. They are defaults for each
+  setting, so anything you set yourself for the same setting takes precedence:
+  `-Dotel.instrumentation.jdbc.enabled=true` turns one instrumentation back on and
+  `-Dotel.instrumentation.common.default-enabled=true` restores all of them. On Databricks this
+  also roughly halved Flare's start-up cost ([#145])
 - **The published JAR now bundles the OpenTelemetry API** — `opentelemetry-api`,
   `opentelemetry-context` and the `opentelemetry-common` they pull in are inside the artifact,
   and are no longer listed in its POM. `spark.plugins` loads Flare into Spark's own classloader,
@@ -117,6 +127,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counting OTLP sink and a matrix runner) and results from a three-node Spark 4.0.4 lab cluster:
   TPC-H query time +1.8% with every span traced, +0.9% of it the agent alone; about 0.6 ms of CPU
   per task with a span for every task; no listener-bus drops in 78 runs. Summary in the README ([#89])
+- **Overhead of long-running applications, on Dataproc and Databricks.** 20-minute TPC-H SF10
+  applications on Dataproc 2.2 and Databricks 15.4 (with and without Photon), plus log export, many
+  small jobs and Scala RDD applications on the lab. Most of the cost is fixed at start-up: with every
+  task traced, JVM CPU was +15% for a two-minute Databricks application and about 1% at twenty
+  minutes, and query time once warm was within 2%. The agent's own instrumentation traced every S3
+  or GCS request, which on Dataproc cost about 2% CPU while data was read ([#135])
+- **Overhead and telemetry volume pages.** Overhead summarises the benchmarks. Telemetry volume
+  covers log volume at `INFO` (0.9 to 1.5 GB a day for an always-on TPC-H application), the lean agent
+  settings that keep only Flare's spans, including the one without which nothing is exported, and
+  the per-executor span cap. The configuration page now says the cap is per executor ([#141],
+  [#101])
 - **Documentation site.** Install recipes for every verified platform, configuration, the telemetry
   reference, upgrading and troubleshooting, published to GitHub Pages on each release tag. Built
   in strict mode on every docs pull request ([#129])
@@ -540,12 +561,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#111]: https://github.com/Neutrinic/flare/issues/111
 [#114]: https://github.com/Neutrinic/flare/issues/114
 [#89]: https://github.com/Neutrinic/flare/issues/89
+[#101]: https://github.com/Neutrinic/flare/issues/101
 [#120]: https://github.com/Neutrinic/flare/issues/120
 [#122]: https://github.com/Neutrinic/flare/issues/122
 [#123]: https://github.com/Neutrinic/flare/issues/123
 [#127]: https://github.com/Neutrinic/flare/issues/127
 [#129]: https://github.com/Neutrinic/flare/issues/129
 [#130]: https://github.com/Neutrinic/flare/issues/130
+[#135]: https://github.com/Neutrinic/flare/issues/135
 [#136]: https://github.com/Neutrinic/flare/issues/136
 [#139]: https://github.com/Neutrinic/flare/issues/139
+[#141]: https://github.com/Neutrinic/flare/issues/141
+[#145]: https://github.com/Neutrinic/flare/issues/145
 [#148]: https://github.com/Neutrinic/flare/issues/148

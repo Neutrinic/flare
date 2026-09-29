@@ -41,6 +41,26 @@ When a cluster manager stops the driver with SIGTERM, as a Databricks job cluste
 run, the root `spark.application` span used to be lost, and executor task metrics from the run's
 last minute with it. Both now arrive.
 
+### The agent's own instrumentation is off
+
+Flare now turns off the OpenTelemetry agent's own instrumentation by default
+([#145](https://github.com/Neutrinic/flare/issues/145)). In a Spark JVM it mostly traced Spark
+reading its own input, one span per S3 or GCS request, and outnumbered Flare's spans.
+
+- **Spans that disappear:** HTTP clients and servers, the AWS and Google Cloud SDKs, JDBC, Kafka
+  and the agent's other library spans, including any nested under task spans.
+- **What stays on:** Flare, the OpenTelemetry API bridge, your own `@WithSpan` methods, context
+  across thread pools, Log4j capture for log export, and JVM metrics. See
+  [Agent instrumentation](configuration/volume.md#agent-instrumentation).
+- **To keep a library's spans,** turn its instrumentation back on by name, such as
+  `-Dotel.instrumentation.jdbc.enabled=true`. To restore everything,
+  `-Dotel.instrumentation.common.default-enabled=true`. Anything you set yourself for the same
+  setting takes precedence over Flare's default.
+- **Logs from Logback or `java.util.logging`** are no longer captured by default; Spark's own logs
+  go through Log4j and still are. See [Logs](configuration/exporting.md#logs).
+- **Flags you added to silence the agent,** such as
+  `-Dotel.instrumentation.http-url-connection.enabled=false`, are no longer needed.
+
 ### Metrics no longer carry `stage.id`
 
 The task metrics (`flare.task.*`) and stage metrics (`flare.stage.*`) have lost their `stage.id`
