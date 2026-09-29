@@ -102,17 +102,20 @@ private[spark] object TelemetryFlush {
  * last task ends, the flush follows `delayMs` later, which is the last point Flare can act on a
  * cluster that kills executors without a shutdown call.
  *
- * `minIntervalMs` spaces the runs out (#139). Executors also go quiet between the stages of every
- * query, every few seconds, and each flush re-sends every cumulative metric series. A request that
- * would run sooner than `minIntervalMs` after the previous run is deferred to the end of that
- * interval rather than dropped, so the last request is still acted on, at most `minIntervalMs`
- * after it.
+ * Within `minIntervalMs` of the previous run, the quiet has to last `throttledDelayMs` instead
+ * (#139). Executors also go quiet between the stages of every query, every few seconds, and each
+ * flush re-sends every cumulative metric series. Those gaps are mostly shorter than
+ * `throttledDelayMs`, so they no longer flush; the end of a run is not, so it still does, just
+ * `throttledDelayMs` after the last task rather than `delayMs`. Deferring to the end of the
+ * interval instead would be too late: a Databricks job cluster starts tearing down about 8.6s
+ * after the last job ends.
  */
 private[plugin] final class QuietPeriodAction(
   delayMs: Long,
   action: () => Unit,
   name: String,
   minIntervalMs: Long = 0L,
+  throttledDelayMs: Long = 0L,
 ) {
 
   // Started on the first request, so an executor that never runs a task never starts a thread.
@@ -134,7 +137,9 @@ private[plugin] final class QuietPeriodAction(
     if (closed) return
     pending.foreach(_.cancel(false))
     val sinceLastMs = lastRun.map(t => (System.nanoTime() - t) / 1000000L)
-    val waitMs = sinceLastMs.fold(delayMs)(since => math.max(delayMs, minIntervalMs - since))
+    // Inside the interval: the longer quiet, or the end of the interval if that comes first.
+    val waitMs = sinceLastMs.filter(_ < minIntervalMs)
+      .fold(delayMs)(since => math.max(delayMs, math.min(throttledDelayMs, minIntervalMs - since)))
     pending =
       try Some(scheduler.schedule(new Runnable {
         override def run(): Unit = {

@@ -63,11 +63,13 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   // 60s, so task metrics from the last minute of a run were lost. A second after the last task is
   // the last point Flare can act.
   //
-  // At most once every IdleFlushIntervalMs (#139): executors also go quiet between the stages of
-  // every query, and flushed every few seconds, each flush re-sending every metric series.
+  // Executors also go quiet between the stages of every query, and flushed every few seconds, each
+  // flush re-sending every metric series (#139). Within IdleFlushIntervalMs of a flush, the next
+  // needs IdleFlushThrottledQuietMs of quiet, longer than most gaps between stages.
   private val idleFlush = new QuietPeriodAction(
     1000L, () => TelemetryFlush.flush("executor idle"), "flare-executor-idle-flush",
     minIntervalMs = FlareExecutorPlugin.IdleFlushIntervalMs,
+    throttledDelayMs = FlareExecutorPlugin.IdleFlushThrottledQuietMs,
   )
 
   override def init(ctx: PluginContext, extraConf: ju.Map[String, String]): Unit = {
@@ -367,10 +369,13 @@ private[plugin] object MdcEnricher {
 
 private[plugin] object FlareExecutorPlugin {
 
-  /**
-   * The shortest time between two idle flushes on an executor (#139). Well under the metric
-   * reader's 60s interval, so a quiet executor still gets its data out sooner than the periodic
-   * export would; the final flush of a run lands at most this long after its last task.
-   */
+  /** After an idle flush, how long the next one needs the longer quiet (#139). */
   val IdleFlushIntervalMs: Long = 30000L
+
+  /**
+   * The quiet an idle flush needs within [[IdleFlushIntervalMs]] of the previous one. It has to
+   * beat the kill: a Databricks job cluster starts tearing down about 8.6s after its last job ends
+   * (measured on DBR 15.4), so the last flush of a run, 3s after its last task, leaves about 5s.
+   */
+  val IdleFlushThrottledQuietMs: Long = 3000L
 }

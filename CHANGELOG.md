@@ -65,7 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and they go out in the final export whichever hook fires first. Executors are killed without a
   shutdown call, so their task metrics waited for a 60s export that never came; each executor now
   flushes through the agent's `OpenTelemetrySdkAccess.forceFlush` one second after its last task
-  ends, and the driver flushes on shutdown too. Closes the race in #83 as well ([#122], [#83])
+  ends, and the driver flushes on shutdown too. Closes the race in #83 as well ([#122], [#83]).
+  Executors also go quiet between the stages of every query, so within 30 seconds of a flush the
+  next one waits for 3 seconds of quiet instead of 1, longer than most gaps between stages; a
+  TPC-H loop otherwise flushed every few seconds, re-sending every metric series each time. The
+  last flush of a run still lands 3 seconds after its last task, ahead of a Databricks job
+  cluster's teardown, which starts about 8.6 seconds after the last job ends ([#139])
 - **On Java 8 or 11, Flare disabled the whole agent and nothing was exported** — Flare's Java
   sources, the agent-extension half, were compiled for Java 17 because the build never set a javac
   target and CI builds on 17. Spark 3.x runs on Java 8 and 11, where the agent cannot load
@@ -521,3 +526,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#127]: https://github.com/Neutrinic/flare/issues/127
 [#129]: https://github.com/Neutrinic/flare/issues/129
 [#130]: https://github.com/Neutrinic/flare/issues/130
+[#139]: https://github.com/Neutrinic/flare/issues/139

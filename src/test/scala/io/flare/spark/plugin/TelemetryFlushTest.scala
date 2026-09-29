@@ -56,31 +56,35 @@ class TelemetryFlushTest extends FunSuite {
     } finally quiet.close()
   }
 
-  // #139. Executors go quiet between the stages of every query, so without a minimum interval
-  // they flushed every few seconds, each flush re-sending every cumulative metric series.
-  test("runs are spaced by the minimum interval, and a deferred run is not dropped") {
-    val runs  = new AtomicInteger(0)
-    val times = new java.util.concurrent.ConcurrentLinkedQueue[Long]()
-    val quiet = new QuietPeriodAction(20L, () => {
-      times.add(System.nanoTime()); runs.incrementAndGet(); ()
-    }, "test-quiet", minIntervalMs = 600L)
+  // #139. Executors go quiet between the stages of every query, so with a one-second quiet they
+  // flushed every few seconds, each flush re-sending every cumulative metric series.
+  test("within the interval, short gaps do not run the action and a longer quiet still does") {
+    val runs = new AtomicInteger(0)
+    val quiet = new QuietPeriodAction(20L, () => { runs.incrementAndGet(); () }, "test-quiet",
+      minIntervalMs = 10000L, throttledDelayMs = 300L)
     try {
       quiet.request()
       awaitCount(runs, 1, 2000L)
-      quiet.request() // quiet again straight away, like the gap between two stages
-      Thread.sleep(300)
-      assertEquals(runs.get(), 1, "must not run again inside the interval")
+      // Gaps of 100ms, like the pauses between stages: past the 20ms quiet, short of the 300ms one.
+      (1 to 8).foreach { _ =>
+        quiet.request()
+        Thread.sleep(100)
+      }
+      assertEquals(runs.get(), 1, "a short gap inside the interval must not run the action")
 
+      val lastRequest = System.nanoTime()
+      quiet.request() // the end of the run: nothing follows
       awaitCount(runs, 2, 2000L)
-      assertEquals(runs.get(), 2, "the deferred run must still happen")
-      val gapMs = times.toArray.map(_.asInstanceOf[Long]).sliding(2).map(p => (p(1) - p(0)) / 1000000L).next()
-      assert(gapMs >= 550L, s"runs were ${gapMs}ms apart, inside the 600ms interval")
+      assertEquals(runs.get(), 2, "the longer quiet must still run it, like the end of a run")
+      val tookMs = (System.nanoTime() - lastRequest) / 1000000L
+      assert(tookMs >= 280L && tookMs < 1000L, s"ran ${tookMs}ms after the last request, not ~300ms")
     } finally quiet.close()
   }
 
-  test("a request long after the last run is not held back by the interval") {
-    val runs  = new AtomicInteger(0)
-    val quiet = new QuietPeriodAction(20L, () => { runs.incrementAndGet(); () }, "test-quiet", minIntervalMs = 200L)
+  test("once the interval has passed, the short quiet applies again") {
+    val runs = new AtomicInteger(0)
+    val quiet = new QuietPeriodAction(20L, () => { runs.incrementAndGet(); () }, "test-quiet",
+      minIntervalMs = 200L, throttledDelayMs = 1000L)
     try {
       quiet.request()
       awaitCount(runs, 1, 2000L)
@@ -89,7 +93,7 @@ class TelemetryFlushTest extends FunSuite {
       quiet.request()
       awaitCount(runs, 2, 2000L)
       val tookMs = (System.nanoTime() - requested) / 1000000L
-      assert(tookMs < 150L, s"took ${tookMs}ms; only the 20ms quiet delay should apply")
+      assert(tookMs < 150L, s"took ${tookMs}ms; only the 20ms quiet should apply")
     } finally quiet.close()
   }
 
