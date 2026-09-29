@@ -49,12 +49,17 @@ Since 1.3.0, Flare turns the agent's own instrumentation off by default and keep
 | `log4j-appender` | Log export, from Spark's logger. `otel.logs.exporter` still decides whether logs are sent |
 | `runtime-telemetry` | JVM metrics: heap, garbage collection, threads |
 
-These are defaults, and your own settings win:
+These are defaults for each setting: anything you set yourself for the same setting, as a system
+property, environment variable or in the agent's configuration file, takes precedence.
 
 - **Turn one instrumentation back on** by name, such as `-Dotel.instrumentation.jdbc.enabled=true`
   for database calls made from tasks, or `-Dotel.instrumentation.kafka.enabled=true`.
 - **Restore everything the agent instruments** with
   `-Dotel.instrumentation.common.default-enabled=true`.
+- **Turn off one of those kept above** by its own name, such as
+  `-Dotel.instrumentation.runtime-telemetry.enabled=false`.
+  `-Dotel.instrumentation.common.default-enabled=false` alone does not, because each is enabled by
+  its own setting.
 
 With the agent's instrumentation off, Flare's spans were the same on the lab, Dataproc and
 Databricks, and start-up CPU on Databricks was about half. Those runs also turned off `executors`,

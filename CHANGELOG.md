@@ -27,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   20-minute Databricks application and 82,000 on Dataproc, more than Flare's own, costing about 2%
   CPU on Dataproc while data was read. Flare now supplies agent defaults that keep only what it and
   your code need: the OpenTelemetry API bridge, `@WithSpan`, Flare's own instrumentation, context
-  across thread pools, Log4j capture for log export, and JVM metrics. Your own settings win, so
+  across thread pools, Log4j capture for log export, and JVM metrics. They are defaults for each
+  setting, so anything you set yourself for the same setting takes precedence:
   `-Dotel.instrumentation.jdbc.enabled=true` turns one instrumentation back on and
   `-Dotel.instrumentation.common.default-enabled=true` restores all of them. On Databricks this
   also roughly halved Flare's start-up cost ([#145])

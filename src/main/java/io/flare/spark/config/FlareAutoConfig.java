@@ -56,9 +56,12 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
    *   <li>{@code runtime-telemetry}: JVM metrics such as heap, GC and threads.
    * </ul>
    *
-   * <p>These are defaults: the SDK ranks system properties and environment variables above a
-   * properties supplier. {@code -Dotel.instrumentation.jdbc.enabled=true} turns one instrumentation
-   * back on; {@code -Dotel.instrumentation.common.default-enabled=true} restores all of them.
+   * <p>These are defaults, key by key: the SDK ranks system properties, environment variables and
+   * the agent's configuration file above a properties supplier, so a user's setting for any of these
+   * keys wins. {@code -Dotel.instrumentation.jdbc.enabled=true} turns one instrumentation back on;
+   * {@code -Dotel.instrumentation.common.default-enabled=true} restores all of them. The kept six
+   * are enabled by their own keys, so turning one off takes that key, such as
+   * {@code -Dotel.instrumentation.runtime-telemetry.enabled=false}.
    */
   static final Map<String, String> AGENT_DEFAULTS;
 

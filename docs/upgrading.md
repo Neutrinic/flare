@@ -54,7 +54,8 @@ reading its own input, one span per S3 or GCS request, and outnumbered Flare's s
   [Agent instrumentation](configuration/volume.md#agent-instrumentation).
 - **To keep a library's spans,** turn its instrumentation back on by name, such as
   `-Dotel.instrumentation.jdbc.enabled=true`. To restore everything,
-  `-Dotel.instrumentation.common.default-enabled=true`. Your settings always win over Flare's.
+  `-Dotel.instrumentation.common.default-enabled=true`. Anything you set yourself for the same
+  setting takes precedence over Flare's default.
 - **Logs from Logback or `java.util.logging`** are no longer captured by default; Spark's own logs
   go through Log4j and still are. See [Logs](configuration/exporting.md#logs).
 - **Flags you added to silence the agent,** such as
