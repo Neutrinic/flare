@@ -16,10 +16,15 @@ page covers what matters for Spark.
 The agent's default protocol is `http/protobuf` on port 4318. Use `grpc` with port 4317 if your
 collector expects gRPC.
 
-Flare works with any OTLP backend, not only Grafana. Backends that need signed requests or their own
-agent, such as the cloud providers' observability services, Datadog or Dynatrace, take OTLP through
-their own collector: point `otel.exporter.otlp.endpoint` at it. Setting up those collectors is
-covered by each vendor, not here.
+Flare works with any OTLP backend, not only Grafana:
+
+- **Backends that take OTLP directly** with a key in a header, such as the OTLP endpoints Datadog
+  and Dynatrace document, are set up like [Grafana Cloud](#grafana-cloud): their endpoint, and the
+  header in the agent's configuration file.
+- **Backends that need signed requests,** such as the cloud providers' own observability services,
+  take OTLP through a collector that signs for them: point `otel.exporter.otlp.endpoint` at it.
+
+Each vendor documents its endpoint, authentication and collector; that setup is not covered here.
 
 `http://` endpoints are unencrypted. Use them only for a collector on the same node or a private
 network, and `https://` for anything else: the telemetry carries SQL plans, failure messages and,
