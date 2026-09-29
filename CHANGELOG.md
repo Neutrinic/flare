@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-29
+
 ### Added
 - **Rolling development JARs** — every push to `main` publishes one assembly JAR per coordinate
   to a `dev` pre-release, e.g.
@@ -153,6 +155,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **"Zero orphan spans" qualified** — with `FLARE_SLOW_TASK_MS` set, a span created inside a
   suppressed task can be exported pointing at a parent that never is. The defect is still open;
   a regression test now records it ([#100])
+- **README trimmed to a pitch, a quick start and links to the documentation site.** Its
+  installation section still described the 1.2 install, five JARs with the OpenTelemetry API on the
+  classpath, and its quick start now matches the site's ([#148])
 
 ## [1.2.0] - 2026-08-26
 
@@ -507,7 +512,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SkewedJob` example with intentional data skew for visual trace inspection
 - 8 unit/integration tests (listener, propagator, config, end-to-end)
 
-[Unreleased]: https://github.com/Neutrinic/flare/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Neutrinic/flare/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Neutrinic/flare/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/Neutrinic/flare/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/Neutrinic/flare/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/Neutrinic/flare/releases/tag/v1.0.0
 [0.2.0]: https://github.com/Neutrinic/flare/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Neutrinic/flare/releases/tag/v0.1.0
 [#1]: https://github.com/Neutrinic/flare/issues/1
@@ -564,3 +573,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#139]: https://github.com/Neutrinic/flare/issues/139
 [#141]: https://github.com/Neutrinic/flare/issues/141
 [#145]: https://github.com/Neutrinic/flare/issues/145
+[#148]: https://github.com/Neutrinic/flare/issues/148
