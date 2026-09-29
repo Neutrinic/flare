@@ -7,7 +7,7 @@ Measured on 20-minute TPC-H applications ([overhead](../reference/overhead.md)),
 | Signal | What drives it | Per hour, gzip | Lever |
 |---|---|---|---|
 | Logs | Spark's log level | 63 MB at `INFO` | Log level, collector filters |
-| Traces | Tasks, and the agent's own instrumentation | about 12 MB with the default agent | [Lean agent](#traces-use-the-lean-agent), sampling, granularity |
+| Traces | Tasks, and the agent's own instrumentation | about 12 MB with all of the agent's instrumentation on | [Agent instrumentation](#agent-instrumentation), granularity, sampling |
 | Metrics | Series count and export frequency | about 8 MB (lab, 3 nodes) | Nothing needed |
 
 ## Logs
@@ -23,40 +23,44 @@ workloads log more or less. Capturing them costs no measurable CPU; the volume i
 
 See also [Logs](exporting.md#logs) for what else reaches your log backend.
 
-## Traces: use the lean agent
+## Traces
+
+### Agent instrumentation
 
 The agent instruments far more than Spark: HTTP clients, the AWS and Google Cloud SDKs, JDBC, Kafka.
-In a Spark JVM these mostly trace Spark reading its own input, one span per S3 or GCS request. They
-nest under Flare's task spans, so [noise filtering](noise.md) keeps them, and they outnumber Flare's
-own spans:
+In a Spark JVM these mostly trace Spark reading its own input, one span per S3 or GCS request,
+nested under Flare's task spans. With all of it on, they outnumbered Flare's own spans:
 
 | Platform, 20-minute TPC-H application | Agent spans | Flare spans |
 |---|---|---|
 | Databricks, S3 | 12,000 | 11,000 |
 | Dataproc, GCS | 82,000 | 5,700 |
 
-On Dataproc they also cost about 2% CPU for as long as the job reads data.
+On Dataproc they also cost about 2% CPU for as long as the job read data.
 
-To keep only Flare's spans, add to both the driver and executor options:
+Since 1.3.0, Flare turns the agent's own instrumentation off by default and keeps only this:
 
-```text
--Dotel.instrumentation.common.default-enabled=false
--Dotel.instrumentation.opentelemetry-api.enabled=true
--Dotel.instrumentation.flare-spark.enabled=true
--Dotel.instrumentation.log4j-appender.enabled=true
-```
+| Kept | Why |
+|---|---|
+| `opentelemetry-api` | Connects Flare to the agent's SDK. Without it nothing is exported |
+| `opentelemetry-instrumentation-annotations` | Your own `@WithSpan` methods |
+| `flare-spark` | Flare's own instrumentation |
+| `executors` | Carries a task's context into thread pools and futures, so spans made there keep their parent. It makes no spans of its own |
+| `log4j-appender` | Log export, from Spark's logger. `otel.logs.exporter` still decides whether logs are sent |
+| `runtime-telemetry` | JVM metrics: heap, garbage collection, threads |
 
-- **The second line is required.** It connects Flare to the agent's SDK; without it nothing at all
-  is exported.
-- **The last line keeps log export.** Leave it out if logs are off.
-- **Turn back on anything you want traced** by name, such as
-  `-Dotel.instrumentation.jdbc.enabled=true` for database calls made from tasks.
+These are defaults, and your own settings win:
 
-The lean agent also cuts start-up CPU on Databricks by about half. It exported the same Flare spans
-as the default agent on the lab, Dataproc and Databricks, and the same logs with the last line on the
-lab.
+- **Turn one instrumentation back on** by name, such as `-Dotel.instrumentation.jdbc.enabled=true`
+  for database calls made from tasks, or `-Dotel.instrumentation.kafka.enabled=true`.
+- **Restore everything the agent instruments** with
+  `-Dotel.instrumentation.common.default-enabled=true`.
 
-Beyond that:
+With the agent's instrumentation off, Flare's spans were the same on the lab, Dataproc and
+Databricks, and start-up CPU on Databricks was about half. Those runs also turned off `executors`,
+annotations and JVM metrics, which 1.3.0 keeps.
+
+### Flare's own spans
 
 - **Granularity.** The default, `FLARE_TRACE_GRANULARITY=stages`, has no task spans, which are most
   of Flare's own volume.

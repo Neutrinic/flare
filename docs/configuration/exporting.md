@@ -65,9 +65,12 @@ holds the credential.
 
 ## Logs
 
-The agent exports logs by default (`otel.logs.exporter=otlp`). It captures Log4j, Logback and
-`java.util.logging`, so Spark's own logs go out with the trace and span id of the task that wrote
-them, and a log line links to its task span. On Databricks a three-minute run exported about 1,700
+The agent exports logs by default (`otel.logs.exporter=otlp`). Flare's defaults keep its capture of
+Log4j, which Spark logs through, so Spark's own logs go out with the trace and span id of the task
+that wrote them, and a log line links to its task span. If your own code logs through Logback or
+`java.util.logging`, turn their capture back on with
+`-Dotel.instrumentation.logback-appender.enabled=true` or
+`-Dotel.instrumentation.java-util-logging.enabled=true`. On Databricks a three-minute run exported about 1,700
 lines this way.
 
 Before leaving it on:

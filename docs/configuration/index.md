@@ -10,7 +10,7 @@ agent's own `otel.*` keys, see [Exporting](exporting.md).
 | `FLARE_SAMPLING_RATIO` | | **Removed** in 1.3.0: it never had an effect ([#130](https://github.com/Neutrinic/flare/issues/130)). Ignored with a warning. See [Sampling](#sampling) |
 | `FLARE_SLOW_TASK_MS` | `0` (off) | Only emit task spans that took longer than this |
 | `FLARE_RETRY_TASKS_ONLY` | `false` | Only emit task spans for retries and speculative tasks |
-| `FLARE_MAX_SPANS_PER_TRACE` | `10000` | Circuit breaker for task spans, counted **per executor**, not per trace ([#101](https://github.com/Neutrinic/flare/issues/101)): each executor stops creating task spans once it has made this many in a trace, so a trace can hold up to this many per executor. Job and stage spans continue. On an application that runs for hours task spans stop partway; see [Telemetry volume](volume.md#traces-use-the-lean-agent) |
+| `FLARE_MAX_SPANS_PER_TRACE` | `10000` | Circuit breaker for task spans, counted **per executor**, not per trace ([#101](https://github.com/Neutrinic/flare/issues/101)): each executor stops creating task spans once it has made this many in a trace, so a trace can hold up to this many per executor. Job and stage spans continue. On an application that runs for hours task spans stop partway; see [Telemetry volume](volume.md#flares-own-spans) |
 | `FLARE_METRICS_ENABLED` | `true` | Flare's metrics: task duration, shuffle bytes, stage aggregates |
 | `FLARE_TRACK_BLOCK_UPDATES` | `false` | Per-block storage totals. Off by default: Spark reports every block, which on a large cached dataset floods the listener thread |
 | `FLARE_SQL_PLAN_MAX_CHARS` | `4096` | Cap on `spark.sql.plan`; `0` drops the attribute |

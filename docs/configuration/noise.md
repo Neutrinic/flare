@@ -34,16 +34,7 @@ What is kept:
 Set `FLARE_DROP_NON_SPARK_ROOTS=false` when a Spark JVM does its own traced work that should start
 traces, such as a driver that also serves HTTP.
 
-To keep the filter but also silence an instrumentation entirely, use the agent's switches, for
-example on the driver only:
-
-```text
--Dotel.instrumentation.http-url-connection.enabled=false
-```
-
-Disabling an instrumentation also hides your own calls through that library, which is why the
-filter is the default rather than these switches.
-
-The filter keeps calls made inside Spark work, and Spark's own reads of its input are such calls:
-one span per S3 or GCS request, under the task that made it. To keep only Flare's spans, see the
-[lean agent](volume.md#traces-use-the-lean-agent).
+Since 1.3.0 Flare also turns off the agent's own instrumentation by default, so most of the sources
+above are not traced at all: see [Agent instrumentation](volume.md#agent-instrumentation). The
+filter still matters once you turn an instrumentation back on. It then drops that library's calls
+with no parent and keeps those made inside Spark work, which nest under their task.
