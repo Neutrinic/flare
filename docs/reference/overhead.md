@@ -13,9 +13,9 @@ method, every table and the raw results are in
   matters for short jobs and fades on long ones.
 - **Once warm, Flare adds nothing measurable.** CPU inside tasks is unchanged, query time is within
   2%, and driver memory stays flat.
-- **The default agent's own instrumentation can cost more than Flare.** It traces every S3 or GCS
-  request; on Dataproc that is about 2% CPU while data is read. The
-  [lean agent](../configuration/volume.md#traces-use-the-lean-agent) removes it.
+- **The agent's own instrumentation can cost more than Flare.** With all of it on, it traced every
+  S3 or GCS request, about 2% CPU on Dataproc while data was read. Since 1.3.0 Flare turns it off
+  by default; see [Agent instrumentation](../configuration/volume.md#agent-instrumentation).
 - **No Spark listener events were dropped** in the 135 runs that checked for it, up to 100,000 tasks
   in one stage.
 
@@ -25,10 +25,13 @@ JVM CPU across the cluster against no agent, every task traced, TPC-H at scale f
 
 | Platform | 2 min | 20 min | 60 min |
 |---|---|---|---|
-| Databricks 15.4, default agent | +15% | +1% | about 0 |
-| Databricks 15.4, lean agent | +7% | about 0 | about 0 |
-| Dataproc 2.2, default agent | +18% | +4.6% | +3.1% |
-| Dataproc 2.2, lean agent | +11% | +2.1% | +1.1% |
+| Databricks 15.4, all agent instrumentation | +15% | +1% | about 0 |
+| Databricks 15.4, agent instrumentation off | +7% | about 0 | about 0 |
+| Dataproc 2.2, all agent instrumentation | +18% | +4.6% | +3.1% |
+| Dataproc 2.2, agent instrumentation off | +11% | +2.1% | +1.1% |
+
+"Off" is close to 1.3.0's defaults, which also keep thread-pool context, `@WithSpan` and JVM
+metrics on.
 
 Photon runs the same queries 3.5 times faster, and the cost keeps the same shape: a fixed start-up
 cost and nothing measurable once warm.
@@ -56,6 +59,6 @@ Capturing logs costs no measurable CPU. Their volume is the cost; see
   2,000 small jobs, and two Scala RDD applications.
 - **Platforms:** a three-node lab, Dataproc 2.2, and Databricks 15.4 on AWS with and without Photon.
 - **Configurations:** no agent, the agent alone, Flare at its default granularity, Flare with every
-  task traced, and the lean agent.
+  task traced, and every task traced with the agent's own instrumentation off.
 
 Not yet measured: skew, retry storms, dynamic allocation churn and larger clusters.

@@ -6,6 +6,9 @@ import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvide
 import io.opentelemetry.sdk.resources.Resource;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -16,8 +19,9 @@ import java.util.logging.Logger;
  * <p>This provider is deliberately implemented in Java. The agent loads extension services before
  * Spark starts, from a class loader that does not contain Scala's runtime.
  *
- * <p>It only contributes JVM-level resource attributes. {@code FLARE_*} parsing and validation
- * remain at the first Spark-side Scala initialization point, where the Scala runtime is available.
+ * <p>It contributes JVM-level resource attributes, the samplers and span processors below, and
+ * default agent settings. {@code FLARE_*} parsing and validation remain at the first Spark-side
+ * Scala initialization point, where the Scala runtime is available.
  */
 public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
 
@@ -28,12 +32,64 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
 
   private static final Logger logger = Logger.getLogger(FlareAutoConfig.class.getName());
 
+  /**
+   * The agent's own instrumentations are off by default, keeping only what Flare and the user's
+   * own code need (#145).
+   *
+   * <p>In a Spark JVM they mostly trace Spark reading its own input: one span per S3 or GCS request,
+   * nested under the task that made it, so the non-Spark root filter keeps them. A 20-minute TPC-H
+   * run had 12,000 of them on Databricks and 82,000 on Dataproc, more than Flare's own spans, and on
+   * Dataproc they cost about 2% CPU for as long as data was read. Turning them off also halved the
+   * start-up cost on Databricks.
+   *
+   * <p>What stays on, each for a reason:
+   *
+   * <ul>
+   *   <li>{@code opentelemetry-api}: bridges the API Flare calls to the agent's SDK. Without it
+   *       nothing at all is exported.
+   *   <li>{@code opentelemetry-instrumentation-annotations}: the user's own {@code @WithSpan}.
+   *   <li>{@code flare-spark}: Flare's own instrumentation.
+   *   <li>{@code executors}: carries a task's context into thread pools and futures, so spans made
+   *       there keep their parent. It creates no spans of its own.
+   *   <li>{@code log4j-appender}: log export. Whether logs are exported is still {@code
+   *       otel.logs.exporter}.
+   *   <li>{@code runtime-telemetry}: JVM metrics such as heap, GC and threads.
+   * </ul>
+   *
+   * <p>These are defaults, key by key: the SDK ranks system properties, environment variables and
+   * the agent's configuration file above a properties supplier, so a user's setting for any of these
+   * keys wins. {@code -Dotel.instrumentation.jdbc.enabled=true} turns one instrumentation back on;
+   * {@code -Dotel.instrumentation.common.default-enabled=true} restores all of them. The kept six
+   * are enabled by their own keys, so turning one off takes that key, such as
+   * {@code -Dotel.instrumentation.runtime-telemetry.enabled=false}.
+   */
+  static final Map<String, String> AGENT_DEFAULTS;
+
+  static {
+    Map<String, String> defaults = new LinkedHashMap<>();
+    defaults.put("otel.instrumentation.common.default-enabled", "false");
+    for (String kept :
+        new String[] {
+          "opentelemetry-api",
+          "opentelemetry-instrumentation-annotations",
+          "flare-spark",
+          "executors",
+          "log4j-appender",
+          "runtime-telemetry",
+        }) {
+      defaults.put("otel.instrumentation." + kept + ".enabled", "true");
+    }
+    AGENT_DEFAULTS = Collections.unmodifiableMap(defaults);
+  }
+
   @Override
   public void customize(AutoConfigurationCustomizer customizer) {
     if (!isFlareEnabled()) {
       logger.info("[Flare] Disabled via FLARE_ENABLED=false");
       return;
     }
+
+    customizer.addPropertiesSupplier(() -> AGENT_DEFAULTS);
 
     customizer.addResourceCustomizer(
         (resource, config) -> Resource.create(flareResourceAttributes()).merge(resource));

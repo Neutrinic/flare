@@ -217,7 +217,13 @@ lazy val root = (project in file("."))
         s"-Dflare.agent.test.expected.version=${version.value}",
         s"-Dflare.agent.test.extension.jar=${extensionJar.getAbsolutePath}",
         "--add-modules=jdk.httpserver",
-      )
+      ) ++ Seq(
+        // Spark's own JavaModuleOptions, which spark-submit adds and a plain JVM does not:
+        // FlareModuleAgentTest starts a local SparkContext.
+        "java.lang", "java.lang.invoke", "java.lang.reflect", "java.io", "java.net", "java.nio",
+        "java.util", "java.util.concurrent", "java.util.concurrent.atomic", "sun.nio.ch", "sun.nio.cs",
+        "sun.security.action", "sun.util.calendar",
+      ).map(pkg => s"--add-opens=java.base/$pkg=ALL-UNNAMED")
     },
   )
 

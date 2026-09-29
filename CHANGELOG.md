@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the gap ([#109])
 
 ### Changed
+- **The agent's own instrumentation is off by default.** In a Spark JVM it mostly traced Spark
+  reading its own input, one span per S3 or GCS request under each task: 12,000 such spans in a
+  20-minute Databricks application and 82,000 on Dataproc, more than Flare's own, costing about 2%
+  CPU on Dataproc while data was read. Flare now supplies agent defaults that keep only what it and
+  your code need: the OpenTelemetry API bridge, `@WithSpan`, Flare's own instrumentation, context
+  across thread pools, Log4j capture for log export, and JVM metrics. They are defaults for each
+  setting, so anything you set yourself for the same setting takes precedence:
+  `-Dotel.instrumentation.jdbc.enabled=true` turns one instrumentation back on and
+  `-Dotel.instrumentation.common.default-enabled=true` restores all of them. On Databricks this
+  also roughly halved Flare's start-up cost ([#145])
 - **The published JAR now bundles the OpenTelemetry API** — `opentelemetry-api`,
   `opentelemetry-context` and the `opentelemetry-common` they pull in are inside the artifact,
   and are no longer listed in its POM. `spark.plugins` loads Flare into Spark's own classloader,
@@ -553,3 +563,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#136]: https://github.com/Neutrinic/flare/issues/136
 [#139]: https://github.com/Neutrinic/flare/issues/139
 [#141]: https://github.com/Neutrinic/flare/issues/141
+[#145]: https://github.com/Neutrinic/flare/issues/145
