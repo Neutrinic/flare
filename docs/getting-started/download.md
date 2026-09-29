@@ -15,7 +15,9 @@ replace `3-5_2.12` in both places it appears in the Flare URL.
 The agent is pinned to the version Flare is built and tested against. Use that version rather than
 the newest agent: the agent's extension API can change between releases.
 
-## Linux and macOS
+## Linux
+
+On cluster nodes, as root, which is how init scripts, bootstrap actions and image builds run:
 
 ```bash
 --8<-- "urls.sh"
@@ -26,6 +28,20 @@ curl -fsSL -o /opt/flare/flare-spark.jar "$FLARE"
 ```
 
 `wget -q -O <file> <url>` works the same way where `curl` is not installed.
+
+## macOS
+
+For a local Spark, in a directory you can write to without `sudo`:
+
+```bash
+--8<-- "urls.sh"
+
+mkdir -p ~/flare
+curl -fsSL -o ~/flare/opentelemetry-javaagent.jar "$AGENT"
+curl -fsSL -o ~/flare/flare-spark.jar "$FLARE"
+```
+
+Use `~/flare` in place of `/opt/flare` in the other examples.
 
 ## Windows
 
@@ -50,12 +66,22 @@ Every release also attaches each Flare JAR:
 ## Checking the download
 
 Maven Central serves a SHA-1 checksum next to every file, and a PGP signature (`.asc`) next to
-each Flare file:
+each Flare file. On Linux:
 
 ```bash
 echo "$(curl -fsSL "$FLARE.sha1")  /opt/flare/flare-spark.jar" | sha1sum -c
 echo "$(curl -fsSL "$AGENT.sha1")  /opt/flare/opentelemetry-javaagent.jar" | sha1sum -c
 ```
+
+On macOS, which has `shasum` rather than `sha1sum`:
+
+```bash
+echo "$(curl -fsSL "$FLARE.sha1")  $HOME/flare/flare-spark.jar" | shasum -a 1 -c
+echo "$(curl -fsSL "$AGENT.sha1")  $HOME/flare/opentelemetry-javaagent.jar" | shasum -a 1 -c
+```
+
+In PowerShell, compare `(Get-FileHash C:\flare\flare-spark.jar -Algorithm SHA1).Hash` with
+`(Invoke-WebRequest "$flare.sha1").Content`.
 
 ## Pinning a version
 

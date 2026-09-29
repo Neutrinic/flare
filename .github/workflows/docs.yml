@@ -64,6 +64,14 @@ jobs:
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: python .github/scripts/stamp_docs_version.py "$TAG"
 
+      # On a pull request, prove the stamping still works on the snippets as they are, then put
+      # them back, so the build below checks the committed docs.
+      - if: github.event_name == 'pull_request'
+        run: |
+          python .github/scripts/stamp_docs_version.py v9.9.9
+          git diff --stat -- docs/snippets
+          git checkout -- docs/snippets
+
       - run: zensical build --strict --clean
 
       - if: github.event_name != 'pull_request'
