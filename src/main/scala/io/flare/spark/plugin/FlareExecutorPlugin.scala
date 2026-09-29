@@ -62,8 +62,13 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   // shutdown call, Databricks job clusters among them, and the metric reader only exports every
   // 60s, so task metrics from the last minute of a run were lost. A second after the last task is
   // the last point Flare can act.
-  private val idleFlush =
-    new QuietPeriodAction(1000L, () => TelemetryFlush.flush("executor idle"), "flare-executor-idle-flush")
+  //
+  // At most once every IdleFlushIntervalMs (#139): executors also go quiet between the stages of
+  // every query, and flushed every few seconds, each flush re-sending every metric series.
+  private val idleFlush = new QuietPeriodAction(
+    1000L, () => TelemetryFlush.flush("executor idle"), "flare-executor-idle-flush",
+    minIntervalMs = FlareExecutorPlugin.IdleFlushIntervalMs,
+  )
 
   override def init(ctx: PluginContext, extraConf: ju.Map[String, String]): Unit = {
     FlareConfig.warnIfSamplingRatioSet(w => logger.warn(w))
@@ -358,4 +363,14 @@ private[plugin] object MdcEnricher {
       org.apache.logging.log4j.ThreadContext.remove("trace_id")
       org.apache.logging.log4j.ThreadContext.remove("span_id")
     }
+}
+
+private[plugin] object FlareExecutorPlugin {
+
+  /**
+   * The shortest time between two idle flushes on an executor (#139). Well under the metric
+   * reader's 60s interval, so a quiet executor still gets its data out sooner than the periodic
+   * export would; the final flush of a run lands at most this long after its last task.
+   */
+  val IdleFlushIntervalMs: Long = 30000L
 }

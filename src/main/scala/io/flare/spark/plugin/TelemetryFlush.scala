@@ -101,8 +101,19 @@ private[spark] object TelemetryFlush {
  * moving, so a busy executor does not flush at all and the periodic exporters cover it. Once the
  * last task ends, the flush follows `delayMs` later, which is the last point Flare can act on a
  * cluster that kills executors without a shutdown call.
+ *
+ * `minIntervalMs` spaces the runs out (#139). Executors also go quiet between the stages of every
+ * query, every few seconds, and each flush re-sends every cumulative metric series. A request that
+ * would run sooner than `minIntervalMs` after the previous run is deferred to the end of that
+ * interval rather than dropped, so the last request is still acted on, at most `minIntervalMs`
+ * after it.
  */
-private[plugin] final class QuietPeriodAction(delayMs: Long, action: () => Unit, name: String) {
+private[plugin] final class QuietPeriodAction(
+  delayMs: Long,
+  action: () => Unit,
+  name: String,
+  minIntervalMs: Long = 0L,
+) {
 
   // Started on the first request, so an executor that never runs a task never starts a thread.
   private lazy val scheduler: ScheduledExecutorService =
@@ -116,14 +127,21 @@ private[plugin] final class QuietPeriodAction(delayMs: Long, action: () => Unit,
 
   private var pending: Option[ScheduledFuture[_]] = None
   private var closed = false
+  // When the action last started, from System.nanoTime. None until it first runs.
+  private var lastRun: Option[Long] = None
 
   def request(): Unit = synchronized {
     if (closed) return
     pending.foreach(_.cancel(false))
+    val sinceLastMs = lastRun.map(t => (System.nanoTime() - t) / 1000000L)
+    val waitMs = sinceLastMs.fold(delayMs)(since => math.max(delayMs, minIntervalMs - since))
     pending =
       try Some(scheduler.schedule(new Runnable {
-        override def run(): Unit = action()
-      }, delayMs, TimeUnit.MILLISECONDS))
+        override def run(): Unit = {
+          QuietPeriodAction.this.synchronized { lastRun = Some(System.nanoTime()) }
+          action()
+        }
+      }, waitMs, TimeUnit.MILLISECONDS))
       catch {
         // Closed by shutdown, which flushes on its own.
         case _: java.util.concurrent.RejectedExecutionException => None

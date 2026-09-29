@@ -56,6 +56,43 @@ class TelemetryFlushTest extends FunSuite {
     } finally quiet.close()
   }
 
+  // #139. Executors go quiet between the stages of every query, so without a minimum interval
+  // they flushed every few seconds, each flush re-sending every cumulative metric series.
+  test("runs are spaced by the minimum interval, and a deferred run is not dropped") {
+    val runs  = new AtomicInteger(0)
+    val times = new java.util.concurrent.ConcurrentLinkedQueue[Long]()
+    val quiet = new QuietPeriodAction(20L, () => {
+      times.add(System.nanoTime()); runs.incrementAndGet(); ()
+    }, "test-quiet", minIntervalMs = 600L)
+    try {
+      quiet.request()
+      awaitCount(runs, 1, 2000L)
+      quiet.request() // quiet again straight away, like the gap between two stages
+      Thread.sleep(300)
+      assertEquals(runs.get(), 1, "must not run again inside the interval")
+
+      awaitCount(runs, 2, 2000L)
+      assertEquals(runs.get(), 2, "the deferred run must still happen")
+      val gapMs = times.toArray.map(_.asInstanceOf[Long]).sliding(2).map(p => (p(1) - p(0)) / 1000000L).next()
+      assert(gapMs >= 550L, s"runs were ${gapMs}ms apart, inside the 600ms interval")
+    } finally quiet.close()
+  }
+
+  test("a request long after the last run is not held back by the interval") {
+    val runs  = new AtomicInteger(0)
+    val quiet = new QuietPeriodAction(20L, () => { runs.incrementAndGet(); () }, "test-quiet", minIntervalMs = 200L)
+    try {
+      quiet.request()
+      awaitCount(runs, 1, 2000L)
+      Thread.sleep(400) // past the interval
+      val requested = System.nanoTime()
+      quiet.request()
+      awaitCount(runs, 2, 2000L)
+      val tookMs = (System.nanoTime() - requested) / 1000000L
+      assert(tookMs < 150L, s"took ${tookMs}ms; only the 20ms quiet delay should apply")
+    } finally quiet.close()
+  }
+
   test("close drops a pending run and ignores later requests") {
     val runs = new AtomicInteger(0)
     val quiet = new QuietPeriodAction(100L, () => { runs.incrementAndGet(); () }, "test-quiet")
