@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming, and filters every panel, the logs and the trace list by the services picked at the top,
   so other applications in the same backend no longer count ([#164])
 
+### Changed
+- **OpenTelemetry Java agent 2.31.1**, with the bundled API at 1.65.0, the version the agent is
+  built on, rather than the newer 1.66.0, which no agent bridges yet. Use agent 2.31.1 with this
+  release ([#169])
+
 ## [1.3.0] - 2026-09-29
 
 ### Added
@@ -591,3 +596,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#148]: https://github.com/Neutrinic/flare/issues/148
 [#164]: https://github.com/Neutrinic/flare/issues/164
 [#173]: https://github.com/Neutrinic/flare/issues/173
+[#169]: https://github.com/Neutrinic/flare/issues/169
