@@ -63,6 +63,7 @@ def traced(rows):
 
 
 result = df.rdd.mapPartitions(traced)
+result.count()  # the spans are made when an action runs the partitions
 ```
 
 The same `TaskContext.get().getLocalProperty("traceparent")` works inside a `udf` or `pandas_udf`.
