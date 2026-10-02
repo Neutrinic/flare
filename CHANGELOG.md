@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The shipped dashboard works in any Grafana**, not only the local stack. It hard-coded the
+  local stack's data sources, and read metric names without units, which only Mimir stores;
+  Prometheus and the `grafana/otel-lgtm` image store `flare_task_duration_milliseconds_bucket`,
+  so every panel was empty. It now asks for its metrics, logs and traces data sources, reads either
+  naming, and filters every panel, the logs and the trace list by the services picked at the top,
+  so other applications in the same backend no longer count ([#164])
+
 ## [1.3.0] - 2026-09-29
 
 ### Added
@@ -574,3 +582,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#141]: https://github.com/Neutrinic/flare/issues/141
 [#145]: https://github.com/Neutrinic/flare/issues/145
 [#148]: https://github.com/Neutrinic/flare/issues/148
+[#164]: https://github.com/Neutrinic/flare/issues/164

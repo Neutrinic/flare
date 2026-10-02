@@ -140,8 +140,11 @@ while True:
     per_query = {}
     for number, sql in queries.items():
         q = time.time()
+        # Names the query in the Spark UI and on Flare's spans and metrics (sql.description).
+        spark.sparkContext.setJobDescription(f"TPC-H Q{number}")
         rows = spark.sql(sql).collect()
         per_query[number] = {"seconds": time.time() - q, "rows": len(rows)}
+    spark.sparkContext.setJobDescription(None)
     record = {"seconds": time.time() - t, "queries": per_query}
     record.update(stage_cpu.new() or {})
     if args.minutes:

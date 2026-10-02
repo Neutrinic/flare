@@ -23,7 +23,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -70,18 +70,19 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(traces_spanmetrics_calls_total{span_name=~\"spark.job.*\"}[$__range]))",
+          "expr": "sum(max_over_time(traces_spanmetrics_calls_total{service=~\"$service\", span_name=~\"spark.job.*\"}[$__range]))",
           "refId": "A",
           "instant": true
         }
-      ]
+      ],
+      "description": "Jobs in the time range, from Tempo's span metrics (its metrics generator). Tempo keeps a counter per span name, spark.job.0, spark.job.1 and so on, for about 15 minutes, so a rerun of the same service within that time adds to the earlier run's count."
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -128,18 +129,19 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(traces_spanmetrics_calls_total{span_name=~\"spark.stage.*\"}[$__range]))",
+          "expr": "sum(max_over_time({__name__=~\"flare_stage_executor_run_time(_milliseconds)?_count\", job=~\"$service\"}[$__range]))",
           "refId": "A",
           "instant": true
         }
-      ]
+      ],
+      "description": "Stages completed in the time range, from Flare's flare.stage.executor.run_time histogram, which records once per stage."
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -186,9 +188,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_task_duration_count[$__range]))",
+          "expr": "sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_count\", job=~\"$service\"}[$__range]))",
           "refId": "A",
           "instant": true
         }
@@ -197,7 +199,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -253,9 +255,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_task_duration_count{task_result=\"FAILED\"}[$__range])) / sum(max_over_time(flare_task_duration_count[$__range])) or vector(0)",
+          "expr": "sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_count\", job=~\"$service\", task_result=\"FAILED\"}[$__range])) / sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_count\", job=~\"$service\"}[$__range])) or vector(0)",
           "refId": "A",
           "instant": true
         }
@@ -276,7 +278,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -333,9 +335,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(flare_task_duration_bucket) by (le)",
+          "expr": "sum({__name__=~\"flare_task_duration(_milliseconds)?_bucket\", job=~\"$service\"}) by (le)",
           "refId": "A",
           "format": "heatmap",
           "legendFormat": "tasks",
@@ -346,7 +348,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -402,9 +404,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "histogram_quantile(0.50, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_bucket\", job=~\"$service\"}[$__range])) by (le))",
           "refId": "A",
           "instant": true,
           "legendFormat": "p50"
@@ -412,9 +414,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "histogram_quantile(0.95, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_bucket\", job=~\"$service\"}[$__range])) by (le))",
           "refId": "B",
           "instant": true,
           "legendFormat": "p95"
@@ -422,9 +424,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "histogram_quantile(0.99, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_bucket\", job=~\"$service\"}[$__range])) by (le))",
           "refId": "C",
           "instant": true,
           "legendFormat": "p99"
@@ -446,7 +448,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -492,52 +494,80 @@
         "barWidth": 0.7,
         "groupWidth": 0.7,
         "orientation": "horizontal",
-        "showValue": "auto",
+        "showValue": "never",
         "stacking": "none",
         "tooltip": {
           "mode": "single"
         },
         "xTickLabelRotation": 0,
-        "xField": "Field",
+        "xField": "query",
         "legend": {
-          "showLegend": false,
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": []
         },
         "xTickLabelSpacing": 100
       },
-      "description": "Shuffle bytes per call site (sql.description and Spark's stage name), summed over the applications in the time range. Each application's counters are totals since it started, read with max_over_time so the panel does not blank once a batch job ends: select a range that covers the applications you mean.",
+      "description": "Shuffle bytes for the ten queries that shuffled most, summed over the application. Each row is a SQL execution's description (sql.description), or Spark's stage name for code that runs no SQL; set a job description to name your own queries.",
       "title": "Shuffle by Query",
       "type": "barchart",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_stage_shuffle_read_bytes[$__range])) by (sql_description, stage_name)",
           "refId": "A",
+          "expr": "topk(10, sum by (query) (label_replace(label_replace(max_over_time({__name__=~\"flare_stage_shuffle_read_bytes(_total)?\", job=~\"$service\"}[$__range]), \"query\", \"$1\", \"stage_name\", \"(.*)\"), \"query\", \"$1\", \"sql_description\", \"(.+)\")))",
           "instant": true,
-          "legendFormat": "Read — {{sql_description}} {{stage_name}}"
+          "range": false,
+          "format": "table",
+          "legendFormat": "Read"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_stage_shuffle_write_bytes[$__range])) by (sql_description, stage_name)",
           "refId": "B",
+          "expr": "topk(10, sum by (query) (label_replace(label_replace(max_over_time({__name__=~\"flare_stage_shuffle_write_bytes(_total)?\", job=~\"$service\"}[$__range]), \"query\", \"$1\", \"stage_name\", \"(.*)\"), \"query\", \"$1\", \"sql_description\", \"(.+)\")))",
           "instant": true,
-          "legendFormat": "Write — {{sql_description}} {{stage_name}}"
+          "range": false,
+          "format": "table",
+          "legendFormat": "Write"
         }
       ],
       "transformations": [
         {
-          "id": "reduce",
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
           "options": {
-            "reducers": [
-              "lastNotNull"
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "Read",
+              "Value #B": "Write"
+            },
+            "indexByName": {
+              "query": 0,
+              "Value #A": 1,
+              "Value #B": 2
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Read",
+                "desc": true
+              }
             ]
           }
         }
@@ -546,7 +576,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -614,9 +644,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_task_shuffle_read_bytes[$__range])) by (executor_id)",
+          "expr": "sum(max_over_time({__name__=~\"flare_task_shuffle_read_bytes(_total)?\", job=~\"$service\"}[$__range])) by (executor_id)",
           "refId": "A",
           "instant": true,
           "legendFormat": "Read — executor {{executor_id}}"
@@ -624,9 +654,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_task_shuffle_write_bytes[$__range])) by (executor_id)",
+          "expr": "sum(max_over_time({__name__=~\"flare_task_shuffle_write_bytes(_total)?\", job=~\"$service\"}[$__range])) by (executor_id)",
           "refId": "B",
           "instant": true,
           "legendFormat": "Write — executor {{executor_id}}"
@@ -658,7 +688,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -773,9 +803,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "histogram_quantile(0.95, sum(max_over_time(flare_stage_executor_run_time_bucket[$__range])) by (le, stage_name, sql_description, instance))",
+          "expr": "histogram_quantile(0.95, sum(max_over_time({__name__=~\"flare_stage_executor_run_time(_milliseconds)?_bucket\", job=~\"$service\"}[$__range])) by (le, stage_name, sql_description, instance))",
           "refId": "A",
           "instant": true,
           "legendFormat": "Executor Run Time p95",
@@ -784,9 +814,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_stage_input_bytes[$__range])) by (stage_name, sql_description, instance)",
+          "expr": "sum(max_over_time({__name__=~\"flare_stage_input_bytes(_total)?\", job=~\"$service\"}[$__range])) by (stage_name, sql_description, instance)",
           "refId": "B",
           "instant": true,
           "legendFormat": "Input",
@@ -795,9 +825,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_stage_shuffle_read_bytes[$__range])) by (stage_name, sql_description, instance)",
+          "expr": "sum(max_over_time({__name__=~\"flare_stage_shuffle_read_bytes(_total)?\", job=~\"$service\"}[$__range])) by (stage_name, sql_description, instance)",
           "refId": "C",
           "instant": true,
           "legendFormat": "Shuffle Read",
@@ -806,9 +836,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_stage_shuffle_write_bytes[$__range])) by (stage_name, sql_description, instance)",
+          "expr": "sum(max_over_time({__name__=~\"flare_stage_shuffle_write_bytes(_total)?\", job=~\"$service\"}[$__range])) by (stage_name, sql_description, instance)",
           "refId": "D",
           "instant": true,
           "legendFormat": "Shuffle Write",
@@ -863,7 +893,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -931,9 +961,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_task_duration_sum[$__range])) by (executor_id) / sum(max_over_time(flare_task_duration_count[$__range])) by (executor_id)",
+          "expr": "sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_sum\", job=~\"$service\"}[$__range])) by (executor_id) / sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_count\", job=~\"$service\"}[$__range])) by (executor_id)",
           "refId": "A",
           "instant": true,
           "legendFormat": "executor {{executor_id}}"
@@ -953,7 +983,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1020,9 +1050,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "sum(max_over_time(flare_task_duration_count[$__range])) by (executor_id)",
+          "expr": "sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_count\", job=~\"$service\"}[$__range])) by (executor_id)",
           "refId": "A",
           "instant": true,
           "legendFormat": "executor {{executor_id}}"
@@ -1046,7 +1076,7 @@
       "description": "Ratio of the 99th-percentile task duration to the median, over every individual task observation in the histogram. 1.0 means uniform; higher means a tail of stragglers. Computed from flare_task_duration_bucket because that is the only task metric with per-task granularity — the shuffle byte counters are pre-aggregated per (executor_id, task_result), so a ratio over them cannot see partition-level imbalance.",
       "datasource": {
         "type": "prometheus",
-        "uid": "mimir"
+        "uid": "${metrics}"
       },
       "gridPos": {
         "h": 8,
@@ -1101,9 +1131,9 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": "mimir"
+            "uid": "${metrics}"
           },
-          "expr": "histogram_quantile(0.99, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le)) / histogram_quantile(0.50, sum(max_over_time(flare_task_duration_bucket[$__range])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_bucket\", job=~\"$service\"}[$__range])) by (le)) / histogram_quantile(0.50, sum(max_over_time({__name__=~\"flare_task_duration(_milliseconds)?_bucket\", job=~\"$service\"}[$__range])) by (le))",
           "instant": true,
           "legendFormat": "skew"
         }
@@ -1124,7 +1154,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "loki"
+        "uid": "${logs}"
       },
       "gridPos": {
         "h": 10,
@@ -1150,9 +1180,9 @@
         {
           "datasource": {
             "type": "loki",
-            "uid": "loki"
+            "uid": "${logs}"
           },
-          "expr": "{service_name=~\"flare-driver|flare-executor\"} |= ``",
+          "expr": "{service_name=~\"$service\"} |= ``",
           "refId": "A"
         }
       ]
@@ -1171,30 +1201,36 @@
     },
     {
       "datasource": {
-        "type": "datasource",
-        "uid": "-- Dashboard --"
+        "type": "tempo",
+        "uid": "${traces}"
       },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
+        "h": 9,
         "w": 24,
         "x": 0,
         "y": 55
       },
       "id": 51,
-      "options": {
-        "code": {
-          "language": "plaintext",
-          "showLineNumbers": false
-        },
-        "content": "### [Open Tempo Explore →](/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22%7Bresource.service.name%20%3D%20%5C%22flare-driver%5C%22%7D%22%7D%5D%7D%7D&orgId=1)\n\nSearch for Spark application traces in Grafana Explore.",
-        "mode": "markdown"
-      },
       "title": "Recent Spark Traces",
-      "type": "text"
+      "type": "table",
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "${traces}"
+          },
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{resource.service.name =~ \"${service:regex}\" && name = \"spark.application\"}",
+          "limit": 20,
+          "tableType": "traces"
+        }
+      ],
+      "description": "The latest Spark applications. Open a trace ID to see its spans."
     }
   ],
   "refresh": "30s",
@@ -1205,7 +1241,67 @@
     "otel"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "type": "datasource",
+        "name": "metrics",
+        "label": "Metrics",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": [],
+        "skipUrlSync": false
+      },
+      {
+        "type": "datasource",
+        "name": "logs",
+        "label": "Logs",
+        "query": "loki",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": [],
+        "skipUrlSync": false
+      },
+      {
+        "type": "datasource",
+        "name": "traces",
+        "label": "Traces",
+        "query": "tempo",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": [],
+        "skipUrlSync": false
+      },
+      {
+        "type": "query",
+        "name": "service",
+        "label": "Service",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${metrics}"
+        },
+        "query": {
+          "query": "label_values({__name__=~\"flare_.+\"}, job)",
+          "refId": "service"
+        },
+        "definition": "label_values({__name__=~\"flare_.+\"}, job)",
+        "multi": true,
+        "includeAll": true,
+        "current": {},
+        "hide": 0,
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "options": [],
+        "skipUrlSync": false
+      }
+    ]
   },
   "time": {
     "from": "now-1h",
