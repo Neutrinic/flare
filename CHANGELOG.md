@@ -22,13 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming, and filters every panel, the logs and the trace list by the services picked at the top,
   so other applications in the same backend no longer count ([#164])
 
-### Added
-- **Job and application outcome metrics:** `flare.job.duration` (one point per job, labelled
-  `job.result` and the query's `sql.description`) and `flare.application.duration` (one point when
-  the application ends, labelled `application.result`), so a scheduled pipeline can be alerted on
-  from metrics: whether a run happened, failed, or ran longer than usual. `application.result` is
-  `FAILED` when any job failed, since Spark reports no result for an application ([#168])
-
 ## [1.3.0] - 2026-09-29
 
 ### Added
@@ -598,4 +591,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#148]: https://github.com/Neutrinic/flare/issues/148
 [#164]: https://github.com/Neutrinic/flare/issues/164
 [#173]: https://github.com/Neutrinic/flare/issues/173
-[#168]: https://github.com/Neutrinic/flare/issues/168
