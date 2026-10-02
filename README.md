@@ -128,6 +128,16 @@ Executor: TaskRunner.run() / ExecutorPlugin.onTaskStart()
   → restores OTEL context → task span with executor-side timing
 ```
 
+## Roadmap
+
+| Release | Theme |
+|---|---|
+| [1.4](https://github.com/Neutrinic/flare/milestone/5) | Scheduled pipelines: whether a run happened, succeeded and behaved like the last one, as metrics you can alert on |
+| [1.5](https://github.com/Neutrinic/flare/milestone/6) | Long-running workloads: long-lived SparkContexts (Connect, Thrift, Livy, notebooks), Structured Streaming and Kafka, opt-in |
+| [2.0](https://github.com/Neutrinic/flare/milestone/7) | Breaking changes, collected: the 1.5 opt-ins become defaults |
+
+Each milestone lists its issues. Anything without one is not yet planned.
+
 ## Building
 
 See [Building Flare](https://neutrinic.github.io/flare/building/). In short: `sbt -DsparkVersion=3.5.1 ++2.13.16 assembly`.
