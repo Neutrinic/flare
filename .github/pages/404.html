@@ -1,0 +1,38 @@
+<!doctype html>
+<!--
+  The site's root 404 page (#161). GitHub Pages serves it for any path that does not exist.
+
+  Before the docs were versioned, pages lived at /flare/<page>/. They now live at
+  /flare/<version>/<page>/, so links to the old addresses (the README, release notes, issues,
+  search results) would all break. A path whose first segment is not a version or `latest` is one
+  of those: send it to the same page under latest/. A path that already names a version really
+  is missing, and says so.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Page not found - Flare</title>
+  <script>
+    (function () {
+      var base = "/flare/";
+      var path = location.pathname;
+      if (path.indexOf(base) !== 0) return;
+      var rest = path.slice(base.length);
+      var first = rest.split("/")[0];
+      if (first === "latest" || /^\d+\.\d+$/.test(first)) return;
+      location.replace(base + "latest/" + rest + location.search + location.hash);
+    })();
+  </script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 4rem auto; max-width: 36rem; padding: 0 1rem;
+           color: #222; background: #fff; }
+    @media (prefers-color-scheme: dark) { body { color: #ddd; background: #1e2129; } a { color: #8ab4f8; } }
+  </style>
+</head>
+<body>
+  <h1>Page not found</h1>
+  <p>There is no page at this address. Start from the <a href="/flare/latest/">Flare documentation</a>.</p>
+</body>
+</html>

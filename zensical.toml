@@ -2,6 +2,9 @@
 [project]
 site_name = "Flare"
 site_description = "OpenTelemetry tracing, metrics and logs for Apache Spark, across driver and executors"
+# Versioned by mike (#161): pages live under 1.3/, 1.4/ and so on, and latest/ is the newest
+# release. This is the unversioned root: a versioned build appends the version to it, or
+# mike's canonical_version below.
 site_url = "https://neutrinic.github.io/flare/"
 repo_url = "https://github.com/Neutrinic/flare"
 repo_name = "Neutrinic/flare"
@@ -81,6 +84,18 @@ media = "(prefers-color-scheme: dark)"
 scheme = "slate"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to system preference"
+
+# One site per minor release, deployed by mike to the gh-pages branch, with a version selector.
+[project.extra.version]
+provider = "mike"
+default = "latest"
+
+# `latest` is a full copy rather than a symlink, so it does not depend on how the Pages artifact
+# treats links.
+[project.plugins.mike]
+alias_type = "copy"
+# Canonical links of every version point at latest/, so search engines index the current docs.
+canonical_version = "latest"
 
 [project.markdown_extensions]
 admonition = {}
