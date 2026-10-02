@@ -78,6 +78,6 @@ Import it under **Dashboards → New → Import**, then pick your metrics, logs 
 sources and the services to show at the top. It reads the metric names with or without the unit,
 so it works on Prometheus, Mimir and Grafana Cloud alike.
 
-The job and stage counts come from Tempo's span metrics, which need its
+The job count comes from Tempo's span metrics, which need its
 [metrics generator](https://grafana.com/docs/tempo/latest/metrics-from-traces/metrics-generator/);
-without it, those two panels stay empty and the rest still work.
+without it, that panel stays empty and the rest still work.
