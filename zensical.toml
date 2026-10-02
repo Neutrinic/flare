@@ -50,6 +50,8 @@ nav = [
 
 [project.theme]
 language = "en"
+# The Scarf page-view notice and pixel live in overrides/partials/copyright.html (#160).
+custom_dir = "overrides"
 features = [
   "content.code.copy",
   "content.tabs.link",
