@@ -61,3 +61,23 @@ trace. Under `FLARE_SLOW_TASK_MS` the metric is recorded *after* the suppressed 
 so a fast task still contributes to the histogram but carries no exemplar pointing at a trace that
 was never exported. Some backends drop exemplars by default: Mimir's
 `max_global_exemplars_per_user` is `0` unless you set it.
+
+## In Prometheus
+
+Prometheus-compatible backends rename the instruments: dots become underscores, and most add the
+unit, so `flare.task.duration` is stored as `flare_task_duration_milliseconds_bucket` and
+`flare.stage.input.bytes` as `flare_stage_input_bytes_total`. Mimir's OTLP ingestion leaves the
+unit off by default (`flare_task_duration_bucket`, `flare_stage_input_bytes`). Labels follow the
+same rule: `executor.id` becomes `executor_id`, and `service.name` becomes `job`.
+
+## Dashboard
+
+The repository ships a Grafana dashboard,
+[`flare-spark.json`](https://github.com/Neutrinic/flare/blob/main/docker/grafana/provisioning/dashboards/flare-spark.json).
+Import it under **Dashboards → New → Import**, then pick your metrics, logs and traces data
+sources and the services to show at the top. It reads the metric names with or without the unit,
+so it works on Prometheus, Mimir and Grafana Cloud alike.
+
+The job count comes from Tempo's span metrics, which need its
+[metrics generator](https://grafana.com/docs/tempo/latest/metrics-from-traces/metrics-generator/);
+without it, that panel stays empty and the rest still work.

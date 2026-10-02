@@ -45,8 +45,8 @@ with metrics and logs linked to it. Everything is exported over OTLP to any back
 - **Metrics:** task duration histograms with exemplar links to their traces, shuffle and stage
   totals, and cluster lifecycle metrics.
 - **Logs:** driver and executor logs linked to the span that wrote them.
-- **No code changes:** two JARs on every node and a few `--conf` lines. A Grafana dashboard is
-  included.
+- **No code changes:** two JARs on every node and a few `--conf` lines. A [Grafana dashboard](https://neutrinic.github.io/flare/reference/metrics/#dashboard)
+  is included, for any Prometheus-compatible backend.
 
 ![Traces](docs/assets/traces.png)
 
