@@ -46,8 +46,14 @@ fires for a run that never started and for one that is still running past its wi
 
 | Alert | Fires when |
 |---|---|
-| `FlareTaskSkew` | The slowest 1% of tasks take more than ten times the median, over more than 100 tasks in 30 minutes. The ratio is the dashboard's skew panel |
 | `FlareExecutorsLost` | More than two executors were removed in 15 minutes for a reason other than a dynamic-allocation scale-down |
+
+There is no skew rule. Skew only means something within one stage, and the task metrics carry no
+stage label, since a label per stage creates a series per stage
+([#136](https://github.com/Neutrinic/flare/issues/136)). Across a whole application, which mixes
+small and large stages, the slowest tasks routinely take more than ten times the median: on a lab
+TPC-H run with nothing wrong, the ratio was 15.9. Per-stage skew is a search over task spans,
+below.
 
 ## On the spans
 
@@ -63,11 +69,18 @@ generator is set up.
 | Retried tasks | `{ name = "spark.task.executor" && span.spark.task.attempt.id > 0 }` (needs task spans) |
 | Failed stages | `{ name =~ "spark.stage.*" && status = error }`, with the reason in `spark.stage.failure_reason` |
 | A query whose plan changed | Below: more than one fingerprint for one query means it started planning differently |
+| Partition skew, per stage | Below: the stages whose slowest tasks take far longer than their median (needs `FLARE_TRACE_GRANULARITY=all`, which puts the stage id on task spans) |
 
 The plan-change search is a TraceQL metrics query, counting one query's executions by plan shape:
 
 ```text
 { span.spark.sql.description = "load orders" } | count_over_time() by (span.spark.sql.plan.fingerprint)
+```
+
+Skew is the task duration's p99 against its median, per stage:
+
+```text
+{ name = "spark.task.executor" } | quantile_over_time(duration, .5, .99) by (span.spark.stage.id)
 ```
 
 ## How the rules read the metrics

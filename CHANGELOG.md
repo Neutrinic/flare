@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Example alert rules and an Alerting page.** `alerting/flare-rules.yml` holds Prometheus rules
   for scheduled pipelines (a failed run, a failed query, a query twice as slow as last week, a
-  query reading under half of yesterday's input) and two diagnoses (task skew, executors lost),
+  query reading under half of yesterday's input) and executors lost for reasons other than a scale-down,
   with promtool unit tests that CI runs. The page explains each threshold, gives the missed-run
   rule as a per-pipeline template, and lists TraceQL searches for what only spans carry: spill,
   GC, scheduler delay, retries, failed stages, changed query plans ([#92], [#168])

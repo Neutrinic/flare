@@ -68,21 +68,10 @@ groups:
 
   - name: flare-diagnoses
     rules:
-      # Partition skew: the slowest 1% of tasks take ten times the median, over a meaningful number
-      # of tasks. The same p99/p50 ratio as the dashboard's skew panel.
-      - alert: FlareTaskSkew
-        expr: |
-          (
-            histogram_quantile(0.99, sum by (le, job) (max_over_time({__name__=~"flare_task_duration(_milliseconds)?_bucket"}[30m])))
-            /
-            histogram_quantile(0.50, sum by (le, job) (max_over_time({__name__=~"flare_task_duration(_milliseconds)?_bucket"}[30m])))
-          ) > 10
-          and on (job)
-          sum by (job) (max_over_time({__name__=~"flare_task_duration(_milliseconds)?_count"}[30m])) > 100
-        labels:
-          severity: info
-        annotations:
-          summary: "{{ $labels.job }}: task durations are skewed, p99 over 10x the median"
+      # No partition-skew rule: skew only means something within a stage, and task metrics carry no
+      # stage label (#136). Across a whole application, mixing small and large stages, p99 over
+      # the median is routinely above 10, so such a rule fired on healthy runs. See the per-stage
+      # TraceQL search in docs/configuration/alerting.md.
 
       # Executors lost for reasons other than a dynamic-allocation scale-down. Each removed executor
       # is a new series that starts at 1, so the series are summed first, giving one counter whose
