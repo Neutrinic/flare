@@ -8,10 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Cached-storage totals no longer drift** (`FLARE_TRACK_BLOCK_UPDATES=true`). Spark reports a
-  block's state each time it changes, and Flare added every report, so a block reported twice
-  counted twice and a dropped block left its size behind. Each block's last sizes are kept and only
-  the change is recorded, and a removed block manager's blocks leave the totals ([#179])
 - **Tasks run inside their stage's trace context again at the default granularity.** Under the
   real agent the context restoration around each task failed silently, so at `stages` (the
   default) and `jobs`, spans made inside a task started their own traces and were dropped, and
@@ -595,4 +591,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#148]: https://github.com/Neutrinic/flare/issues/148
 [#164]: https://github.com/Neutrinic/flare/issues/164
 [#173]: https://github.com/Neutrinic/flare/issues/173
-[#179]: https://github.com/Neutrinic/flare/issues/179
