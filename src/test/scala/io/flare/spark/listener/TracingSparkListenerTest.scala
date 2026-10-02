@@ -141,6 +141,46 @@ class TracingSparkListenerTest extends FunSuite {
 
   // ── Tests ───────────────────────────────────────────────────────────────────
 
+  // #177. Stage metrics used to be recorded inside the branch that ends the stage span, so at
+  // `jobs` granularity, where there is no stage span, turning stage spans off turned them off too.
+  test("stage metrics are recorded at jobs granularity, labelled with the SQL description") {
+    val reader = InMemoryMetricReader.create()
+    val tp = SdkTracerProvider.builder().build()
+    val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
+    try {
+      val listener = new TracingSparkListener(
+        tp.get("t"), config.copy(granularity = TraceGranularity.Jobs),
+        Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true,
+      )
+      listener.recordSqlDescription(5L, "TPC-H Q3")
+      listener.onJobStart(makeJobStart(0, Seq(0), sqlExecution = Some(5L)))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      listener.onStageCompleted(makeStageCompletedWithMetrics(0))
+
+      val points = reader.collectAllMetrics().asScala
+        .filter(_.getName == "flare.stage.executor.run_time")
+        .flatMap(_.getHistogramData.getPoints.asScala)
+      assertEquals(points.map(_.getCount).sum, 1L, "no stage run time recorded at jobs granularity")
+      val tags = points.head.getAttributes.asMap.asScala.map { case (k, v) => k.getKey -> v.toString }
+      assertEquals(tags.get("sql.description"), Some("TPC-H Q3"))
+    } finally { tp.close(); mp.close() }
+  }
+
+  // #174. Spans the advice created but the listener never adopted were kept for the life of the
+  // driver. They are dropped, not ended: ending one would export an empty span.
+  test("shutdown clears the advice's job and pending stage spans without exporting them") {
+    withListener { (listener, exporter) =>
+      val tracer = SdkTracerProvider.builder().build().get("t")
+      SubmitMissingTasksAdviceHelper.jobSpans.put(41, tracer.spanBuilder("spark.job.41").startSpan())
+      SubmitMissingTasksAdviceHelper.pendingStageSpans.put(42, tracer.spanBuilder("spark.stage.42").startSpan())
+      listener.shutdown()
+      assert(SubmitMissingTasksAdviceHelper.jobSpans.isEmpty)
+      assert(SubmitMissingTasksAdviceHelper.pendingStageSpans.isEmpty)
+      assert(!exporter.getFinishedSpanItems.asScala.exists(_.getName.endsWith(".42")))
+    }
+  }
+
+
   // #136. Stage ids are new for every stage, so as a tag they made one series per stage: past the
   // SDK's 2,000-series limit a long-lived application's stage metrics folded into an overflow
   // series. Stages from one call site must share a series however many there are.
