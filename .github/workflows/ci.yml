@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# A new push to a pull request cancels the run it replaces (#194). Runs on main are never cancelled:
+# every commit there is tested.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -67,3 +73,18 @@ jobs:
 
       - name: Test assembled OpenTelemetry extension
         run: sbt -DsparkVersion=3.5.1 ++2.13.16 "AgentTest / test"
+
+  # Changelog fragments (#194) parse, so a malformed one fails here rather than at release.
+  changelog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Check changelog fragments
+        run: python .github/scripts/release_changelog.py --check

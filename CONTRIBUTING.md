@@ -107,6 +107,15 @@ docker/            Docker Compose stack, Spark config, Alloy/Tempo/Loki/Grafana 
 - [ ] `sbt assembly` produces a clean JAR
 - [ ] `sbt ++2.12.18 compile` cross-compiles
 - [ ] No new runtime dependencies added (see below)
+- [ ] A changelog fragment, `changelog.d/<issue>.md`, if users would notice the change
+
+### Changelog
+
+Don't edit `CHANGELOG.md` in a pull request. Add `changelog.d/<issue>.md` instead: a Keep a
+Changelog heading and the entry, written as it will appear. See
+[`changelog.d/README.md`](changelog.d/README.md). Every pull request editing `CHANGELOG.md`
+conflicted with every other open one; separate files never do. The release pull request folds the
+fragments into `CHANGELOG.md` with `python .github/scripts/release_changelog.py <version> <date>`.
 
 ### Dependency policy
 
