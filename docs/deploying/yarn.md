@@ -33,7 +33,7 @@ Replace `3-5_2.12` with the coordinate for your cluster. An internal mirror work
 [Downloading the JARs](../getting-started/download.md).
 
 The file name in the container is the last segment of the URL. If your URL ends in a versioned
-name such as `flare-spark-3-5_2.12-1.3.0.jar`, use that name in the relative paths. `--files` also
+name such as `flare-spark-3-5_2.12-<version>.jar`, use that name in the relative paths. `--files` also
 accepts `hdfs://` and `s3://` URLs; only HTTPS was run here.
 
 ## Client mode
