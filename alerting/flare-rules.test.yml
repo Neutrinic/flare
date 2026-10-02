@@ -1,0 +1,79 @@
+# promtool test rules alerting/flare-rules.test.yml
+rule_files:
+  - flare-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A failed run fires; a successful one does not.
+  - interval: 1m
+    input_series:
+      - series: 'flare_application_duration_seconds_count{job="etl-driver", instance="run-1", application_result="FAILED"}'
+        values: "1x10"
+      - series: 'flare_application_duration_seconds_count{job="report-driver", instance="run-2", application_result="SUCCESS"}'
+        values: "1x10"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FlareApplicationFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: etl-driver
+            exp_annotations:
+              summary: "etl-driver: a run ended with a failed job"
+
+  # Mimir's naming, without the unit, matches too.
+  - interval: 1m
+    input_series:
+      - series: 'flare_job_duration_count{job="etl-driver", instance="run-1", job_result="FAILED", sql_description="TPC-H Q3"}'
+        values: "1x10"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FlareJobFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: etl-driver
+              sql_description: TPC-H Q3
+            exp_annotations:
+              summary: "etl-driver: a job failed (TPC-H Q3)"
+
+  # Three executors lost in a few minutes fires, each a new series starting at 1; scale-downs do not.
+  - interval: 1m
+    input_series:
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="1", reason="lost"}'
+        values: "_ _ 1x20"
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="2", reason="lost"}'
+        values: "_ _ _ 1x20"
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="3", reason="lost"}'
+        values: "_ _ _ _ 1x20"
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="9", reason="idle_or_decommissioned"}'
+        values: "_ 1x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FlareExecutorsLost
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: etl-driver
+              reason: lost
+            exp_annotations:
+              summary: "etl-driver: executors lost (lost)"
+
+  # Half yesterday's input fires.
+  - interval: 1h
+    input_series:
+      - series: 'flare_stage_input_bytes_total{job="etl-driver", instance="day-1", sql_description="load orders"}'
+        values: "1000 1000 1000 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _"
+      - series: 'flare_stage_input_bytes_total{job="etl-driver", instance="day-2", sql_description="load orders"}'
+        values: "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 300 300 300"
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: FlareInputVolumeDropped
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: etl-driver
+              sql_description: load orders
+            exp_annotations:
+              summary: "etl-driver: load orders read under half of yesterday's input"

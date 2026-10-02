@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so other applications in the same backend no longer count ([#164])
 
 ### Added
+- **Example alert rules and an Alerting page.** `alerting/flare-rules.yml` holds Prometheus rules
+  for scheduled pipelines (a failed run, a failed query, a query twice as slow as last week, a
+  query reading under half of yesterday's input) and two diagnoses (task skew, executors lost),
+  with promtool unit tests that CI runs. The page explains each threshold, gives the missed-run
+  rule as a per-pipeline template, and lists TraceQL searches for what only spans carry: spill,
+  GC, scheduler delay, retries, failed stages, changed query plans ([#92], [#168])
 - **Job and application outcome metrics:** `flare.job.duration` (one point per job, labelled
   `job.result` and the query's `sql.description`) and `flare.application.duration` (one point when
   the application ends, labelled `application.result`), so a scheduled pipeline can be alerted on
@@ -599,3 +605,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#164]: https://github.com/Neutrinic/flare/issues/164
 [#173]: https://github.com/Neutrinic/flare/issues/173
 [#168]: https://github.com/Neutrinic/flare/issues/168
+[#92]: https://github.com/Neutrinic/flare/issues/92
