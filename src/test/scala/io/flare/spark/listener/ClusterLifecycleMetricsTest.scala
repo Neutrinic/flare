@@ -100,13 +100,46 @@ class ClusterLifecycleMetricsTest extends FunSuite {
 
   test("block updates track running totals when enabled, and unwind on drop") {
     val m = collect(trackBlocks = true) { l =>
-      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 1024L, cached = true))
-      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 2048L, 0L, cached = true))
-      // Spark signals a drop with an invalid StorageLevel carrying the sizes it had.
-      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 1024L, cached = false))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 1024L, cached = true, partition = 0))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 2048L, 0L, cached = true, partition = 1))
+      // An invalid StorageLevel is Spark's drop signal, whatever sizes it carries.
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 1024L, cached = false, partition = 0))
     }
     assertEquals(m.get("flare.storage.memory.bytes"), Some(2048L))
     assertEquals(m.get("flare.storage.disk.bytes"), Some(0L))
     assertEquals(m.get("flare.storage.blocks"), Some(1L))
+  }
+
+  // #179. An update reports a block's state; adding each one counted a re-reported block twice.
+  test("a block reported twice and then dropped leaves nothing behind") {
+    val m = collect(trackBlocks = true) { l =>
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 0L, cached = true))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 0L, cached = true))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 0L, 0L, cached = false))
+    }
+    assertEquals(m.get("flare.storage.memory.bytes"), Some(0L))
+    assertEquals(m.get("flare.storage.blocks"), Some(0L))
+  }
+
+  test("a block moving from memory to disk moves its bytes, and stays one block") {
+    val m = collect(trackBlocks = true) { l =>
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 0L, cached = true))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 0L, 4096L, cached = true))
+    }
+    assertEquals(m.get("flare.storage.memory.bytes"), Some(0L))
+    assertEquals(m.get("flare.storage.disk.bytes"), Some(4096L))
+    assertEquals(m.get("flare.storage.blocks"), Some(1L))
+  }
+
+  // #179. No block update follows a block manager's removal; its blocks went with it.
+  test("removing a block manager removes its blocks from the totals") {
+    val m = collect(trackBlocks = true) { l =>
+      l.onBlockManagerAdded(FlareTestHelpers.blockManagerAdded("1"))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 1024L, cached = true))
+      l.onBlockManagerRemoved(FlareTestHelpers.blockManagerRemoved("1"))
+    }
+    assertEquals(m.get("flare.storage.memory.bytes"), Some(0L))
+    assertEquals(m.get("flare.storage.disk.bytes"), Some(0L))
+    assertEquals(m.get("flare.storage.blocks"), Some(0L))
   }
 }

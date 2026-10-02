@@ -10,6 +10,7 @@ import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
 import org.apache.spark.FlareJobResultAccess
 import org.apache.spark.scheduler._
+import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.sql.execution.ui.{
   SparkListenerSQLAdaptiveExecutionUpdate,
   SparkListenerSQLExecutionEnd,
@@ -54,6 +55,11 @@ class TracingSparkListener(
   // list. Lets a stage span name the user code that a Spark-generated stage name cannot —
   // see #48 and Stage.SqlDescription.
   private val stageToSql:      TrieMap[Int, Long]    = TrieMap.empty
+
+  // Last reported (memory, disk) bytes of every stored block, per block manager, so block updates,
+  // which report state, can be recorded as changes (#179). Only filled under
+  // FLARE_TRACK_BLOCK_UPDATES, and emptied as blocks and block managers go.
+  private val blockSizes: TrieMap[BlockManagerId, TrieMap[BlockId, (Long, Long)]] = TrieMap.empty
   private val sqlDescriptions: TrieMap[Long, String] = TrieMap.empty
 
   // stageId → summed scheduler delay across the stage's tasks, accumulated at onTaskEnd.
@@ -385,6 +391,12 @@ class TracingSparkListener(
     safeHandle("onBlockManagerRemoved") {
       metrics.foreach(_.blockManagerCount.add(-1L,
         MetricAttributes.forExecutor(event.blockManagerId.executorId)))
+      // Its blocks went with it, though no update says so (#179).
+      blockSizes.remove(event.blockManagerId).foreach { blocks =>
+        metrics.foreach { fm =>
+          blocks.values.foreach(sizes => recordStorage(fm, event.blockManagerId.executorId, Some(sizes), None))
+        }
+      }
     }
 
   override def onUnpersistRDD(event: SparkListenerUnpersistRDD): Unit =
@@ -400,22 +412,38 @@ class TracingSparkListener(
    * This fires once per block. On a large cached dataset that is a firehose on the listener
    * bus thread, which is why it is opt-in rather than on by default.
    *
-   * Spark signals a block being dropped by sending an invalid StorageLevel with the sizes it
-   * had, so removal is a negative delta of those sizes rather than a separate event.
+   * Each update reports a block's state, not a change: the same block is reported again when it
+   * moves from memory to disk, and an invalid StorageLevel means it is gone. So the last reported
+   * sizes of every block are kept, and only the difference is recorded (#179). Adding each report
+   * counted a re-reported block twice and left a dropped one's size behind.
    */
   override def onBlockUpdated(event: SparkListenerBlockUpdated): Unit =
     if (config.trackBlockUpdates) safeHandle("onBlockUpdated") {
       metrics.foreach { fm =>
-        val info  = event.blockUpdatedInfo
-        val attrs = MetricAttributes.forExecutor(info.blockManagerId.executorId)
-        val live  = info.storageLevel.isValid
-        val sign  = if (live) 1L else -1L
-
-        if (info.memSize  != 0L) fm.storageMemoryBytes.add(sign * info.memSize, attrs)
-        if (info.diskSize != 0L) fm.storageDiskBytes.add(sign * info.diskSize, attrs)
-        fm.storageBlocks.add(sign, attrs)
+        val info   = event.blockUpdatedInfo
+        val blocks = blockSizes.getOrElseUpdate(info.blockManagerId, TrieMap.empty)
+        val before = blocks.get(info.blockId)
+        val after  = if (info.storageLevel.isValid) Some((info.memSize, info.diskSize)) else None
+        after match {
+          case Some(sizes) => blocks.put(info.blockId, sizes)
+          case None        => blocks.remove(info.blockId)
+        }
+        recordStorage(fm, info.blockManagerId.executorId, before, after)
       }
     }
+
+  /** Records the change from one reported state of a block to the next; None is "not stored". */
+  private def recordStorage(
+    fm: FlareMetrics, executorId: String, before: Option[(Long, Long)], after: Option[(Long, Long)],
+  ): Unit = {
+    val attrs = MetricAttributes.forExecutor(executorId)
+    val (memBefore, diskBefore) = before.getOrElse((0L, 0L))
+    val (memAfter, diskAfter)   = after.getOrElse((0L, 0L))
+    if (memAfter != memBefore) fm.storageMemoryBytes.add(memAfter - memBefore, attrs)
+    if (diskAfter != diskBefore) fm.storageDiskBytes.add(diskAfter - diskBefore, attrs)
+    val count = (if (after.isDefined) 1L else 0L) - (if (before.isDefined) 1L else 0L)
+    if (count != 0L) fm.storageBlocks.add(count, attrs)
+  }
 
   // ── SQL ──────────────────────────────────────────────────────────────────────
 

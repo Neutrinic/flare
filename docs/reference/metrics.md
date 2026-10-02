@@ -51,9 +51,10 @@ a counter is the cardinality problem these instruments exist to avoid.
 Spark registers one there too. Expect it to sit one above the executor count.
 
 The `flare.storage.*` instruments require `FLARE_TRACK_BLOCK_UPDATES=true`. They track running
-totals per executor; block ids are never used as tags. Spark signals a block being dropped by
-sending an invalid `StorageLevel` carrying the sizes it had, so a drop is recorded as a negative
-delta rather than a separate event.
+totals per executor; block ids are never used as tags. Spark reports each block's state, again
+whenever it changes, such as moving from memory to disk, so Flare keeps each block's last reported
+sizes on the driver and records only the difference. An invalid `StorageLevel` means the block is
+gone; when a block manager is removed, its blocks are taken out of the totals with it.
 
 `flare.task.*` are recorded on the executor while the task span's scope is still open, so the SDK's
 default `trace_based` exemplar filter attaches an exemplar linking each measurement back to its
