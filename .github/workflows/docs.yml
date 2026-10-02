@@ -121,6 +121,12 @@ jobs:
           fi
           newest=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
           minor=$(echo "${tag#v}" | cut -d. -f1,2)
+          # One site per minor: publishing v1.3.0 after v1.3.1 would put the older docs back in 1.3/.
+          newest_patch=$(git tag --list "v$minor.[0-9]*" --sort=-v:refname | head -1)
+          if [ "$tag" != "$newest_patch" ]; then
+            echo "::error::$newest_patch is newer than $tag for docs version $minor; publish $newest_patch instead"
+            exit 1
+          fi
           echo "PUBLISH_TAG=$tag" >> "$GITHUB_ENV"
           echo "DOCS_VERSION=$minor" >> "$GITHUB_ENV"
           if [ "$tag" = "$newest" ]; then echo "DOCS_ALIAS=latest" >> "$GITHUB_ENV"; fi
