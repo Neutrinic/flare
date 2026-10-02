@@ -1,0 +1,2138 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="OpenTelemetry tracing, metrics and logs for Apache Spark, across driver and executors">
+      
+      
+      
+        <link rel="canonical" href="https://neutrinic.github.io/flare/latest/reference/spans/">
+      
+      
+        <link rel="prev" href="../../configuration/volume/">
+      
+      
+        <link rel="next" href="../metrics/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.67">
+    
+    
+      
+        <title>Spans - Flare</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.4ae390e2.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.96d1a7e4.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#spans" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Flare" class="md-header__button md-logo" aria-label="Flare" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Flare
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Spans
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun-moon" viewBox="0 0 24 24"><path d="M12 2v2M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715M16 12a4 4 0 0 0-4-4M19 5l-1.256 1.256M20 12h2"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/Neutrinic/flare" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neutrinic/flare
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Flare" class="md-nav__button md-logo" aria-label="Flare" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    Flare
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Neutrinic/flare" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neutrinic/flare
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Home
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Quick start
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Downloading the JARs
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/choosing-a-jar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Choosing a JAR
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python applications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/local-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local stack
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../deploying/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Deploying
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Deploying
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/standalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Standalone
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/yarn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  YARN
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Kubernetes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/emr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Amazon EMR
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/emr-serverless/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  EMR Serverless
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/dataproc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Google Dataproc
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/dataproc-serverless/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dataproc Serverless
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/databricks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Databricks
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/hdinsight/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  HDInsight
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deploying/unsupported/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Platforms that cannot run Flare
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../configuration/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Configuration
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/exporting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Exporting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/noise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Noise
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/volume/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Spans
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Spans
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#sparkapplication" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.application</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparksqln" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.sql.N</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparkjobn" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.job.N</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparkstagen" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.stage.N</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparktaskexecutor" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.task.executor</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Failures
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Metrics
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Compatibility
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../overhead/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Overhead
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Upgrading
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshooting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Privacy
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../building/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Building Flare
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#sparkapplication" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.application</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparksqln" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.sql.N</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparkjobn" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.job.N</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparkstagen" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.stage.N</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparktaskexecutor" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>spark.task.executor</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Failures
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="././" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Reference
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="spans">Spans<a class="headerlink" href="#spans" title="Permanent link">&para;</a></h1>
+<p>Everything below is what Flare actually emits. Attributes marked <em>conditional</em> are absent rather
+than zero when the underlying value was never observed. A missing attribute means "not measured",
+which is different from a measured zero.</p>
+<h2 id="sparkapplication"><code>spark.application</code><a class="headerlink" href="#sparkapplication" title="Permanent link">&para;</a></h2>
+<p><em>SpanKind SERVER, trace root.</em></p>
+<p>Opened when <code>SparkContext</code> initialises, closed at <code>SparkContext.stop()</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spark.application.id</code></td>
+<td>string</td>
+<td><code>SparkContext.applicationId</code></td>
+</tr>
+<tr>
+<td><code>spark.application.name</code></td>
+<td>string</td>
+<td><code>SparkContext.appName</code></td>
+</tr>
+<tr>
+<td><code>spark.master.url</code></td>
+<td>string</td>
+<td><code>SparkContext.master</code></td>
+</tr>
+<tr>
+<td><code>flare.version</code></td>
+<td>string</td>
+<td>Flare build version</td>
+</tr>
+<tr>
+<td><code>flare.trace.granularity</code></td>
+<td>string</td>
+<td>Effective <code>FLARE_TRACE_GRANULARITY</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="sparksqln"><code>spark.sql.N</code><a class="headerlink" href="#sparksqln" title="Permanent link">&para;</a></h2>
+<p><em>SpanKind INTERNAL, child of <code>spark.application</code>.</em></p>
+<p>One per <code>SparkListenerSQLExecutionStart</code>. <code>N</code> is the execution id.</p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spark.sql.execution.id</code></td>
+<td>long</td>
+<td>Matches the <code>N</code> in the span name</td>
+</tr>
+<tr>
+<td><code>spark.sql.description</code></td>
+<td>string</td>
+<td>Conditional: omitted when Spark reports it empty. Capped by <code>FLARE_SQL_DESCRIPTION_MAX_CHARS</code></td>
+</tr>
+<tr>
+<td><code>spark.sql.details</code></td>
+<td>string</td>
+<td>Conditional: the call-site stack. Capped by <code>FLARE_SQL_DETAILS_MAX_CHARS</code></td>
+</tr>
+<tr>
+<td><code>spark.sql.plan</code></td>
+<td>string</td>
+<td>The physical plan <strong>that ran</strong>, post-AQE. Capped by <code>FLARE_SQL_PLAN_MAX_CHARS</code></td>
+</tr>
+<tr>
+<td><code>spark.sql.plan.truncated</code></td>
+<td>bool</td>
+<td>Conditional: set only when the cap clipped the plan</td>
+</tr>
+<tr>
+<td><code>spark.sql.plan.initial</code></td>
+<td>string</td>
+<td>Conditional: the pre-AQE plan. Off unless <code>FLARE_SQL_PLAN_INITIAL_MAX_CHARS &gt; 0</code></td>
+</tr>
+<tr>
+<td><code>spark.sql.plan.initial.truncated</code></td>
+<td>bool</td>
+<td>Conditional: as above, for the initial plan</td>
+</tr>
+<tr>
+<td><code>spark.sql.plan.fingerprint</code></td>
+<td>string</td>
+<td>16 hex chars. Hash of the plan's <em>shape</em>. Always emitted when a plan exists, <strong>including when the caps are <code>0</code></strong></td>
+</tr>
+<tr>
+<td><code>spark.sql.plan.initial.fingerprint</code></td>
+<td>string</td>
+<td>As above for the pre-AQE plan. The more stable of the two, see <a href="../../configuration/#plan-fingerprints">Plan fingerprints</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="sparkjobn"><code>spark.job.N</code><a class="headerlink" href="#sparkjobn" title="Permanent link">&para;</a></h2>
+<p><em>SpanKind INTERNAL, child of <code>spark.sql.N</code> or <code>spark.application</code>.</em></p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spark.job.id</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.job.stage.count</code></td>
+<td>long</td>
+<td>Number of stages the job was planned with</td>
+</tr>
+<tr>
+<td><code>spark.job.description</code></td>
+<td>string</td>
+<td>Conditional: from <code>spark.job.description</code> local property</td>
+</tr>
+<tr>
+<td><code>spark.job.result</code></td>
+<td>string</td>
+<td><code>SUCCESS</code> or <code>FAILED</code></td>
+</tr>
+<tr>
+<td><code>error.type</code></td>
+<td>string</td>
+<td>Conditional: the exception class, e.g. <code>java.lang.ArithmeticException</code></td>
+</tr>
+<tr>
+<td><code>error.message</code></td>
+<td>string</td>
+<td>Conditional: present only on <code>FAILED</code>, first 500 chars</td>
+</tr>
+</tbody>
+</table>
+<h2 id="sparkstagen"><code>spark.stage.N</code><a class="headerlink" href="#sparkstagen" title="Permanent link">&para;</a></h2>
+<p><em>SpanKind INTERNAL, child of <code>spark.job.N</code>.</em></p>
+<p>Metrics below are Spark's own sums across every task in the stage, so they are directly comparable
+with each other. All are set at <code>onStageCompleted</code> from <code>StageInfo.taskMetrics</code>, except
+<code>spark.stage.scheduler.delay_ms</code>, which Spark does not report and Flare derives from task ends; see
+below.</p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spark.stage.id</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.attempt.id</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.name</code></td>
+<td>string</td>
+<td>Spark's <code>RDD.creationSite</code>, the same string the Spark UI shows. Frequently useless for async stages; see below</td>
+</tr>
+<tr>
+<td><code>spark.stage.sql.execution_id</code></td>
+<td>long</td>
+<td>Conditional: present when the stage's job belongs to a SQL execution</td>
+</tr>
+<tr>
+<td><code>spark.stage.sql.description</code></td>
+<td>string</td>
+<td>Conditional: the SQL execution's description, e.g. <code>show at SkewedJob.scala:48</code>. This is the attribute that names user code when <code>spark.stage.name</code> cannot</td>
+</tr>
+<tr>
+<td><code>spark.stage.task.count</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.executor.run_time_ms</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.executor.cpu_time_ms</code></td>
+<td>long</td>
+<td>Converted from Spark's nanoseconds</td>
+</tr>
+<tr>
+<td><code>spark.stage.jvm.gc_time_ms</code></td>
+<td>long</td>
+<td>GC time rivalling run time is the answer to "why is this stage slow"</td>
+</tr>
+<tr>
+<td><code>spark.stage.executor.deserialize_time_ms</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.executor.deserialize_cpu_time_ms</code></td>
+<td>long</td>
+<td>Converted from nanoseconds</td>
+</tr>
+<tr>
+<td><code>spark.stage.result.serialization_time_ms</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.scheduler.delay_ms</code></td>
+<td>long</td>
+<td>Conditional: derived, see below</td>
+</tr>
+<tr>
+<td><code>spark.stage.input.bytes</code> / <code>.records</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.output.bytes</code> / <code>.records</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.shuffle.read_bytes</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.shuffle.write_bytes</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.memory.spilled_bytes</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.disk.spilled_bytes</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.stage.failure_reason</code></td>
+<td>string</td>
+<td>Conditional: first 500 chars</td>
+</tr>
+<tr>
+<td><code>error.type</code></td>
+<td>string</td>
+<td>Conditional: see the failure note below; <strong>omitted</strong> more often here than on job or task spans</td>
+</tr>
+<tr>
+<td><code>error.message</code></td>
+<td>string</td>
+<td>Conditional: present only on failure, first 500 chars</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why <code>spark.stage.name</code> is often useless, and what to use instead.</strong> Spark derives it from
+<code>RDD.creationSite</code>. For an async subquery or broadcast, the RDD is created on a Spark thread-pool
+thread, so the name resolves to something like
+<code>$anonfun$withThreadLocalCaptured$2 at CompletableFuture.java:1768</code>. The Spark UI shows the same
+string. In one four-stage <code>SkewedJob</code> run, three of the four stages looked like that.</p>
+<p><code>StageInfo.details</code> cannot recover it either: that stack was captured on the same pool thread and
+contains no user frame at all, only <code>org.apache.spark.*</code> and <code>java.base/*</code>. The stages whose names
+<em>are</em> useful are the only ones whose stacks contain user code, so walking the stack adds nothing
+where it is needed.</p>
+<p><code>spark.stage.sql.description</code> is the answer: for any stage under a SQL execution, Spark's own
+execution description names the user code exactly. <code>spark.stage.name</code> is left untouched so
+Spark UI correlation still works. A pure-RDD stage belonging to no SQL execution gets neither
+attribute: there is no source for the information in that case.</p>
+<p><code>spark.stage.scheduler.delay_ms</code> is the only stage attribute Spark does not report. It is derived
+per task as <code>duration − executorRunTime − deserializeTime − resultSerializationTime −
+resultFetchTime</code> and summed over the stage, matching Spark's own <code>AppStatusUtils.schedulerDelay</code>.
+The clamp at zero is applied per task, never to the sum, because driver and executor clocks differ
+and a fast task can report more run time than its own wall clock. The attribute is <strong>omitted</strong> when
+no task ends were observed, because a <code>0</code> there would read as "no queueing" rather than "not measured".</p>
+<h2 id="sparktaskexecutor"><code>spark.task.executor</code><a class="headerlink" href="#sparktaskexecutor" title="Permanent link">&para;</a></h2>
+<p><em>SpanKind INTERNAL, child of <code>spark.stage.N</code>, emitted on the executor JVM.</em></p>
+<p>Subject to <code>FLARE_TRACE_GRANULARITY</code>, <code>FLARE_SLOW_TASK_MS</code>, <code>FLARE_RETRY_TASKS_ONLY</code> and
+<code>FLARE_MAX_SPANS_PER_TRACE</code>. This span is built from <code>TaskContext</code>, so driver-only <code>TaskInfo</code>
+fields (host, locality, speculative) are not available to it.</p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spark.task.partition.id</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.task.attempt.id</code></td>
+<td>long</td>
+<td><code>&gt; 0</code> means a retry</td>
+</tr>
+<tr>
+<td><code>spark.stage.id</code></td>
+<td>long</td>
+<td>Conditional: only under <code>FLARE_TRACE_GRANULARITY=all</code>. The parent span already identifies the stage; this repeats it so you can filter without a join</td>
+</tr>
+<tr>
+<td><code>spark.task.sql.execution_id</code></td>
+<td>long</td>
+<td>Conditional: present when the task belongs to a SQL execution</td>
+</tr>
+<tr>
+<td><code>spark.task.result</code></td>
+<td>string</td>
+<td><code>SUCCESS</code>, <code>FAILED</code>, or <code>SHUTDOWN</code> if the JVM went down mid-task</td>
+</tr>
+<tr>
+<td><code>error.type</code></td>
+<td>string</td>
+<td>Conditional: exception class for a user exception, otherwise the Spark failure reason class, e.g. <code>org.apache.spark.TaskResultLost</code></td>
+</tr>
+<tr>
+<td><code>error.message</code></td>
+<td>string</td>
+<td>Conditional: present only on <code>FAILED</code>, first 500 chars</td>
+</tr>
+<tr>
+<td><code>spark.task.duration_ms</code></td>
+<td>long</td>
+<td>Wall clock on the executor thread</td>
+</tr>
+<tr>
+<td><code>spark.task.input.bytes</code> / <code>output.bytes</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.task.shuffle.read_bytes</code> / <code>write_bytes</code></td>
+<td>long</td>
+<td></td>
+</tr>
+<tr>
+<td><code>spark.task.peak_memory_bytes</code></td>
+<td>long</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2 id="failures">Failures<a class="headerlink" href="#failures" title="Permanent link">&para;</a></h2>
+<p><code>error.type</code>, <code>error.message</code> and the <code>exception</code> event.</p>
+<p>A failed job, stage or task span carries <code>error.message</code> and status <code>ERROR</code>, and <code>error.type</code> when
+the failure's type can be recovered, which on stage spans it sometimes cannot (see below).
+Where a stack trace is available it is attached as an OTEL <code>exception</code> span event with
+<code>exception.type</code>, <code>exception.message</code> and <code>exception.stacktrace</code> (capped at 8000 chars).</p>
+<p>Spark reports failures three different ways, which is why the detail differs by span:</p>
+<table>
+<thead>
+<tr>
+<th>Span</th>
+<th>Source</th>
+<th><code>error.type</code></th>
+<th><code>exception</code> event</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spark.job.N</code></td>
+<td>live <code>Throwable</code> from <code>JobFailed</code></td>
+<td>Exception class</td>
+<td>Yes, the full driver-side stack trace</td>
+</tr>
+<tr>
+<td><code>spark.stage.N</code></td>
+<td>formatted string only</td>
+<td>Recovered by pattern; <strong>omitted</strong> if none matches</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>spark.task.executor</code></td>
+<td><code>TaskFailedReason</code></td>
+<td><code>ExceptionFailure.className</code>, else the reason class</td>
+<td>Yes, for <code>ExceptionFailure</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>error.type</code> is the key you group failures by, so it is left <strong>unset</strong> rather than guessed. On a
+stage span Spark hands Flare only a formatted string, and that string names the wrapper before it
+names the cause:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>org.apache.spark.SparkException: Job aborted due to stage failure: Task 0 in stage 1.0
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>failed 4 times, most recent failure: Lost task 0.3 in stage 1.0 (TID 7) (executor 1):
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>java.lang.ArithmeticException: / by zero
+</code></pre></div>
+<p>Reading the first class name here would report <code>SparkException</code> for practically every failed
+stage. Flare instead searches after the last <code>most recent failure:</code>, or after the innermost
+<code>Caused by:</code> when that is absent, so the reported type is <code>java.lang.ArithmeticException</code>. When
+neither anchor is present it falls back to the first fully-qualified name ending in <code>Exception</code>,
+<code>Error</code> or <code>Throwable</code>.</p>
+<p>Spark 3.4+ also formats many failures as an <strong>error class</strong> with no exception name anywhere in the
+text:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>[DIVIDE_BY_ZERO] Division by zero. Use `try_divide` to tolerate divisor being 0 …
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>== SQL (line 1, position 1) ==
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>id div divisor
+</code></pre></div>
+<p>When no class name is found, that leading error class is used instead, so this stage reports
+<code>error.type = DIVIDE_BY_ZERO</code>. Spark error classes are stable, low-cardinality identifiers, which
+makes them a good grouping key rather than a lesser one. An exception class still wins when both
+are present. Only when neither is available is the attribute omitted.</p>
+<p>A missing <code>error.type</code> means "not recoverable here", not "no error": <code>error.message</code> and
+<code>spark.stage.failure_reason</code> are still populated. Under <code>FLARE_TRACE_GRANULARITY=tasks</code> or <code>all</code>
+the task span for the same failure carries the structured version, read from
+<code>ExceptionFailure</code>'s own fields rather than from text.</p>
+<p>The four byte counts and peak memory come from <code>TaskContext.taskMetrics()</code>, which is
+<code>private[spark]</code> and can throw from outside <code>org.apache.spark</code> or in barrier mode. Flare logs at
+debug and emits the span without them rather than failing the task, so all five are absent together
+when that happens.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../configuration/volume/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Telemetry volume">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Telemetry volume
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../metrics/" class="md-footer__link md-footer__link--next" aria-label="Next: Metrics">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Metrics
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Apache License 2.0
+    </div>
+  
+  Page views are counted with Scarf, without cookies.
+  <a href="../../privacy/">Privacy</a>
+  <img referrerpolicy="no-referrer-when-downgrade"
+       src="https://static.scarf.sh/a.png?x-pxid=83a2aa30-4405-4b07-99a8-351855c73972"
+       alt="" width="1" height="1" style="position: absolute">
+  
+    <br>
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["content.code.copy","content.tabs.link","navigation.footer","navigation.indexes","navigation.instant","navigation.path","navigation.sections","navigation.top","navigation.tracking","search.highlight"],"redirect":null,"search":"../../assets/javascripts/workers/search.7d14d953.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":"latest","provider":"mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.67a597eb.min.js"></script>
+      
+    
+  </body>
+</html>
