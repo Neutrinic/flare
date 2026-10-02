@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Jobs stay under their SQL execution when Spark's listener bus is busy.** The SQL span was
+  created only when the execution's start event reached Flare's listener; a job scheduled before
+  that was parented to the application for good, so the query and its jobs became siblings. The
+  span is now created by whichever side sees the execution first ([#178])
 - **`FLARE_TRACE_GRANULARITY=jobs` works as described.** Flare still created a span for every
   stage, which was never ended or exported and was kept for the life of the driver, and sent its id
   to the tasks, so executor log lines pointed at a span no backend received. Tasks now run in their
@@ -598,3 +602,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#173]: https://github.com/Neutrinic/flare/issues/173
 [#174]: https://github.com/Neutrinic/flare/issues/174
 [#177]: https://github.com/Neutrinic/flare/issues/177
+[#178]: https://github.com/Neutrinic/flare/issues/178

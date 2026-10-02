@@ -429,28 +429,8 @@ class TracingSparkListener(
     if (config.tracesJobs) {
       event match {
         case e: SparkListenerSQLExecutionStart => safeHandle("onSQLStart") {
-          // At every granularity: the stage metrics are labelled with it, and they are recorded
-          // at `jobs` too (#177). Only the span depends on tracing stages.
-          recordSqlDescription(e.executionId, e.description)
-          if (config.tracesStages) applicationSpan.foreach { parent =>
-            val span = tracer
-              .spanBuilder(s"spark.sql.${e.executionId}")
-              .setSpanKind(SpanKind.INTERNAL)
-              .setParent(Context.current().`with`(parent))
-              .startSpan()
-
-            // Fields are read by name, never positionally — see describeSqlExecution.
-            describeSqlExecution(
-              span,
-              e.executionId,
-              e.description,
-              e.details,
-              e.physicalPlanDescription,
-            )
-
-            // Store in shared map so advice and onJobStart can parent jobs under SQL
-            SubmitMissingTasksAdviceHelper.activeSQLSpans.put(e.executionId, span)
-          }
+          // Fields are read by name, never positionally — see describeSqlExecution.
+          onSqlStart(e.executionId, e.description, e.details, e.physicalPlanDescription)
         }
         // AQE re-plans after execution starts, so the tree captured at start is provisional.
         // Every update carries the current plan; the last one to arrive is what ran.
@@ -546,6 +526,34 @@ class TracingSparkListener(
    * not, so no shared test source set can build a fixture. Keeping the logic here means it stays
    * directly testable without a Spark event at all.
    */
+  /**
+   * A SQL execution started. Takes the event's fields rather than the event, whose constructor is
+   * not source-compatible across the matrix, so tests can drive it.
+   */
+  private[listener] def onSqlStart(
+    executionId:             Long,
+    description:             String,
+    details:                 String,
+    physicalPlanDescription: String,
+  ): Unit = {
+    // At every granularity: the stage metrics are labelled with it, and they are recorded at
+    // `jobs` too (#177). Only the span depends on tracing stages.
+    recordSqlDescription(executionId, description)
+    if (config.tracesStages) applicationSpan.foreach { parent =>
+      // The scheduler advice may already have created it, if a job of this execution was
+      // scheduled before this event reached the listener (#178). Shared through the map, so the
+      // advice and onJobStart parent jobs under it.
+      val span = SubmitMissingTasksAdviceHelper.getOrCreateSqlSpan(executionId) {
+        tracer
+          .spanBuilder(s"spark.sql.$executionId")
+          .setSpanKind(SpanKind.INTERNAL)
+          .setParent(Context.current().`with`(parent))
+          .startSpan()
+      }
+      describeSqlExecution(span, executionId, description, details, physicalPlanDescription)
+    }
+  }
+
   /**
    * Keeps a SQL execution's description for the stages that belong to it, at every granularity:
    * stage spans carry it (#48) and stage metrics are labelled with it (#75), and the metrics are
