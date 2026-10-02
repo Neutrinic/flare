@@ -23,6 +23,7 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "overrides/**"
       - "zensical.toml"
       - ".github/workflows/docs.yml"
       - ".github/scripts/stamp_docs_version.py"

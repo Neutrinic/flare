@@ -21,6 +21,13 @@ Your backend receives what Spark reveals about your jobs. Some of it can be sens
 
 Secure your backend as you would the data the jobs process.
 
+## This site counts page views
+
+Each page of this site loads a one-pixel image from [Scarf](https://about.scarf.sh/), which
+counts page views for the maintainers. It sets no cookies. Scarf uses the request's IP address to
+look up the organisation it belongs to, then discards it, and uses the referrer to tell which page
+was viewed.
+
 ## Download statistics
 
 Downloads from Maven Central are counted from Maven Central's own download data, which Sonatype

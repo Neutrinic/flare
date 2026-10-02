@@ -1,0 +1,24 @@
+{#-
+  The theme's copyright partial, plus the page-view notice and the Scarf pixel that does the
+  counting (#160). The notice and the pixel sit together so neither can go without the other.
+  See docs/privacy.md.
+-#}
+<div class="md-copyright">
+  {% if config.copyright %}
+    <div class="md-copyright__highlight">
+      {{ config.copyright }}
+    </div>
+  {% endif %}
+  Page views are counted with Scarf, without cookies.
+  <a href="{{ 'privacy/' | url }}">Privacy</a>
+  <img referrerpolicy="no-referrer-when-downgrade"
+       src="https://static.scarf.sh/a.png?x-pxid=83a2aa30-4405-4b07-99a8-351855c73972"
+       alt="" width="1" height="1" style="position: absolute">
+  {% if not config.extra.generator == false %}
+    <br>
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  {% endif %}
+</div>
