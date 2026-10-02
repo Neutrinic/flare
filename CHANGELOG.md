@@ -8,8 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **`FLARE_ENABLED=false` turns off the executors' task metrics too.** Spans honoured the kill
-  switch, but executors still recorded `flare.task.*` ([#176])
 - **Tasks run inside their stage's trace context again at the default granularity.** Under the
   real agent the context restoration around each task failed silently, so at `stages` (the
   default) and `jobs`, spans made inside a task started their own traces and were dropped, and
@@ -593,4 +591,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#148]: https://github.com/Neutrinic/flare/issues/148
 [#164]: https://github.com/Neutrinic/flare/issues/164
 [#173]: https://github.com/Neutrinic/flare/issues/173
-[#176]: https://github.com/Neutrinic/flare/issues/176
