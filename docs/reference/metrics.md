@@ -23,6 +23,16 @@ Seventeen instruments, all under the `io.flare.spark` meter, all turned off by
 | `flare.storage.disk.bytes` | updowncounter | `By` | `executor.id` |
 | `flare.storage.blocks` | updowncounter | `{block}` | `executor.id` |
 
+## Histogram buckets
+
+| Histogram | Bucket boundaries |
+|---|---|
+| `flare.task.duration` | 5, 10, 25, 50, 100, 250, 500 ms; 1, 2.5, 5, 10, 30 s; 1, 2, 5, 10, 30, 60 min |
+| `flare.stage.executor.run_time` | 100 ms; 1, 5, 10, 30 s; 1, 5, 10, 30 min; 1, 3, 10, 24 h. Summed across the stage's tasks, so far longer than its wall-clock time |
+| `flare.task.records_throughput` | 10 to 100,000,000 records/s, one boundary per power of ten |
+
+They are set as advice on each instrument, so a view configured in the SDK or the agent overrides them.
+
 No label is new for every stage. `stage.name` and `sql.description` are call sites, such as
 `collect at Job.scala:42`, so stages from the same line of code share a series, and the number of
 series depends on the code, not on how long the application runs. A single stage is on its

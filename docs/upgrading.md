@@ -1,5 +1,20 @@
 # Upgrading
 
+## 1.3 to 1.4
+
+### Histograms have new bucket boundaries
+
+`flare.task.duration`, `flare.stage.executor.run_time` and `flare.task.records_throughput` used
+the SDK's default boundaries, which stop at 10,000: every task or stage longer than ten seconds
+landed in the overflow bucket, and percentiles stopped at 10 s
+([#180](https://github.com/Neutrinic/flare/issues/180)). They now reach an hour per task, a day of
+summed stage time, and 100 million records a second; see
+[Histogram buckets](reference/metrics.md#histogram-buckets).
+
+- `histogram_quantile` queries need no change, and resolve long tasks for the first time.
+- A query or alert that names a specific `le` value, such as `le="10000"`, must use the new
+  boundaries. Series with the old `le` values stop and new ones start at the upgrade.
+
 ## 1.2 to 1.3
 
 ### One Flare JAR instead of four

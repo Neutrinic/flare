@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming, and filters every panel, the logs and the trace list by the services picked at the top,
   so other applications in the same backend no longer count ([#164])
 
+### Changed
+- **Duration histograms resolve long tasks and stages.** They used the SDK's default buckets,
+  which stop at 10 s, so longer tasks and stages all landed in the overflow bucket and percentiles
+  stopped at 10 s. New boundaries reach an hour per task and a day of summed stage time; records
+  throughput reaches 100 million records a second. Queries naming a specific `le` value need the
+  new boundaries; see the upgrading notes ([#180])
+
 ## [1.3.0] - 2026-09-29
 
 ### Added
@@ -591,3 +598,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#148]: https://github.com/Neutrinic/flare/issues/148
 [#164]: https://github.com/Neutrinic/flare/issues/164
 [#173]: https://github.com/Neutrinic/flare/issues/173
+[#180]: https://github.com/Neutrinic/flare/issues/180
