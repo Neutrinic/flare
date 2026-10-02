@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Tasks run inside their stage's trace context again at the default granularity.** Under the
+  real agent the context restoration around each task failed silently, so at `stages` (the
+  default) and `jobs`, spans made inside a task started their own traces and were dropped, and
+  executor log lines carried no trace or span id. Log correlation therefore only worked with task
+  spans on (`tasks` or `all`), where the executor plugin opens its own scope. The advice passed an
+  OpenTelemetry `Scope` to its helper, and the agent's relocation of OpenTelemetry types in the
+  advice no longer matched the helper on the application classpath ([#173])
 - **The shipped dashboard works in any Grafana**, not only the local stack. It hard-coded the
   local stack's data sources, and read metric names without units, which only Mimir stores;
   Prometheus and the `grafana/otel-lgtm` image store `flare_task_duration_milliseconds_bucket`,
@@ -583,3 +590,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#145]: https://github.com/Neutrinic/flare/issues/145
 [#148]: https://github.com/Neutrinic/flare/issues/148
 [#164]: https://github.com/Neutrinic/flare/issues/164
+[#173]: https://github.com/Neutrinic/flare/issues/173
