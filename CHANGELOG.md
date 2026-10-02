@@ -8,11 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **`FLARE_TRACE_GRANULARITY=jobs` works as described.** Flare still created a span for every
-  stage, which was never ended or exported and was kept for the life of the driver, and sent its id
-  to the tasks, so executor log lines pointed at a span no backend received. Tasks now run in their
-  job's context. Turning stage spans off also turned the stage metrics off; they are recorded at
-  every granularity now, labelled with the query's description ([#174], [#177])
 - **Tasks run inside their stage's trace context again at the default granularity.** Under the
   real agent the context restoration around each task failed silently, so at `stages` (the
   default) and `jobs`, spans made inside a task started their own traces and were dropped, and
@@ -596,5 +591,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#148]: https://github.com/Neutrinic/flare/issues/148
 [#164]: https://github.com/Neutrinic/flare/issues/164
 [#173]: https://github.com/Neutrinic/flare/issues/173
-[#174]: https://github.com/Neutrinic/flare/issues/174
-[#177]: https://github.com/Neutrinic/flare/issues/177
