@@ -57,9 +57,8 @@ delta rather than a separate event.
 
 `flare.task.*` are recorded on the executor while the task span's scope is still open, so the SDK's
 default `trace_based` exemplar filter attaches an exemplar linking each measurement back to its
-trace. Under `FLARE_SLOW_TASK_MS` the metric is recorded *after* the suppressed span's scope closes,
-so a fast task still contributes to the histogram but carries no exemplar pointing at a trace that
-was never exported. Some backends drop exemplars by default: Mimir's
+trace. Under `FLARE_SLOW_TASK_MS` a fast task's span is dropped, so its measurement's exemplar
+names the task's stage instead, which is always exported; a slow task's names the task span. Some backends drop exemplars by default: Mimir's
 `max_global_exemplars_per_user` is `0` unless you set it.
 
 ## In Prometheus

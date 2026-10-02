@@ -47,7 +47,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
   @volatile private var maxSpansWarned = false
 
   // Span state for the current task on this thread. None means a filter suppressed the span.
-  private val taskState = new ThreadLocal[Option[(Span, Scope)]]()
+  private val taskState = new ThreadLocal[Option[(Span, Option[Scope])]]()
 
   // Metric state for the current task on this thread: the captured TaskContext and the start
   // timestamp. Deliberately independent of taskState — metrics are pre-aggregated, so the
@@ -166,12 +166,22 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       spanBuilder.setLong(Stage.Id, taskContext.stageId().toLong)
     }
 
-    val span  = spanBuilder.startSpan()
-    val scope = span.makeCurrent()
-    taskState.set(Some((span, scope)))
+    val span = spanBuilder.startSpan()
 
-    // MDC enrichment — inject trace_id/span_id into Log4j 2 ThreadContext for log correlation
-    MdcEnricher.put(span.getSpanContext.getTraceId, span.getSpanContext.getSpanId)
+    // Under FLARE_SLOW_TASK_MS the span may be dropped at the end, once the duration is known, so
+    // it is not made current (#100). Anything made inside the task, a JDBC call or the task's
+    // log lines, would otherwise point at a span that is never exported. They sit under the stage
+    // instead, whose context the TaskRunner advice makes current around every task (#173), and
+    // the stage span is always exported. Without the filter every task span is exported, so the
+    // task span is current and in-task spans nest under it.
+    val scope =
+      if (config.slowTaskMs > 0) None
+      else {
+        // MDC enrichment: trace_id/span_id in Log4j 2's ThreadContext, for log correlation.
+        MdcEnricher.put(span.getSpanContext.getTraceId, span.getSpanContext.getSpanId)
+        Some(span.makeCurrent())
+      }
+    taskState.set(Some((span, scope)))
 
     logger.debug(s"[Flare] Task span started, partition=${taskContext.partitionId()}, " +
       s"traceId=${span.getSpanContext.getTraceId}, spanCount=$currentCount")
@@ -199,10 +209,14 @@ class FlareExecutorPlugin extends ExecutorPlugin {
         case (Some((span, scope)), Some((tc, _))) if !isSuppressedAsFast(durationMs) =>
           try {
             describeTaskSpan(span, tc, durationMs, success, failure)
-            recordTaskMetrics(tc, durationMs, success)
+            // A span kept by the slow-task filter was never current; make it current for the
+            // recording only, so the exemplar still names this task.
+            val recordScope = if (scope.isEmpty) Some(span.makeCurrent()) else None
+            try recordTaskMetrics(tc, durationMs, success)
+            finally recordScope.foreach(_.close())
           } finally {
             MdcEnricher.remove()
-            scope.close()
+            scope.foreach(_.close())
             span.end()
           }
 
@@ -222,7 +236,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
         // concurrent executor threads, not total tasks. Acceptable for the filtering benefit.
         case (Some((span, scope)), Some((tc, _))) =>
           MdcEnricher.remove()
-          scope.close()
+          scope.foreach(_.close())
           spanCount.decrementAndGet() // reclaim slot — this span won't be exported
           recordTaskMetrics(tc, durationMs, success)
 
@@ -328,7 +342,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       MdcEnricher.remove()
       span.setStatus(StatusCode.ERROR, "Executor shutdown before task completed")
       span.setAttribute(Task.Result, "SHUTDOWN")
-      scope.close()
+      scope.foreach(_.close())
       span.end()
       taskState.remove()
     }
