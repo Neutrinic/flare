@@ -141,6 +141,68 @@ class TracingSparkListenerTest extends FunSuite {
 
   // ── Tests ───────────────────────────────────────────────────────────────────
 
+  // #168. Outcome metrics: one point per job and one per application, for alert rules, which
+  // cannot read spans.
+  private def outcomes(body: TracingSparkListener => Unit)
+    : Map[String, Seq[io.opentelemetry.sdk.metrics.data.HistogramPointData]] = {
+    val reader = InMemoryMetricReader.create()
+    val tp = SdkTracerProvider.builder().build()
+    val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
+    try {
+      val listener = new TracingSparkListener(
+        tp.get("t"), config, Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true,
+      )
+      body(listener)
+      reader.collectAllMetrics().asScala
+        .filter(m => m.getName == "flare.job.duration" || m.getName == "flare.application.duration")
+        .map(m => m.getName -> m.getHistogramData.getPoints.asScala.toSeq)
+        .toMap
+    } finally { tp.close(); mp.close() }
+  }
+
+  private def tagsOf(p: io.opentelemetry.sdk.metrics.data.HistogramPointData): Map[String, String] =
+    p.getAttributes.asMap.asScala.map { case (k, v) => k.getKey -> v.toString }.toMap
+
+  test("each job records its duration, result and query on flare.job.duration") {
+    val points = outcomes { l =>
+      l.describeSqlExecution(Span.getInvalid, 4L, "TPC-H Q3", "", "")
+      l.onJobStart(makeJobStart(0, Seq(0), sqlExecution = Some(4L)))
+      l.onJobEnd(makeJobEnd(0, succeeded = true))
+      l.onJobStart(makeJobStart(1, Seq(1)))
+      l.onJobEnd(makeJobEnd(1, succeeded = false))
+    }("flare.job.duration")
+    assertEquals(points.map(_.getCount).sum, 2L)
+    assertEquals(points.map(tagsOf).toSet, Set(
+      Map("job.result" -> "SUCCESS", "sql.description" -> "TPC-H Q3"),
+      Map("job.result" -> "FAILED"),
+    ))
+  }
+
+  test("an application records its duration once, FAILED when a job failed") {
+    val t0 = System.currentTimeMillis() - 90000L
+    val points = outcomes { l =>
+      l.onApplicationStart(SparkListenerApplicationStart(
+        appName = "nightly", appId = Some("app-1"), time = t0, sparkUser = "spark", appAttemptId = None))
+      l.onJobStart(makeJobStart(0, Seq(0)))
+      l.onJobEnd(makeJobEnd(0, succeeded = false))
+      l.onApplicationEnd(SparkListenerApplicationEnd(t0 + 90000L))
+      l.shutdown() // the normal stop path ends here too, and must not record a second point
+    }("flare.application.duration")
+    assertEquals(points.map(_.getCount).sum, 1L)
+    assertEqualsDouble(points.head.getSum, 90.0, 0.001)
+    assertEquals(tagsOf(points.head), Map("application.result" -> "FAILED"))
+  }
+
+  test("an application stopped without an end event is still recorded, at shutdown") {
+    val points = outcomes { l =>
+      l.onJobStart(makeJobStart(0, Seq(0)))
+      l.onJobEnd(makeJobEnd(0, succeeded = true))
+      l.shutdown()
+    }("flare.application.duration")
+    assertEquals(points.map(_.getCount).sum, 1L)
+    assertEquals(tagsOf(points.head), Map("application.result" -> "SUCCESS"))
+  }
+
   // #136. Stage ids are new for every stage, so as a tag they made one series per stage: past the
   // SDK's 2,000-series limit a long-lived application's stage metrics folded into an overflow
   // series. Stages from one call site must share a series however many there are.
