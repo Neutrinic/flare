@@ -45,7 +45,7 @@ with metrics and logs linked to it. Everything is exported over OTLP to any back
 - **Metrics:** task duration histograms with exemplar links to their traces, shuffle and stage
   totals, and cluster lifecycle metrics.
 - **Logs:** driver and executor logs linked to the span that wrote them.
-- **No code changes:** two JARs on every node and a few `--conf` lines. A [Grafana dashboard](https://neutrinic.github.io/flare/reference/metrics/#dashboard)
+- **No code changes:** two JARs on every node and a few `--conf` lines. A [Grafana dashboard](https://neutrinic.github.io/flare/latest/reference/metrics/#dashboard)
   is included, for any Prometheus-compatible backend.
 
 ![Traces](docs/assets/traces.png)
@@ -63,7 +63,7 @@ spark-submit   --conf "spark.plugins=io.flare.spark.plugin.FlareSparkPlugin"   -
 ```
 
 The agent exports OTLP over HTTP to port 4318 by default; see
-[Exporting](https://neutrinic.github.io/flare/latest/configuration/exporting/) for gRPC, compression and
+[Exporting](https://neutrinic.github.io/flare/latest/latest/configuration/exporting/) for gRPC, compression and
 credentials. Every platform has a recipe: standalone, YARN, Kubernetes, EMR, EMR Serverless, Dataproc, Dataproc
 Serverless and Databricks.
 
@@ -73,14 +73,14 @@ Serverless and Databricks.
 
 | | |
 |---|---|
-| [Quick start](https://neutrinic.github.io/flare/latest/getting-started/quick-start/) | What each setting does, and choosing a JAR |
-| [Deploying](https://neutrinic.github.io/flare/latest/deploying/) | A verified recipe for each platform |
-| [Configuration](https://neutrinic.github.io/flare/latest/configuration/) | Flare's settings, sampling, SQL plans, exporting, noise |
-| [Telemetry volume](https://neutrinic.github.io/flare/latest/configuration/volume/) | Where the volume comes from, and what is turned off by default |
-| [Spans](https://neutrinic.github.io/flare/latest/reference/spans/) and [metrics](https://neutrinic.github.io/flare/latest/reference/metrics/) | Every span, attribute and instrument |
-| [Overhead](https://neutrinic.github.io/flare/latest/reference/overhead/) | What Flare costs, measured |
-| [Upgrading](https://neutrinic.github.io/flare/latest/upgrading/) | What changes between releases |
-| [Troubleshooting](https://neutrinic.github.io/flare/latest/troubleshooting/) | When nothing, or not enough, arrives |
+| [Quick start](https://neutrinic.github.io/flare/latest/latest/getting-started/quick-start/) | What each setting does, and choosing a JAR |
+| [Deploying](https://neutrinic.github.io/flare/latest/latest/deploying/) | A verified recipe for each platform |
+| [Configuration](https://neutrinic.github.io/flare/latest/latest/configuration/) | Flare's settings, sampling, SQL plans, exporting, noise |
+| [Telemetry volume](https://neutrinic.github.io/flare/latest/latest/configuration/volume/) | Where the volume comes from, and what is turned off by default |
+| [Spans](https://neutrinic.github.io/flare/latest/latest/reference/spans/) and [metrics](https://neutrinic.github.io/flare/latest/latest/reference/metrics/) | Every span, attribute and instrument |
+| [Overhead](https://neutrinic.github.io/flare/latest/latest/reference/overhead/) | What Flare costs, measured |
+| [Upgrading](https://neutrinic.github.io/flare/latest/latest/upgrading/) | What changes between releases |
+| [Troubleshooting](https://neutrinic.github.io/flare/latest/latest/troubleshooting/) | When nothing, or not enough, arrives |
 
 ## Overhead
 
@@ -92,7 +92,7 @@ Serverless and Databricks.
 - **The agent's own instrumentation can cost more than Flare** when data is read from object
   storage, so Flare turns it off by default and keeps only what it and your code need.
 
-Method, tables and raw results: [Overhead](https://neutrinic.github.io/flare/latest/reference/overhead/) and
+Method, tables and raw results: [Overhead](https://neutrinic.github.io/flare/latest/latest/reference/overhead/) and
 [`benchmarks/`](benchmarks/README.md).
 
 ## Architecture
@@ -126,7 +126,7 @@ Executor: TaskRunner.run() / ExecutorPlugin.onTaskStart()
 
 ## Building
 
-See [Building Flare](https://neutrinic.github.io/flare/latest/building/). In short: `sbt -DsparkVersion=3.5.1 ++2.13.16 assembly`.
+See [Building Flare](https://neutrinic.github.io/flare/latest/latest/building/). In short: `sbt -DsparkVersion=3.5.1 ++2.13.16 assembly`.
 
 ## License
 
