@@ -14,7 +14,7 @@ import munit.FunSuite
 import org.apache.spark.{FlareTestHelpers, Success, TaskResultLost}
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.scheduler._
-import org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate
+import org.apache.spark.sql.execution.ui.{FlareSqlTestHelpers, SparkListenerSQLAdaptiveExecutionUpdate}
 
 import scala.collection.JavaConverters._
 
@@ -140,6 +140,33 @@ class TracingSparkListenerTest extends FunSuite {
   }
 
   // ── Tests ───────────────────────────────────────────────────────────────────
+
+  // #175. The SQL end handler set OK unconditionally, so a query that failed, including one that
+  // failed before any job started and so left no failed job span, exported a successful SQL span.
+  def endSqlSpan(failure: Option[Throwable]): io.opentelemetry.sdk.trace.data.SpanData = {
+    var result: io.opentelemetry.sdk.trace.data.SpanData = null
+    withListener { (listener, exporter) =>
+      val tracer = SdkTracerProvider.builder()
+        .addSpanProcessor(SimpleSpanProcessor.create(exporter)).build().get("t")
+      SubmitMissingTasksAdviceHelper.activeSQLSpans.put(9L, tracer.spanBuilder("spark.sql.9").startSpan())
+      listener.onOtherEvent(FlareSqlTestHelpers.sqlEnd(9L, failure))
+      result = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.sql.9")
+        .getOrElse(fail("the SQL span was not exported"))
+    }
+    result
+  }
+
+  test("a failed SQL execution exports an ERROR span with the exception") {
+    val span = endSqlSpan(Some(new ArithmeticException("[DIVIDE_BY_ZERO] Division by zero")))
+    assertEquals(span.getStatus.getStatusCode, StatusCode.ERROR)
+    assertEquals(
+      span.getAttributes.get(AttributeKey.stringKey("error.type")), "java.lang.ArithmeticException")
+  }
+
+  test("a successful SQL execution exports an OK span") {
+    assertEquals(endSqlSpan(None).getStatus.getStatusCode, StatusCode.OK)
+  }
+
 
   // #136. Stage ids are new for every stage, so as a tag they made one series per stage: past the
   // SDK's 2,000-series limit a long-lived application's stage metrics folded into an overflow

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A failed SQL execution's span is marked failed**, with the exception's type, message and stack
+  trace, as failed jobs are. It was always `OK`, and a query that failed before any job started
+  left no failed span at all ([#175])
 - **Tasks run inside their stage's trace context again at the default granularity.** Under the
   real agent the context restoration around each task failed silently, so at `stages` (the
   default) and `jobs`, spans made inside a task started their own traces and were dropped, and
@@ -591,3 +594,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#148]: https://github.com/Neutrinic/flare/issues/148
 [#164]: https://github.com/Neutrinic/flare/issues/164
 [#173]: https://github.com/Neutrinic/flare/issues/173
+[#175]: https://github.com/Neutrinic/flare/issues/175
