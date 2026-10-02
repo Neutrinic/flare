@@ -99,7 +99,7 @@ class TaskRunnerAdviceHelperTest extends FunSuite {
         parentSpan.getSpanContext.getSpanId
       )
 
-      scope.close()
+      TaskRunnerAdviceHelper.onExit(scope)
     } finally {
       parentSpan.end()
     }
@@ -148,7 +148,7 @@ class TaskRunnerAdviceHelperTest extends FunSuite {
       val mock = new MockTaskDescription(props)
       val scope = TaskRunnerAdviceHelper.onEnter(mock)
       assert(scope != null)
-      scope.close()
+      TaskRunnerAdviceHelper.onExit(scope)
     } finally {
       parentSpan.end()
     }
@@ -190,7 +190,7 @@ class TaskRunnerAdviceHelperTest extends FunSuite {
         .startSpan()
       childSpan.end()
 
-      scope.close()
+      TaskRunnerAdviceHelper.onExit(scope)
 
       // Verify the child span's parent is the remote parent
       val spans = exporter.getFinishedSpanItems

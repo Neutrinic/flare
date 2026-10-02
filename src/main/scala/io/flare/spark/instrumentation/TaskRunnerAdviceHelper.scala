@@ -35,9 +35,10 @@ object TaskRunnerAdviceHelper {
    * @param taskDescription the `TaskDescription` instance from `TaskRunner.taskDescription`
    *                        field, injected by ByteBuddy's `@Advice.FieldValue`
    * @return an OTEL `Scope` that must be closed in `onExit`, or null if no context
-   *         was extracted (no traceparent, or root context only)
+   *         was extracted (no traceparent, or root context only). Typed `AnyRef`: an
+   *         OpenTelemetry type here breaks under the agent's relocation, see [[TaskRunnerAdvice]]
    */
-  def onEnter(taskDescription: Any): Scope = {
+  def onEnter(taskDescription: Any): AnyRef = {
     if (taskDescription == null) return null
     try {
       val props = getProperties(taskDescription)
@@ -61,10 +62,10 @@ object TaskRunnerAdviceHelper {
    *
    * @param scope the `Scope` returned from `onEnter`, may be null
    */
-  def onExit(scope: Scope): Unit = {
+  def onExit(scope: AnyRef): Unit = {
     if (scope != null) {
       try {
-        scope.close()
+        scope.asInstanceOf[Scope].close()
       } catch {
         case e: Exception =>
           logger.log(Level.FINE, "[Flare] TaskRunner advice exit failed", e)

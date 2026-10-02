@@ -1,6 +1,5 @@
 package io.flare.spark.instrumentation;
 
-import io.opentelemetry.context.Scope;
 import net.bytebuddy.asm.Advice;
 
 /**
@@ -17,17 +16,24 @@ import net.bytebuddy.asm.Advice;
  *
  * <p>Written in Java for reliable bytecode inlining. All real logic lives in
  * {@link TaskRunnerAdviceHelper}.
+ *
+ * <p>The scope crosses this boundary as {@code Object}, never as an OpenTelemetry type (#173). The
+ * agent relocates OpenTelemetry types in this advice to its shaded package before inlining it into
+ * Spark, while the helper it calls resolves from Flare's JAR on the application classpath, where
+ * they are not relocated. A {@code Scope} in the signature therefore names a method the helper does
+ * not have, and the {@code NoSuchMethodError} is swallowed by {@code suppress}, so no context is
+ * restored. Keep OpenTelemetry types out of every advice signature.
  */
 public class TaskRunnerAdvice {
 
     @Advice.OnMethodEnter(suppress = Throwable.class)
-    public static Scope onEnter(
+    public static Object onEnter(
             @Advice.FieldValue("taskDescription") Object taskDescription) {
         return TaskRunnerAdviceHelper.onEnter(taskDescription);
     }
 
     @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class)
-    public static void onExit(@Advice.Enter Scope scope) {
+    public static void onExit(@Advice.Enter Object scope) {
         TaskRunnerAdviceHelper.onExit(scope);
     }
 }
