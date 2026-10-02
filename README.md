@@ -50,6 +50,10 @@ with metrics and logs linked to it. Everything is exported over OTLP to any back
 
 ![Traces](docs/assets/traces.png)
 
+One task's executor logs, found by its span id:
+
+![A task span and its logs](docs/assets/logs.png)
+
 ## Quick start
 
 Put two JARs at the same path on every node, before the JVMs start: the

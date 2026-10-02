@@ -48,6 +48,8 @@ stage across the JVM boundary.
 - **Logs:** driver and executor logs exported with the trace and span id of the task that wrote
   them. See [Exporting](configuration/exporting.md#logs).
 
+![A task span and the executor logs that carry its span id](assets/logs.png)
+
 Everything goes out over OTLP, so any OpenTelemetry backend works: Grafana (Tempo, Mimir, Loki),
 Jaeger, Honeycomb, Datadog and others.
 
