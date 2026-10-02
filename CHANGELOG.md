@@ -8,11 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **`FLARE_SLOW_TASK_MS` no longer orphans spans or log lines.** A task's span was current while it
-  ran, so spans made inside the task (a JDBC query, an HTTP call) and its log lines pointed at it,
-  and when the task finished under the threshold the span was dropped, leaving them pointing at
-  nothing. Under the filter the task span is no longer current: they sit under the stage span,
-  which is always exported. Without the filter nothing changes ([#100])
 - **Tasks run inside their stage's trace context again at the default granularity.** Under the
   real agent the context restoration around each task failed silently, so at `stages` (the
   default) and `jobs`, spans made inside a task started their own traces and were dropped, and
