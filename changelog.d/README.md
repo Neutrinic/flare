@@ -2,6 +2,7 @@
 
 Each pull request adds one file here, named after its issue, such as `176.md`, and does not edit
 `CHANGELOG.md`. Two pull requests never touch the same file, so neither conflicts with the other.
+A change users won't notice, such as a test or CI fix, needs no fragment.
 
 A fragment is a [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) heading followed by its
 entry, written exactly as it will appear in `CHANGELOG.md`:

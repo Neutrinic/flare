@@ -18,6 +18,7 @@ The release form puts every fragment, and anything already under [Unreleased], i
 use, moves the [Unreleased] compare link forward and adds the version's own, then deletes the
 fragments. Run it in the release pull request and commit the result.
 """
+import datetime
 import re
 import sys
 from pathlib import Path
@@ -43,9 +44,12 @@ def parse(text, source):
             if current not in ORDER:
                 errors.append(f"{source}:{n}: unknown heading '{current}', use one of {', '.join(ORDER)}")
             sections.setdefault(current, [])
-        elif line.startswith("- "):
+        elif line.startswith("-"):
             if current is None:
                 errors.append(f"{source}:{n}: entry before any '### Heading'")
+            elif not re.match(r"^- \S", line):
+                # An entry's text starts on its own line: "- " then text, not a bare dash.
+                errors.append(f"{source}:{n}: empty entry, or text not starting on the '- ' line")
             else:
                 sections[current].append(line)
         elif line.startswith("  ") and current and sections[current]:
@@ -73,6 +77,10 @@ def render(sections):
     return "\n\n".join(blocks)
 
 
+def unreleased_of(text):
+    return text.split("## [Unreleased]\n", 1)[1].split("\n## [", 1)[0]
+
+
 def main(argv):
     fragments, errors = load_fragments()
     if errors:
@@ -82,11 +90,22 @@ def main(argv):
         print(f"{len(fragment_files())} changelog fragment(s), well formed")
         return
     if argv == ["--preview"]:
-        print(render(fragments) or "(no fragments)")
+        # What the release would write: anything already under [Unreleased], then the fragments,
+        # through the same reader the release uses.
+        existing, errs = parse(unreleased_of(CHANGELOG.read_text(encoding="utf-8")), "CHANGELOG.md [Unreleased]")
+        if errs:
+            sys.exit("\n".join(errs))
+        for heading, entries in fragments.items():
+            existing.setdefault(heading, []).extend(entries)
+        print(render(existing) or "(nothing to release)")
         return
     if len(argv) != 2 or not re.fullmatch(r"\d+\.\d+\.\d+", argv[0]) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", argv[1]):
         sys.exit(__doc__)
     version, date = argv
+    try:
+        datetime.date.fromisoformat(date)
+    except ValueError:
+        sys.exit(f"not a real date: {date}")  # checked before anything is written or deleted
 
     text = CHANGELOG.read_text(encoding="utf-8")
     head, rest = text.split("## [Unreleased]\n", 1)
