@@ -14,7 +14,7 @@ import munit.FunSuite
 import org.apache.spark.{FlareTestHelpers, Success, TaskResultLost}
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.scheduler._
-import org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate
+import org.apache.spark.sql.execution.ui.{FlareSqlTestHelpers, SparkListenerSQLAdaptiveExecutionUpdate}
 
 import scala.collection.JavaConverters._
 
@@ -140,7 +140,6 @@ class TracingSparkListenerTest extends FunSuite {
   }
 
   // ── Tests ───────────────────────────────────────────────────────────────────
-
   // #168. Outcome metrics: one point per job and one per application, for alert rules, which
   // cannot read spans.
   private def outcomes(body: TracingSparkListener => Unit)
@@ -202,6 +201,101 @@ class TracingSparkListenerTest extends FunSuite {
     assertEquals(points.map(_.getCount).sum, 1L)
     assertEquals(tagsOf(points.head), Map("application.result" -> "SUCCESS"))
   }
+
+
+  // #175. The SQL end handler set OK unconditionally, so a query that failed, including one that
+  // failed before any job started and so left no failed job span, exported a successful SQL span.
+  def endSqlSpan(failure: Option[Throwable]): io.opentelemetry.sdk.trace.data.SpanData = {
+    var result: io.opentelemetry.sdk.trace.data.SpanData = null
+    withListener { (listener, exporter) =>
+      val tracer = SdkTracerProvider.builder()
+        .addSpanProcessor(SimpleSpanProcessor.create(exporter)).build().get("t")
+      SubmitMissingTasksAdviceHelper.activeSQLSpans.put(9L, tracer.spanBuilder("spark.sql.9").startSpan())
+      listener.onOtherEvent(FlareSqlTestHelpers.sqlEnd(9L, failure))
+      result = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.sql.9")
+        .getOrElse(fail("the SQL span was not exported"))
+    }
+    result
+  }
+
+  test("a failed SQL execution exports an ERROR span with the exception") {
+    val span = endSqlSpan(Some(new ArithmeticException("[DIVIDE_BY_ZERO] Division by zero")))
+    assertEquals(span.getStatus.getStatusCode, StatusCode.ERROR)
+    assertEquals(
+      span.getAttributes.get(AttributeKey.stringKey("error.type")), "java.lang.ArithmeticException")
+  }
+
+  test("a successful SQL execution exports an OK span") {
+    assertEquals(endSqlSpan(None).getStatus.getStatusCode, StatusCode.OK)
+  }
+
+  // #178. When the listener bus lags, the scheduler advice sees a SQL job before the listener sees
+  // the execution start. It now creates the SQL span; the listener must describe that span, not
+  // start a second one, or the job stays parented to a span that is never exported.
+  test("a SQL span the scheduler advice created first is adopted, not duplicated") {
+    withListener { (listener, exporter) =>
+      val tracer = SdkTracerProvider.builder()
+        .addSpanProcessor(SimpleSpanProcessor.create(exporter)).build().get("t")
+      val sql = SubmitMissingTasksAdviceHelper.getOrCreateSqlSpan(3L)(tracer.spanBuilder("spark.sql.3").startSpan())
+      tracer.spanBuilder("spark.job.0")
+        .setParent(io.opentelemetry.context.Context.root().`with`(sql)).startSpan().end()
+
+      listener.onSqlStart(3L, "TPC-H Q3", "", "")
+      listener.shutdown()
+
+      val spans   = exporter.getFinishedSpanItems.asScala
+      val sqlSpans = spans.filter(_.getName == "spark.sql.3")
+      assertEquals(sqlSpans.size, 1, "the listener started a second SQL span")
+      assertEquals(spans.find(_.getName == "spark.job.0").get.getParentSpanId, sqlSpans.head.getSpanId)
+      assertEquals(sqlSpans.head.getAttributes.get(Sql.Description), "TPC-H Q3")
+    }
+  }
+
+  // #177. Stage metrics used to be recorded inside the branch that ends the stage span, so at
+  // `jobs` granularity, where there is no stage span, turning stage spans off turned them off too.
+  test("stage metrics are recorded at jobs granularity, labelled with the SQL description") {
+    val reader = InMemoryMetricReader.create()
+    val tp = SdkTracerProvider.builder().build()
+    val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
+    try {
+      val listener = new TracingSparkListener(
+        tp.get("t"), config.copy(granularity = TraceGranularity.Jobs),
+        Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true,
+      )
+      listener.recordSqlDescription(5L, "TPC-H Q3")
+      listener.onJobStart(makeJobStart(0, Seq(0), sqlExecution = Some(5L)))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      listener.onStageCompleted(makeStageCompletedWithMetrics(0))
+
+      val points = reader.collectAllMetrics().asScala
+        .filter(_.getName == "flare.stage.executor.run_time")
+        .flatMap(_.getHistogramData.getPoints.asScala)
+      assertEquals(points.map(_.getCount).sum, 1L, "no stage run time recorded at jobs granularity")
+      val tags = points.head.getAttributes.asMap.asScala.map { case (k, v) => k.getKey -> v.toString }
+      assertEquals(tags.get("sql.description"), Some("TPC-H Q3"))
+    } finally { tp.close(); mp.close() }
+  }
+
+  // #174. Spans the advice created but the listener never adopted were kept for the life of the
+  // driver. They are dropped, not ended: ending one would export an empty span.
+  test("shutdown clears the advice's job and pending stage spans without exporting them") {
+    withListener { (listener, exporter) =>
+      // Exports to the exporter under test, so ending either span would show up there.
+      val provider = SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(exporter)).build()
+      try {
+        val tracer = provider.get("t")
+        SubmitMissingTasksAdviceHelper.jobSpans.put(41, tracer.spanBuilder("spark.job.41").startSpan())
+        SubmitMissingTasksAdviceHelper.pendingStageSpans.put(42, tracer.spanBuilder("spark.stage.42").startSpan())
+        listener.shutdown()
+        assert(SubmitMissingTasksAdviceHelper.jobSpans.isEmpty)
+        assert(SubmitMissingTasksAdviceHelper.pendingStageSpans.isEmpty)
+        val exported = exporter.getFinishedSpanItems.asScala.map(_.getName)
+        assert(!exported.contains("spark.job.41"), s"an unadopted job span was exported: $exported")
+        assert(!exported.contains("spark.stage.42"), s"an unadopted stage span was exported: $exported")
+      } finally provider.close()
+    }
+  }
+
 
   // #136. Stage ids are new for every stage, so as a tag they made one series per stage: past the
   // SDK's 2,000-series limit a long-lived application's stage metrics folded into an overflow

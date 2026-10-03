@@ -25,11 +25,31 @@ Nineteen instruments, all under the `io.flare.spark` meter, all turned off by
 | `flare.storage.disk.bytes` | updowncounter | `By` | `executor.id` |
 | `flare.storage.blocks` | updowncounter | `{block}` | `executor.id` |
 
+## Histogram buckets
+
+| Histogram | Bucket boundaries |
+|---|---|
+| `flare.task.duration` | 5, 10, 25, 50, 100, 250, 500 ms; 1, 2.5, 5, 10, 30 s; 1, 2, 5, 10, 30, 60 min |
+| `flare.stage.executor.run_time` | 100 ms; 1, 5, 10, 30 s; 1, 5, 10, 30 min; 1, 3, 10, 24 h. Summed across the stage's tasks, so far longer than its wall-clock time |
+| `flare.task.records_throughput` | 10 to 100,000,000 records/s, one boundary per power of ten |
+
+They are set as advice on each instrument, so a view configured in the SDK or the agent overrides them.
+
 No label is new for every stage. `stage.name` and `sql.description` are call sites, such as
 `collect at Job.scala:42`, so stages from the same line of code share a series, and the number of
 series depends on the code, not on how long the application runs. A single stage is on its
 `spark.stage` span. Up to 1.2.0 the task and stage metrics also carried `stage.id`, which made one
 series per stage ([#136](https://github.com/Neutrinic/flare/issues/136)).
+
+`executor.id` is the one label that grows with the application's lifetime. Spark never reuses an
+executor id, and with cumulative temporality, the default, the SDK keeps every series it has seen
+and re-sends it on each export, including those of executors long gone. Delta temporality
+(`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`) sends only what changed since the last
+export, though the backend still stores a series per id. On a fixed cluster that is a handful of series. Under dynamic
+allocation or autoscaling, an application that runs for days adds tens to hundreds of ids a day,
+and past 2,000 series per instrument the SDK folds new ones into a single overflow series, losing
+the per-executor breakdown. Restarting the application starts the count again
+([#144](https://github.com/Neutrinic/flare/issues/144)).
 
 The counters are only incremented for non-zero values, so a stage that read nothing produces no
 `flare.stage.input.bytes` series rather than a flat zero one.
@@ -53,15 +73,17 @@ a counter is the cardinality problem these instruments exist to avoid.
 Spark registers one there too. Expect it to sit one above the executor count.
 
 The `flare.storage.*` instruments require `FLARE_TRACK_BLOCK_UPDATES=true`. They track running
-totals per executor; block ids are never used as tags. Spark signals a block being dropped by
-sending an invalid `StorageLevel` carrying the sizes it had, so a drop is recorded as a negative
-delta rather than a separate event.
+totals per executor; block ids are never used as tags. Spark reports each block's state, again
+whenever it changes, such as moving from memory to disk, so Flare keeps each block's last reported
+sizes on the driver and records only the difference. An invalid `StorageLevel` means the block is
+gone; when a block manager is removed, its blocks are taken out of the totals with it.
 
 `flare.task.*` are recorded on the executor while the task span's scope is still open, so the SDK's
 default `trace_based` exemplar filter attaches an exemplar linking each measurement back to its
-trace. Under `FLARE_SLOW_TASK_MS` the metric is recorded *after* the suppressed span's scope closes,
-so a fast task still contributes to the histogram but carries no exemplar pointing at a trace that
-was never exported. Some backends drop exemplars by default: Mimir's
+trace. Under `FLARE_SLOW_TASK_MS` a fast task's span is dropped, so its measurement's exemplar
+names the task's stage instead, which is always exported, when the stage's context is current on
+the executor thread. A task that carries no trace context, such as one from an unsampled
+application, gets no exemplar. A slow task's exemplar names the task span. Some backends drop exemplars by default: Mimir's
 `max_global_exemplars_per_user` is `0` unless you set it.
 
 ## Outcomes
