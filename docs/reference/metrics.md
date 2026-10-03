@@ -29,6 +29,16 @@ series depends on the code, not on how long the application runs. A single stage
 `spark.stage` span. Up to 1.2.0 the task and stage metrics also carried `stage.id`, which made one
 series per stage ([#136](https://github.com/Neutrinic/flare/issues/136)).
 
+`executor.id` is the one label that grows with the application's lifetime. Spark never reuses an
+executor id, and with cumulative temporality, the default, the SDK keeps every series it has seen
+and re-sends it on each export, including those of executors long gone. Delta temporality
+(`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`) sends only what changed since the last
+export, though the backend still stores a series per id. On a fixed cluster that is a handful of series. Under dynamic
+allocation or autoscaling, an application that runs for days adds tens to hundreds of ids a day,
+and past 2,000 series per instrument the SDK folds new ones into a single overflow series, losing
+the per-executor breakdown. Restarting the application starts the count again
+([#144](https://github.com/Neutrinic/flare/issues/144)).
+
 The counters are only incremented for non-zero values, so a stage that read nothing produces no
 `flare.stage.input.bytes` series rather than a flat zero one.
 
