@@ -83,11 +83,12 @@ class FlareExecutorPlugin extends ExecutorPlugin {
           retryTasksOnly = false, taskStageIds = Set.empty, taskStagePattern = None,
           metricsEnabled = false)
     }
-    metrics = FlareMetrics.create(config.metricsEnabled)
+    // FLARE_ENABLED=false is the kill switch for everything Flare emits, metrics included (#176).
+    metrics = FlareMetrics.create(config.enabled && config.metricsEnabled)
     executorId = ctx.executorID()
     logger.info(s"[Flare] Executor plugin initialized (executorId=$executorId, granularity=${config.granularity}, " +
       s"maxSpans=${config.maxSpansPerTrace}, " +
-      s"taskTracing=${config.tracesTasks}, metrics=${config.metricsEnabled})")
+      s"taskTracing=${config.tracesTasks}, metrics=${config.enabled && config.metricsEnabled})")
 
     // Stage name is not available on the executor in Phase 1 (ExecutorPlugin has no access to
     // stage metadata — only stageId from TaskContext). Warn if someone configures the pattern
@@ -104,6 +105,9 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     // on this thread, whatever path the rest of this method takes.
     taskState.set(None)
     taskMetricState.set(None)
+
+    // Disabled: no span and no measurement, so nothing is armed for endTask to record.
+    if (!config.enabled) return
 
     val taskContext = TaskContext.get()
     if (taskContext == null) {

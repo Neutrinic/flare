@@ -28,7 +28,7 @@ class FlareExecutorPluginTest extends FunSuite {
 
   private val flareProps = List(
     "FLARE_TRACE_GRANULARITY", "FLARE_SLOW_TASK_MS", "FLARE_MAX_SPANS_PER_TRACE",
-    "FLARE_SAMPLING_RATIO", "FLARE_METRICS_ENABLED",
+    "FLARE_SAMPLING_RATIO", "FLARE_METRICS_ENABLED", "FLARE_ENABLED",
   )
 
   override def afterEach(context: AfterEach): Unit = {
@@ -164,6 +164,17 @@ class FlareExecutorPluginTest extends FunSuite {
 
     assertEquals(run.exportedTraceIds, Set.empty[String])
     assertEquals(run.durationCount, 3L)
+  }
+
+  test("FLARE_ENABLED=false records no task metrics and exports no spans (#176)") {
+    // The kill switch has to stop everything Flare emits, not only spans: at `all` a task would
+    // otherwise be both traced and measured.
+    sys.props("FLARE_ENABLED") = "false"
+    sys.props("FLARE_TRACE_GRANULARITY") = "all"
+    val run = runTasks(taskCount = 3)
+
+    assertEquals(run.exportedTraceIds, Set.empty[String])
+    assertEquals(run.durationCount, 0L)
   }
 
   // The executor is the only place Spark exposes the failure as structured fields rather than a
