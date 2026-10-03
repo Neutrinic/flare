@@ -1,6 +1,6 @@
 # Metrics
 
-Seventeen instruments, all under the `io.flare.spark` meter, all turned off by
+Nineteen instruments, all under the `io.flare.spark` meter, all turned off by
 `FLARE_METRICS_ENABLED=false`.
 
 | Instrument | Kind | Unit | Labels |
@@ -14,6 +14,8 @@ Seventeen instruments, all under the `io.flare.spark` meter, all turned off by
 | `flare.stage.output.bytes` | counter | `By` | `stage.name`, `sql.description` |
 | `flare.stage.shuffle.read_bytes` | counter | `By` | `stage.name`, `sql.description` |
 | `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.name`, `sql.description` |
+| `flare.job.duration` | histogram | `ms` | `job.result`, `sql.description` |
+| `flare.application.duration` | histogram | `s` | `application.result` |
 | `flare.executor.count` | updowncounter | `{executor}` | `executor.id` |
 | `flare.executor.removed` | counter | `{executor}` | `executor.id`, `reason` |
 | `flare.executor.excluded` | counter | `{executor}` | `executor.id` |
@@ -83,6 +85,28 @@ names the task's stage instead, which is always exported, when the stage's conte
 the executor thread. A task that carries no trace context, such as one from an unsampled
 application, gets no exemplar. A slow task's exemplar names the task span. Some backends drop exemplars by default: Mimir's
 `max_global_exemplars_per_user` is `0` unless you set it.
+
+## Outcomes
+
+`flare.job.duration` and `flare.application.duration` record one point per job and one per
+application, from the driver, so a scheduled pipeline can be alerted on from metrics: whether a
+run happened, whether it failed, and whether a query took longer than its last runs. The same
+facts are on the spans, which alert rules cannot read.
+
+- **`flare.job.duration`** runs from the job's submission to its end, by Spark's own clock.
+  `job.result` is `SUCCESS` or `FAILED`; `sql.description` is set when the job belongs to a query,
+  so one query's runs share a series.
+- **`flare.application.duration`** is recorded once, when the application ends: on a normal stop,
+  or at shutdown when the JVM goes down without one. Spark reports no result for an application,
+  so `application.result` is `FAILED` when **any of its jobs failed**. An application that catches
+  a failed job and carries on still reads `FAILED`, and one that fails outside any job, in driver
+  code or before its first query runs, reads `SUCCESS`.
+
+Neither carries an application or run id, so successive runs of the same service can be compared.
+`sql.description`, here and on the stage metrics, is the query's call site, such as
+`collect at Job.scala:42`, or the job description when you set one with `setJobDescription`. Keep
+those descriptions stable: one that embeds a date, a batch id or any value that changes per run
+makes a new series every time.
 
 ## In Prometheus
 

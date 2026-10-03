@@ -57,6 +57,14 @@ class TracingSparkListener(
   // see #48 and Stage.SqlDescription.
   private val stageToSql:      TrieMap[Int, Long]    = TrieMap.empty
 
+  // Outcome metrics (#168). A job's start time and SQL execution, kept from its start to its end;
+  // whether any job has failed; and when the application started, from its start event when the
+  // listener sees one and from the listener's creation otherwise.
+  private val jobStarts:   TrieMap[Int, (Long, Option[Long])] = TrieMap.empty
+  @volatile private var anyJobFailed: Boolean = false
+  @volatile private var applicationStartMs: Long = System.currentTimeMillis()
+  private val applicationRecorded = new java.util.concurrent.atomic.AtomicBoolean(false)
+
   // Last reported (memory, disk) bytes of every stored block, per block manager, so block updates,
   // which report state, can be recorded as changes (#179). Only filled under
   // FLARE_TRACK_BLOCK_UPDATES, and emptied as blocks and block managers go.
@@ -79,10 +87,13 @@ class TracingSparkListener(
 
   // ── Application ──────────────────────────────────────────────────────────────
 
-  override def onApplicationStart(event: SparkListenerApplicationStart): Unit =
+  override def onApplicationStart(event: SparkListenerApplicationStart): Unit = {
+    applicationStartMs = event.time
     logger.info(s"[Flare] Application started: ${event.appName}")
+  }
 
   override def onApplicationEnd(event: SparkListenerApplicationEnd): Unit = {
+    recordApplicationEnd(event.time)
     applicationSpan.foreach { span =>
       span.setStatus(StatusCode.OK)
       span.end()
@@ -94,6 +105,8 @@ class TracingSparkListener(
 
   override def onJobStart(event: SparkListenerJobStart): Unit =
     if (config.tracesJobs) safeHandle("onJobStart") {
+      jobStarts.put(event.jobId, (event.time, sqlExecutionIdOf(event.properties)))
+
       // Check if SubmitMissingTasksAdvice pre-created a job span for this jobId.
       // The advice hooks DAGScheduler.submitMissingTasks and creates the job span
       // on first call for a given jobId. We adopt (get, don't remove) it here.
@@ -152,6 +165,8 @@ class TracingSparkListener(
         stageToSql.remove(stageId)
       }
     }
+
+    recordJobEnd(event)
 
     // Clean up pre-created job span from the helper's map
     SubmitMissingTasksAdviceHelper.removeJobSpan(event.jobId)
@@ -521,11 +536,44 @@ class TracingSparkListener(
 
   // ── Cleanup ───────────────────────────────────────────────────────────────────
 
+  /**
+   * One point per job on `flare.job.duration` (#168), labelled with its result and its query.
+   * Taken from Spark's own start and end times. Done before the SQL description can be dropped:
+   * a job always ends before its SQL execution does.
+   */
+  private def recordJobEnd(event: SparkListenerJobEnd): Unit = safeHandle("onJobEnd metrics") {
+    val failed = event.jobResult != JobSucceeded
+    if (failed) anyJobFailed = true
+    jobStarts.remove(event.jobId).foreach { case (startMs, sqlExecution) =>
+      metrics.foreach(_.jobDuration.record(
+        math.max(0L, event.time - startMs).toDouble,
+        MetricAttributes.forJob(if (failed) "FAILED" else "SUCCESS", sqlExecution.flatMap(sqlDescriptions.get)),
+      ))
+    }
+  }
+
+  /**
+   * One point on `flare.application.duration` (#168), once, however the application ends: from its
+   * end event on a normal stop, or from shutdown when the JVM is going down without one.
+   *
+   * Spark reports no result for an application, so `application.result` is FAILED when any of its
+   * jobs failed. An application can catch a failed job and go on to succeed, and can fail outside
+   * any job; the documentation says so.
+   */
+  private def recordApplicationEnd(endMs: Long): Unit =
+    if (applicationRecorded.compareAndSet(false, true)) safeHandle("onApplicationEnd metrics") {
+      metrics.foreach(_.applicationDuration.record(
+        math.max(0L, endMs - applicationStartMs) / 1000.0,
+        MetricAttributes.forApplication(if (anyJobFailed) "FAILED" else "SUCCESS"),
+      ))
+    }
+
   /** Read by the scheduler advice, which creates stage spans only when the listener adopts them. */
   private[spark] def tracesStages: Boolean = config.tracesStages
 
   def shutdown(): Unit = {
     logger.info("[Flare] Shutting down listener, ending any open spans")
+    recordApplicationEnd(System.currentTimeMillis())
     Seq[TrieMap[_, Span]](activeStageSpans, activeJobSpans)
       .foreach { m => m.values.foreach(_.end()); m.clear() }
     // End any open SQL spans from the shared map

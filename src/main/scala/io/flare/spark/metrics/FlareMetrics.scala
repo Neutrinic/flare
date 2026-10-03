@@ -140,6 +140,26 @@ class FlareMetrics(meter: Meter) {
     .setUnit("By")
     .build()
 
+  // ── Outcomes (#168) ────────────────────────────────────────────────────
+  //
+  // One data point per job and one per application, so a scheduled pipeline can be alerted on
+  // from metrics: whether a run happened, whether it failed, and whether a query took longer than
+  // its last runs. Spans carry the same facts, but alert rules cannot read spans.
+
+  val jobDuration: DoubleHistogram = meter
+    .histogramBuilder("flare.job.duration")
+    .setDescription("Job duration, from submission to end")
+    .setUnit("ms")
+    .setExplicitBucketBoundariesAdvice(FlareMetrics.JobDurationBucketsMs)
+    .build()
+
+  val applicationDuration: DoubleHistogram = meter
+    .histogramBuilder("flare.application.duration")
+    .setDescription("Application duration, recorded once when it ends")
+    .setUnit("s")
+    .setExplicitBucketBoundariesAdvice(FlareMetrics.ApplicationDurationBucketsS)
+    .build()
+
   val storageBlocks: LongUpDownCounter = meter
     .upDownCounterBuilder("flare.storage.blocks")
     .setDescription("Blocks currently held by the block manager")
@@ -148,6 +168,16 @@ class FlareMetrics(meter: Meter) {
 }
 
 object FlareMetrics {
+
+  /** A job, 100 ms to a day. */
+  private[spark] val JobDurationBucketsMs: java.util.List[java.lang.Double] = bounds(
+    100, 500, 1000, 5000, 10000, 30000, 60000, 300000, 600000, 1800000, 3600000, 10800000, 86400000,
+  )
+
+  /** An application, 10 s to a day. */
+  private[spark] val ApplicationDurationBucketsS: java.util.List[java.lang.Double] = bounds(
+    10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 14400, 28800, 86400,
+  )
 
   private def bounds(values: Double*): java.util.List[java.lang.Double] =
     java.util.Arrays.asList(values.map(java.lang.Double.valueOf): _*)

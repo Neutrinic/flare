@@ -14,6 +14,8 @@ object MetricAttributes {
   private val StageName      = AttributeKey.stringKey("stage.name")
   private val SqlDescription = AttributeKey.stringKey("sql.description")
   private val Result         = AttributeKey.stringKey("task.result")
+  private val JobResult      = AttributeKey.stringKey("job.result")
+  private val AppResult      = AttributeKey.stringKey("application.result")
 
   /**
    * Tags for task-level instruments, recorded on the executor.
@@ -55,6 +57,21 @@ object MetricAttributes {
     sqlDescription.filter(_.nonEmpty).foreach(b.put(SqlDescription, _))
     b.build()
   }
+
+  /**
+   * Tags for the job outcome histogram (#168): the result, and the SQL execution's description when
+   * the job belongs to one. Both are bounded by the code, not by how long the application runs, so
+   * one query's runs share a series and can be compared with each other.
+   */
+  def forJob(result: String, sqlDescription: Option[String]): Attributes = {
+    val b = Attributes.builder().put(JobResult, result)
+    sqlDescription.filter(_.nonEmpty).foreach(b.put(SqlDescription, _))
+    b.build()
+  }
+
+  /** Tags for the application outcome histogram (#168). */
+  def forApplication(result: String): Attributes =
+    Attributes.builder().put(AppResult, result).build()
 
   /**
    * Tags for cluster lifecycle instruments (#49).
