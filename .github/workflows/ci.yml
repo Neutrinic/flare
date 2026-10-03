@@ -67,3 +67,17 @@ jobs:
 
       - name: Test assembled OpenTelemetry extension
         run: sbt -DsparkVersion=3.5.1 ++2.13.16 "AgentTest / test"
+
+  # The example alert rules (#92): valid, and the promtool unit tests pass. Pinned to the
+  # Prometheus release they were written against.
+  alert-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check and test the example alert rules
+        run: |
+          docker run --rm -v "$PWD/alerting:/r" -w /r --entrypoint promtool prom/prometheus:v3.15.0 check rules flare-rules.yml
+          docker run --rm -v "$PWD/alerting:/r" -w /r --entrypoint promtool prom/prometheus:v3.15.0 test rules flare-rules.test.yml
