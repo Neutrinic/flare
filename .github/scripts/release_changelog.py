@@ -62,6 +62,9 @@ def parse(text, source):
 def load_fragments():
     merged, errors = {}, []
     for path in fragment_files():
+        if not re.fullmatch(r"[0-9]+", path.stem):
+            errors.append(f"{path.name}: name it after its issue number, such as 176.md")
+            continue
         sections, errs = parse(path.read_text(encoding="utf-8"), path.name)
         errors += errs
         if not any(sections.values()):
@@ -122,6 +125,8 @@ def main(argv):
     body = render(existing)
     lines = tail.rstrip("\n").split("\n")
     previous = next(m.group(1) for l in lines for m in [re.match(r"^\[(\d+\.\d+\.\d+)\]: ", l)] if m)
+    if tuple(map(int, version.split("."))) <= tuple(map(int, previous.split("."))):
+        sys.exit(f"{version} is not newer than the latest release, {previous}")
     lines = [f"[Unreleased]: {REPO}/compare/v{version}...HEAD" if l.startswith("[Unreleased]: ") else l for l in lines]
     at = next(i for i, l in enumerate(lines) if l.startswith("[Unreleased]: "))
     lines.insert(at + 1, f"[{version}]: {REPO}/compare/v{previous}...v{version}")
