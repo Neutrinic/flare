@@ -12,6 +12,7 @@ import org.apache.spark.FlareJobResultAccess
 import org.apache.spark.scheduler._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.sql.execution.ui.{
+  FlareSqlEndAccess,
   SparkListenerSQLAdaptiveExecutionUpdate,
   SparkListenerSQLExecutionEnd,
   SparkListenerSQLExecutionStart,
@@ -480,7 +481,12 @@ class TracingSparkListener(
         case e: SparkListenerSQLExecutionEnd => safeHandle("onSQLEnd") {
           Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.remove(e.executionId))
             .foreach { span =>
-              span.setStatus(StatusCode.OK)
+              // A query can fail before any job starts, leaving no failed job span: the SQL span
+              // is then the only place the failure shows (#175).
+              FlareSqlEndAccess.failure(e) match {
+                case Some(t) => FailureDetail.record(span, FailureDetail.fromThrowable(t))
+                case None    => span.setStatus(StatusCode.OK)
+              }
               span.end()
             }
           // Removed unconditionally: an execution whose span was never created still recorded
