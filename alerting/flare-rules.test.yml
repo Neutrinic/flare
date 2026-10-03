@@ -96,6 +96,27 @@ tests:
         alertname: FlareExecutorsLost
         exp_alerts: []
 
+  # Volume tests: yesterday's run finished at 1,000 bytes (day-1). Today's run is day-2, and has
+  # finished only once its application recorded flare_application_duration.
+
+  # A run in progress is not compared, however little it has read so far; once it finishes at the
+  # same volume, nothing fires either.
+  - interval: 1h
+    input_series:
+      - series: 'flare_stage_input_bytes_total{job="etl-driver", instance="day-1", sql_description="load orders"}'
+        values: "1000 1000 1000 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _"
+      - series: 'flare_stage_input_bytes_total{job="etl-driver", instance="day-2", sql_description="load orders"}'
+        values: "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 100 100 1000 1000 1000"
+      - series: 'flare_application_duration_seconds_count{job="etl-driver", instance="day-2", application_result="SUCCESS"}'
+        values: "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 1 1 1"
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: FlareInputVolumeDropped
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: FlareInputVolumeDropped
+        exp_alerts: []
+
   # Half yesterday's input fires.
   - interval: 1h
     input_series:
@@ -103,6 +124,8 @@ tests:
         values: "1000 1000 1000 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _"
       - series: 'flare_stage_input_bytes_total{job="etl-driver", instance="day-2", sql_description="load orders"}'
         values: "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 300 300 300"
+      - series: 'flare_application_duration_seconds_count{job="etl-driver", instance="day-2", application_result="SUCCESS"}'
+        values: "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 1 1 1"
     alert_rule_test:
       - eval_time: 25h
         alertname: FlareInputVolumeDropped
@@ -120,6 +143,8 @@ tests:
       - series: 'flare_stage_input_bytes_total{job="etl-driver", instance="day-1", sql_description="load orders"}'
         values: "1000 1000 1000 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _"
       - series: 'flare_job_duration_milliseconds_count{job="etl-driver", instance="day-2", sql_description="load orders", job_result="SUCCESS"}'
+        values: "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 1 1 1"
+      - series: 'flare_application_duration_seconds_count{job="etl-driver", instance="day-2", application_result="SUCCESS"}'
         values: "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 1 1 1"
     alert_rule_test:
       - eval_time: 25h

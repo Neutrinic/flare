@@ -54,14 +54,21 @@ groups:
       # silent failure of a load whose upstream delivered a partial or empty drop. Assumes a daily
       # schedule; change the offset for other cadences.
       #
+      # Only finished runs are compared: a run's input grows as its stages complete, so comparing a
+      # run in progress with yesterday's total fires partway through a healthy run. A run has
+      # finished once its application recorded flare.application.duration, from the same driver,
+      # so the check matches on `instance` before aggregating, and an earlier finished run cannot
+      # vouch for one still running. An application that never ends is never compared.
+      #
       # The second half catches a run that read nothing: Flare records no input bytes for a stage
-      # that read none, so there is no current series to compare. It fires when the query ran (a
-      # job of it finished) and read input yesterday, but has no input series today.
+      # that read none, so there is no current series to compare. It fires when a finished run ran
+      # the query (a job of it finished), the query read input yesterday, and that run has none.
       - alert: FlareInputVolumeDropped
         expr: |
           (
             sum by (job, sql_description) (
               max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h])
+              and on (job, instance) max_over_time({__name__=~"flare_application_duration(_seconds)?_count"}[2h])
             )
             < 0.5 * sum by (job, sql_description) (
               max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h] offset 1d)
@@ -71,12 +78,14 @@ groups:
           (
             sum by (job, sql_description) (
               max_over_time({__name__=~"flare_job_duration(_milliseconds)?_count", sql_description!=""}[2h])
+              and on (job, instance) max_over_time({__name__=~"flare_application_duration(_seconds)?_count"}[2h])
             )
             and on (job, sql_description) sum by (job, sql_description) (
               max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h] offset 1d)
             )
             unless on (job, sql_description) sum by (job, sql_description) (
               max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h])
+              and on (job, instance) max_over_time({__name__=~"flare_application_duration(_seconds)?_count"}[2h])
             )
           )
         labels:
