@@ -53,13 +53,31 @@ groups:
       # A query read less than half the bytes it read at the same time the day before: the classic
       # silent failure of a load whose upstream delivered a partial or empty drop. Assumes a daily
       # schedule; change the offset for other cadences.
+      #
+      # The second half catches a run that read nothing: Flare records no input bytes for a stage
+      # that read none, so there is no current series to compare. It fires when the query ran (a
+      # job of it finished) and read input yesterday, but has no input series today.
       - alert: FlareInputVolumeDropped
         expr: |
-          sum by (job, sql_description) (
-            max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h])
+          (
+            sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h])
+            )
+            < 0.5 * sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h] offset 1d)
+            )
           )
-          < 0.5 * sum by (job, sql_description) (
-            max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h] offset 1d)
+          or
+          (
+            sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_job_duration(_milliseconds)?_count", sql_description!=""}[2h])
+            )
+            and on (job, sql_description) sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h] offset 1d)
+            )
+            unless on (job, sql_description) sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h])
+            )
           )
         labels:
           severity: warning
@@ -73,15 +91,18 @@ groups:
       # the median is routinely above 10, so such a rule fired on healthy runs. See the per-stage
       # TraceQL search in docs/configuration/alerting.md.
 
-      # Executors lost for reasons other than a dynamic-allocation scale-down. Each removed executor
-      # is a new series that starts at 1, so the series are summed first, giving one counter whose
-      # increase does show each removal.
+      # Executors lost for reasons other than a dynamic-allocation scale-down, across all such
+      # reasons. Each removed executor is its own series (executor.id) that starts at 1, and
+      # increase() reads zero on a series that starts that way, including when several appear in
+      # the same scrape. So this counts the removal series present now that were not present 15
+      # minutes ago. The reasons are on the metric: flare_executor_removed by reason.
       - alert: FlareExecutorsLost
         expr: |
-          increase((
-            sum by (job, reason) ({__name__=~"flare_executor_removed(_total)?", reason!="idle_or_decommissioned"})
-          )[15m:1m]) > 2
+          count by (job) (
+            {__name__=~"flare_executor_removed(_total)?", reason!="idle_or_decommissioned"}
+            unless {__name__=~"flare_executor_removed(_total)?", reason!="idle_or_decommissioned"} offset 15m
+          ) > 2
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.job }}: executors lost ({{ $labels.reason }})"
+          summary: "{{ $labels.job }}: more than two executors lost in 15 minutes"

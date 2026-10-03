@@ -2,8 +2,10 @@
 
 A scheduled pipeline has an expected shape: it runs on a cadence, reads about as much as last time,
 and takes about as long. The useful alerts compare each run with the runs before it. Flare's
-metrics carry no run or application id, so successive runs of a service share series and can be
-compared.
+metrics carry no run or application id, so once the per-run `instance` label is aggregated away,
+successive runs of a service share the labels the rules compare on. Each run still has series of
+its own, which is why the rules below look for series that appeared rather than using
+`increase()`.
 
 The repository ships example Prometheus rules,
 [`alerting/flare-rules.yml`](https://github.com/Neutrinic/flare/blob/main/alerting/flare-rules.yml),
@@ -21,7 +23,7 @@ application.
 | `FlareApplicationFailed` | A run ended in the last hour with a failed job | Spark reports no result for an application, so Flare's `application.result` is `FAILED` when any job failed. An application that fails outside any job is not caught |
 | `FlareJobFailed` | A job failed in the last hour, per query | For pipelines that catch a failed job and carry on |
 | `FlareQuerySlowerThanUsual` | A query's p95 job duration in its latest runs is more than twice its p95 over the previous week | Needs a week of history. Queries are told apart by `sql.description`, so give yours descriptions with `setJobDescription` |
-| `FlareInputVolumeDropped` | A query read less than half the bytes it read at the same time the day before | The classic silent failure: an upstream that delivered a partial or empty drop, and a load that succeeded on it. Assumes a daily schedule; change `offset 1d` for other cadences |
+| `FlareInputVolumeDropped` | A query read less than half the bytes it read at the same time the day before, or ran and read nothing at all | The classic silent failure: an upstream that delivered a partial or empty drop, and a load that succeeded on it. A stage that reads nothing records no input bytes, so an empty run is caught separately: the query ran, read input yesterday, and has none today. Assumes a daily schedule; change `offset 1d` for other cadences |
 
 ### A run that did not happen
 
@@ -46,7 +48,7 @@ fires for a run that never started and for one that is still running past its wi
 
 | Alert | Fires when |
 |---|---|
-| `FlareExecutorsLost` | More than two executors were removed in 15 minutes for a reason other than a dynamic-allocation scale-down |
+| `FlareExecutorsLost` | More than two executors were removed in 15 minutes, for any reason other than a dynamic-allocation scale-down, counted across reasons. `flare_executor_removed` has the reason of each |
 
 There is no skew rule. Skew only means something within one stage, and the task metrics carry no
 stage label, since a label per stage creates a series per stage
@@ -58,8 +60,11 @@ below.
 ## On the spans
 
 Several diagnoses are only on the spans, as stage attributes, which alert rules cannot read. They
-are TraceQL searches in Tempo; Grafana can alert on TraceQL metrics queries where Tempo's metrics
-generator is set up.
+are TraceQL searches in Tempo. The two TraceQL metrics queries below, using `count_over_time` and
+`quantile_over_time`, need a Tempo version with TraceQL metrics; on Tempo 2.6, which the
+[local stack](../getting-started/local-stack.md) runs, that also means the metrics generator's
+`local-blocks` processor, without which Grafana reports "localblocks processor not found". Check
+Tempo's documentation for your version.
 
 | Diagnosis | TraceQL |
 |---|---|
@@ -77,10 +82,12 @@ The plan-change search is a TraceQL metrics query, counting one query's executio
 { span.spark.sql.description = "load orders" } | count_over_time() by (span.spark.sql.plan.fingerprint)
 ```
 
-Skew is the task duration's p99 against its median, per stage:
+Skew is the task duration's p99 against its median, per stage. Stage ids restart in every
+application, so run it for one service over one run's time range; a range covering two runs mixes
+their stages:
 
 ```text
-{ name = "spark.task.executor" } | quantile_over_time(duration, .5, .99) by (span.spark.stage.id)
+{ resource.service.name = "nightly-etl-executor" && name = "spark.task.executor" } | quantile_over_time(duration, .5, .99) by (span.spark.stage.id)
 ```
 
 ## How the rules read the metrics

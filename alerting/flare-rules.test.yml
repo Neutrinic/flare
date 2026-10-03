@@ -56,9 +56,45 @@ tests:
           - exp_labels:
               severity: warning
               job: etl-driver
-              reason: lost
             exp_annotations:
-              summary: "etl-driver: executors lost (lost)"
+              summary: "etl-driver: more than two executors lost in 15 minutes"
+      # Long past the removals, nothing is new: resolved.
+      - eval_time: 22m
+        alertname: FlareExecutorsLost
+        exp_alerts: []
+
+  # Three removals in the same scrape, for three different reasons, fire.
+  - interval: 1m
+    input_series:
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="1", reason="lost"}'
+        values: "_ _ 1x20"
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="2", reason="killed"}'
+        values: "_ _ 1x20"
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="3", reason="heartbeat_timeout"}'
+        values: "_ _ 1x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FlareExecutorsLost
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: etl-driver
+            exp_annotations:
+              summary: "etl-driver: more than two executors lost in 15 minutes"
+
+  # A dynamic-allocation scale-down of three executors does not fire.
+  - interval: 1m
+    input_series:
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="1", reason="idle_or_decommissioned"}'
+        values: "_ _ 1x20"
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="2", reason="idle_or_decommissioned"}'
+        values: "_ _ 1x20"
+      - series: 'flare_executor_removed_total{job="etl-driver", executor_id="3", reason="idle_or_decommissioned"}'
+        values: "_ _ 1x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FlareExecutorsLost
+        exp_alerts: []
 
   # Half yesterday's input fires.
   - interval: 1h
@@ -77,3 +113,31 @@ tests:
               sql_description: load orders
             exp_annotations:
               summary: "etl-driver: load orders read under half of yesterday's input"
+
+  # A run that read nothing fires: no input series today, though the query ran and read yesterday.
+  - interval: 1h
+    input_series:
+      - series: 'flare_stage_input_bytes_total{job="etl-driver", instance="day-1", sql_description="load orders"}'
+        values: "1000 1000 1000 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _"
+      - series: 'flare_job_duration_milliseconds_count{job="etl-driver", instance="day-2", sql_description="load orders", job_result="SUCCESS"}'
+        values: "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 1 1 1"
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: FlareInputVolumeDropped
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: etl-driver
+              sql_description: load orders
+            exp_annotations:
+              summary: "etl-driver: load orders read under half of yesterday's input"
+
+  # A query that ran today but never read input on either day does not fire.
+  - interval: 1h
+    input_series:
+      - series: 'flare_job_duration_milliseconds_count{job="etl-driver", instance="day-2", sql_description="compute totals", job_result="SUCCESS"}'
+        values: "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 1 1 1"
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: FlareInputVolumeDropped
+        exp_alerts: []
