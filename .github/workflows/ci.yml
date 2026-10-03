@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# A new push to a pull request cancels the run it replaces (#194). Grouped by pull request number,
+# not branch name, which two forks can share. Runs on main are never cancelled: every commit there
+# is tested.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -81,3 +88,18 @@ jobs:
         run: |
           docker run --rm -v "$PWD/alerting:/r" -w /r --entrypoint promtool prom/prometheus:v3.15.0 check rules flare-rules.yml
           docker run --rm -v "$PWD/alerting:/r" -w /r --entrypoint promtool prom/prometheus:v3.15.0 test rules flare-rules.test.yml
+
+  # Changelog fragments (#194) parse, so a malformed one fails here rather than at release.
+  changelog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Check changelog fragments
+        run: python .github/scripts/release_changelog.py --check
