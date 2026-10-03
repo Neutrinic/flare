@@ -170,13 +170,19 @@ class TracingSparkListenerTest extends FunSuite {
   // driver. They are dropped, not ended: ending one would export an empty span.
   test("shutdown clears the advice's job and pending stage spans without exporting them") {
     withListener { (listener, exporter) =>
-      val tracer = SdkTracerProvider.builder().build().get("t")
-      SubmitMissingTasksAdviceHelper.jobSpans.put(41, tracer.spanBuilder("spark.job.41").startSpan())
-      SubmitMissingTasksAdviceHelper.pendingStageSpans.put(42, tracer.spanBuilder("spark.stage.42").startSpan())
-      listener.shutdown()
-      assert(SubmitMissingTasksAdviceHelper.jobSpans.isEmpty)
-      assert(SubmitMissingTasksAdviceHelper.pendingStageSpans.isEmpty)
-      assert(!exporter.getFinishedSpanItems.asScala.exists(_.getName.endsWith(".42")))
+      // Exports to the exporter under test, so ending either span would show up there.
+      val provider = SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(exporter)).build()
+      try {
+        val tracer = provider.get("t")
+        SubmitMissingTasksAdviceHelper.jobSpans.put(41, tracer.spanBuilder("spark.job.41").startSpan())
+        SubmitMissingTasksAdviceHelper.pendingStageSpans.put(42, tracer.spanBuilder("spark.stage.42").startSpan())
+        listener.shutdown()
+        assert(SubmitMissingTasksAdviceHelper.jobSpans.isEmpty)
+        assert(SubmitMissingTasksAdviceHelper.pendingStageSpans.isEmpty)
+        val exported = exporter.getFinishedSpanItems.asScala.map(_.getName)
+        assert(!exported.contains("spark.job.41"), s"an unadopted job span was exported: $exported")
+        assert(!exported.contains("spark.stage.42"), s"an unadopted stage span was exported: $exported")
+      } finally provider.close()
     }
   }
 
