@@ -135,7 +135,9 @@ class ClusterLifecycleMetricsTest extends FunSuite {
   test("removing a block manager removes its blocks from the totals") {
     val m = collect(trackBlocks = true) { l =>
       l.onBlockManagerAdded(FlareTestHelpers.blockManagerAdded("1"))
-      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 1024L, cached = true))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 1024L, cached = true, partition = 0))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 2048L, 0L, cached = true, partition = 1))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 0L, 512L, cached = true, partition = 2))
       l.onBlockManagerRemoved(FlareTestHelpers.blockManagerRemoved("1"))
     }
     assertEquals(m.get("flare.storage.memory.bytes"), Some(0L))

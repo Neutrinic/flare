@@ -391,10 +391,15 @@ class TracingSparkListener(
     safeHandle("onBlockManagerRemoved") {
       metrics.foreach(_.blockManagerCount.add(-1L,
         MetricAttributes.forExecutor(event.blockManagerId.executorId)))
-      // Its blocks went with it, though no update says so (#179).
-      blockSizes.remove(event.blockManagerId).foreach { blocks =>
+      // Its blocks went with it, though no update says so (#179). Summed first, so a large cache
+      // costs one update per instrument rather than three per block on the listener thread.
+      blockSizes.remove(event.blockManagerId).filter(_.nonEmpty).foreach { blocks =>
         metrics.foreach { fm =>
-          blocks.values.foreach(sizes => recordStorage(fm, event.blockManagerId.executorId, Some(sizes), None))
+          val attrs = MetricAttributes.forExecutor(event.blockManagerId.executorId)
+          val (mem, disk) = blocks.values.foldLeft((0L, 0L)) { case ((m, d), (bm, bd)) => (m + bm, d + bd) }
+          if (mem != 0L) fm.storageMemoryBytes.add(-mem, attrs)
+          if (disk != 0L) fm.storageDiskBytes.add(-disk, attrs)
+          fm.storageBlocks.add(-blocks.size.toLong, attrs)
         }
       }
     }
