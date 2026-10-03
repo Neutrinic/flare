@@ -285,6 +285,28 @@ class TracingSparkListener(
     // Removed unconditionally: a stage whose span was never created still accumulated delay,
     // and this is the only event that tells us the stage is over.
     val schedulerDelay = stageSchedulerDelayMs.remove(stageId)
+
+    // Metrics do not depend on the span: at `jobs` granularity there is none, and turning stage
+    // spans off must not turn the stage metrics off with them (#177).
+    if (config.enabled) Option(event.stageInfo.taskMetrics).foreach { m =>
+      metrics.foreach { fm =>
+        safeHandle("onStageCompleted metrics") {
+          // Safe here because a stage always completes before its job ends, and onJobEnd is what
+          // drops stageToSql.
+          val attrs = MetricAttributes.forStage(event.stageInfo.name, sqlDescriptionOf(stageId))
+          fm.stageExecutorRunTime.record(m.executorRunTime.toDouble, attrs)
+          val inputBytes = m.inputMetrics.bytesRead
+          if (inputBytes > 0) fm.stageInputBytes.add(inputBytes, attrs)
+          val outputBytes = m.outputMetrics.bytesWritten
+          if (outputBytes > 0) fm.stageOutputBytes.add(outputBytes, attrs)
+          val shuffleRead = m.shuffleReadMetrics.totalBytesRead
+          if (shuffleRead > 0) fm.stageShuffleReadBytes.add(shuffleRead, attrs)
+          val shuffleWrite = m.shuffleWriteMetrics.bytesWritten
+          if (shuffleWrite > 0) fm.stageShuffleWriteBytes.add(shuffleWrite, attrs)
+        }
+      }
+    }
+
     activeStageSpans.remove(stageId).foreach { span =>
       safeHandle("onStageCompleted") {
         // Record task metrics as stage attributes
@@ -306,22 +328,6 @@ class TracingSparkListener(
           span.setLong(Stage.ExecutorDeserializeCpuTime, m.executorDeserializeCpuTime / 1000000L) // ns → ms
           span.setLong(Stage.ResultSerializationTime, m.resultSerializationTime)
 
-          // Record OTEL stage-level metrics
-          metrics.foreach { fm =>
-            // Same lookup the span does at onStageSubmitted. Safe here because a stage always
-            // completes before its job ends, and onJobEnd is what drops stageToSql.
-            val attrs =
-              MetricAttributes.forStage(event.stageInfo.name, sqlDescriptionOf(stageId))
-            fm.stageExecutorRunTime.record(m.executorRunTime.toDouble, attrs)
-            val inputBytes = m.inputMetrics.bytesRead
-            if (inputBytes > 0) fm.stageInputBytes.add(inputBytes, attrs)
-            val outputBytes = m.outputMetrics.bytesWritten
-            if (outputBytes > 0) fm.stageOutputBytes.add(outputBytes, attrs)
-            val shuffleRead = m.shuffleReadMetrics.totalBytesRead
-            if (shuffleRead > 0) fm.stageShuffleReadBytes.add(shuffleRead, attrs)
-            val shuffleWrite = m.shuffleWriteMetrics.bytesWritten
-            if (shuffleWrite > 0) fm.stageShuffleWriteBytes.add(shuffleWrite, attrs)
-          }
         }
 
         // Only set when task ends were actually observed. A stage that reported none would
@@ -421,32 +427,15 @@ class TracingSparkListener(
   // ── SQL ──────────────────────────────────────────────────────────────────────
 
   override def onOtherEvent(event: SparkListenerEvent): Unit =
-    if (config.tracesStages) {
+    if (config.tracesJobs) {
       event match {
         case e: SparkListenerSQLExecutionStart => safeHandle("onSQLStart") {
-          applicationSpan.foreach { parent =>
-            val span = tracer
-              .spanBuilder(s"spark.sql.${e.executionId}")
-              .setSpanKind(SpanKind.INTERNAL)
-              .setParent(Context.current().`with`(parent))
-              .startSpan()
-
-            // Fields are read by name, never positionally — see describeSqlExecution.
-            describeSqlExecution(
-              span,
-              e.executionId,
-              e.description,
-              e.details,
-              e.physicalPlanDescription,
-            )
-
-            // Store in shared map so advice and onJobStart can parent jobs under SQL
-            SubmitMissingTasksAdviceHelper.activeSQLSpans.put(e.executionId, span)
-          }
+          // Fields are read by name, never positionally — see describeSqlExecution.
+          onSqlStart(e.executionId, e.description, e.details, e.physicalPlanDescription)
         }
         // AQE re-plans after execution starts, so the tree captured at start is provisional.
         // Every update carries the current plan; the last one to arrive is what ran.
-        case e: SparkListenerSQLAdaptiveExecutionUpdate => safeHandle("onSQLAdaptiveUpdate") {
+        case e: SparkListenerSQLAdaptiveExecutionUpdate if config.tracesStages => safeHandle("onSQLAdaptiveUpdate") {
           Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.get(e.executionId))
             .foreach(span => updateSqlPlan(span, e.physicalPlanDescription))
         }
@@ -493,6 +482,9 @@ class TracingSparkListener(
 
   // ── Cleanup ───────────────────────────────────────────────────────────────────
 
+  /** Read by the scheduler advice, which creates stage spans only when the listener adopts them. */
+  private[spark] def tracesStages: Boolean = config.tracesStages
+
   def shutdown(): Unit = {
     logger.info("[Flare] Shutting down listener, ending any open spans")
     Seq[TrieMap[_, Span]](activeStageSpans, activeJobSpans)
@@ -501,6 +493,11 @@ class TracingSparkListener(
     val sqlSpans = SubmitMissingTasksAdviceHelper.activeSQLSpans
     sqlSpans.values().forEach(_.end())
     sqlSpans.clear()
+    // The advice's own maps (#174). Adopted job spans were ended above through activeJobSpans;
+    // anything left was never adopted, so it is dropped rather than ended, which would export an
+    // empty span.
+    SubmitMissingTasksAdviceHelper.jobSpans.clear()
+    SubmitMissingTasksAdviceHelper.pendingStageSpans.clear()
     applicationSpan.foreach(_.end())
     stageToJob.clear()
     stageToSql.clear()
@@ -535,6 +532,43 @@ class TracingSparkListener(
    * not, so no shared test source set can build a fixture. Keeping the logic here means it stays
    * directly testable without a Spark event at all.
    */
+  /**
+   * A SQL execution started. Takes the event's fields rather than the event, whose constructor is
+   * not source-compatible across the matrix, so tests can drive it.
+   */
+  private[listener] def onSqlStart(
+    executionId:             Long,
+    description:             String,
+    details:                 String,
+    physicalPlanDescription: String,
+  ): Unit = {
+    // At every granularity: the stage metrics are labelled with it, and they are recorded at
+    // `jobs` too (#177). Only the span depends on tracing stages.
+    recordSqlDescription(executionId, description)
+    if (config.tracesStages) applicationSpan.foreach { parent =>
+      // The scheduler advice may already have created it, if a job of this execution was
+      // scheduled before this event reached the listener (#178). Shared through the map, so the
+      // advice and onJobStart parent jobs under it.
+      val span = SubmitMissingTasksAdviceHelper.getOrCreateSqlSpan(executionId) {
+        tracer
+          .spanBuilder(s"spark.sql.$executionId")
+          .setSpanKind(SpanKind.INTERNAL)
+          .setParent(Context.current().`with`(parent))
+          .startSpan()
+      }
+      describeSqlExecution(span, executionId, description, details, physicalPlanDescription)
+    }
+  }
+
+  /**
+   * Keeps a SQL execution's description for the stages that belong to it, at every granularity:
+   * stage spans carry it (#48) and stage metrics are labelled with it (#75), and the metrics are
+   * recorded even when stage spans are off (#177). Callable without a SQL event, whose constructor
+   * is not source-compatible across the matrix.
+   */
+  private[listener] def recordSqlDescription(executionId: Long, description: String): Unit =
+    Option(description).filter(_.nonEmpty).foreach(sqlDescriptions.put(executionId, _))
+
   private[listener] def describeSqlExecution(
     span:                    Span,
     executionId:             Long,
@@ -551,7 +585,7 @@ class TracingSparkListener(
     // here rather than at the event, so the single place that knows both id and description
     // owns it, and so tests can reach it without constructing a SQL event whose constructor
     // is not source-compatible across the matrix.
-    Option(description).filter(_.nonEmpty).foreach(sqlDescriptions.put(executionId, _))
+    recordSqlDescription(executionId, description)
     setIfNonEmpty(span, Sql.Details, details, config.sqlDetailsMaxChars)
 
     // The plan is provisional at this point — AQE has not run. If it re-plans,

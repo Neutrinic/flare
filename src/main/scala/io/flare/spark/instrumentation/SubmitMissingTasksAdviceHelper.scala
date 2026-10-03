@@ -146,10 +146,25 @@ object SubmitMissingTasksAdviceHelper {
       val jobSpan = getOrCreateJobSpan(jobId) {
         // Determine parent: SQL span if job is SQL-triggered, otherwise app span.
         // Spark sets spark.sql.execution.id in ActiveJob.properties for SQL jobs.
+        //
+        // The SQL span is created here if the listener has not created it yet (#178). The listener
+        // runs on the asynchronous listener bus, so when the bus lags this job is scheduled before
+        // the listener has seen the execution start; looking the span up and falling back to the
+        // application span made the SQL and its job siblings for good. Both sides go through
+        // getOrCreateSqlSpan, so there is exactly one span whichever gets there first. SQL spans
+        // exist only when stages are traced, as on the listener side.
         val parentSpan = Option(props.getProperty("spark.sql.execution.id"))
           .flatMap(id => try Some(id.toLong) catch { case _: NumberFormatException => None })
-          .map(id => activeSQLSpans.get(id))
-          .flatMap(Option(_))
+          .flatMap { id =>
+            if (FlareDriverState.tracesStages) Some(getOrCreateSqlSpan(id) {
+              tracer
+                .spanBuilder(s"spark.sql.$id")
+                .setSpanKind(SpanKind.INTERNAL)
+                .setParent(Context.root().`with`(appSpan))
+                .startSpan()
+            })
+            else Option(activeSQLSpans.get(id))
+          }
           .getOrElse(appSpan)
 
         tracer
@@ -157,6 +172,14 @@ object SubmitMissingTasksAdviceHelper {
           .setSpanKind(SpanKind.INTERNAL)
           .setParent(Context.root().`with`(parentSpan))
           .startSpan()
+      }
+
+      // At `jobs` granularity there are no stage spans: the listener would never adopt one, so it
+      // would never be ended, and the tasks would carry the id of a span no backend ever sees
+      // (#174). The tasks run in the job's context instead.
+      if (!FlareDriverState.tracesStages) {
+        LocalPropertyPropagator.injectIntoProperties(Context.root().`with`(jobSpan), props)
+        return
       }
 
       // Create stage span as child of job span
@@ -206,6 +229,17 @@ object SubmitMissingTasksAdviceHelper {
    */
   private[spark] def getOrCreateJobSpan(jobId: Int)(build: => Span): Span =
     jobSpans.computeIfAbsent(jobId, _ => build)
+
+  /**
+   * Fetch the SQL execution's span, creating it with `build` only if absent (#178).
+   *
+   * The same race as [[getOrCreateJobSpan]], between this advice (on the scheduler's event loop)
+   * and the listener's SQL start (on the listener bus), with the same rule: `build` runs at most
+   * once per execution, so the loser never starts a span. The listener describes whichever span
+   * this returns.
+   */
+  private[spark] def getOrCreateSqlSpan(executionId: Long)(build: => Span): Span =
+    activeSQLSpans.computeIfAbsent(executionId, _ => build)
 
   // ── Listener adoption methods ─────────────────────────────────────────────
 

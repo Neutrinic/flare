@@ -10,9 +10,9 @@ object Dependencies {
   val spark35 = "3.5.1"
   val spark40 = "4.0.0"
 
-  val otelVersion      = "1.64.0"
-  val otelAgentVersion = "2.30.0"
-  val byteBuddyVersion = "1.18.11"
+  val otelVersion      = "1.65.0"
+  val otelAgentVersion = "2.31.1"
+  val byteBuddyVersion = "1.18.12"
   val slf4jVersion     = "2.0.16"
   val munitVersion     = "1.1.1"
 
@@ -40,10 +40,10 @@ object Dependencies {
 
   // Provided by the OTEL agent at runtime
   val byteBuddyCompileOnly = Seq(
-    // OTel's 2.30.0 extension API exposes byte-buddy-dep as an API dependency:
-    // https://github.com/open-telemetry/opentelemetry-java-instrumentation/blob/v2.30.0/javaagent-extension-api/build.gradle.kts#L9-L13
-    // Its dependency management pins 1.18.11:
-    // https://github.com/open-telemetry/opentelemetry-java-instrumentation/blob/v2.30.0/dependencyManagement/build.gradle.kts#L38-L42
+    // OTel's 2.31.1 extension API exposes byte-buddy-dep as an API dependency:
+    // https://github.com/open-telemetry/opentelemetry-java-instrumentation/blob/v2.31.1/javaagent-extension-api/build.gradle.kts#L12
+    // Its dependency management pins 1.18.12:
+    // https://github.com/open-telemetry/opentelemetry-java-instrumentation/blob/v2.31.1/dependencyManagement/build.gradle.kts#L41
     // Use the same coordinate and managed version so the compile graph has one
     // provider of net.bytebuddy classes; byte-buddy-dep keeps ASM external.
     "net.bytebuddy" % "byte-buddy-dep" % byteBuddyVersion % "provided",

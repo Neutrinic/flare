@@ -1,12 +1,8 @@
 package io.flare.spark.trace
 
-import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 import io.opentelemetry.api.trace.Span
 import org.apache.spark.{SparkConf, SparkContext, TaskContext}
 import munit.FunSuite
-
-import java.net.{BindException, InetSocketAddress}
-import java.util.concurrent.{Executors, TimeUnit}
 
 /**
  * The TaskRunner advice makes the stage's context current inside a real Spark task, under the real
@@ -24,7 +20,7 @@ class TaskContextAgentTest extends FunSuite {
   test("a task at the default granularity runs inside its stage's trace context") {
     // The plugins flush on shutdown and when executors go idle. Without a collector those exports
     // fail and the agent's exporter backs off, which delays AgentFlushTest's flush in this JVM.
-    withStubCollector {
+    StubCollector.during {
       val sc = new SparkContext(
         new SparkConf()
           .setMaster("local[1]")
@@ -45,36 +41,6 @@ class TaskContextAgentTest extends FunSuite {
         assertEquals(traceId, tpTrace, "the task's current trace is not the one in its traceparent")
         assertEquals(spanId, tpSpan, "the task's current span is not the stage span in its traceparent")
       } finally sc.stop()
-    }
-  }
-
-  /** Accepts every OTLP request on the build's collector port while `body` runs. */
-  private def withStubCollector(body: => Unit): Unit = {
-    val port = sys.props.getOrElse("flare.agent.test.collector.port", fail("collector port not set")).toInt
-    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-    var server: HttpServer = null
-    while (server == null) {
-      try server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0)
-      catch {
-        case e: BindException =>
-          if (System.nanoTime() > deadline) fail(s"could not bind the stub collector on 127.0.0.1:$port ($e)")
-          Thread.sleep(250)
-      }
-    }
-    val executor = Executors.newSingleThreadExecutor()
-    server.createContext("/", new HttpHandler {
-      override def handle(exchange: HttpExchange): Unit = {
-        exchange.getRequestBody.readAllBytes()
-        exchange.sendResponseHeaders(200, -1)
-        exchange.close()
-      }
-    })
-    server.setExecutor(executor)
-    server.start()
-    try body
-    finally {
-      server.stop(0)
-      executor.shutdownNow()
     }
   }
 }
