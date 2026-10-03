@@ -141,6 +141,28 @@ class TracingSparkListenerTest extends FunSuite {
 
   // ── Tests ───────────────────────────────────────────────────────────────────
 
+  // #178. When the listener bus lags, the scheduler advice sees a SQL job before the listener sees
+  // the execution start. It now creates the SQL span; the listener must describe that span, not
+  // start a second one, or the job stays parented to a span that is never exported.
+  test("a SQL span the scheduler advice created first is adopted, not duplicated") {
+    withListener { (listener, exporter) =>
+      val tracer = SdkTracerProvider.builder()
+        .addSpanProcessor(SimpleSpanProcessor.create(exporter)).build().get("t")
+      val sql = SubmitMissingTasksAdviceHelper.getOrCreateSqlSpan(3L)(tracer.spanBuilder("spark.sql.3").startSpan())
+      tracer.spanBuilder("spark.job.0")
+        .setParent(io.opentelemetry.context.Context.root().`with`(sql)).startSpan().end()
+
+      listener.onSqlStart(3L, "TPC-H Q3", "", "")
+      listener.shutdown()
+
+      val spans   = exporter.getFinishedSpanItems.asScala
+      val sqlSpans = spans.filter(_.getName == "spark.sql.3")
+      assertEquals(sqlSpans.size, 1, "the listener started a second SQL span")
+      assertEquals(spans.find(_.getName == "spark.job.0").get.getParentSpanId, sqlSpans.head.getSpanId)
+      assertEquals(sqlSpans.head.getAttributes.get(Sql.Description), "TPC-H Q3")
+    }
+  }
+
   // #177. Stage metrics used to be recorded inside the branch that ends the stage span, so at
   // `jobs` granularity, where there is no stage span, turning stage spans off turned them off too.
   test("stage metrics are recorded at jobs granularity, labelled with the SQL description") {
