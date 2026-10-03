@@ -18,9 +18,9 @@ where it shares the agent's SDK and ByteBuddy, so the agent version matters.
 
 | Component | Version |
 |---|---|
-| OpenTelemetry Java agent | 2.30.0, built and tested against |
-| OpenTelemetry API and SDK | 1.64.0, matching the agent |
-| ByteBuddy | 1.18.11, matching the agent |
+| OpenTelemetry Java agent | 2.31.1, built and tested against |
+| OpenTelemetry API and SDK | 1.65.0, matching the agent |
+| ByteBuddy | 1.18.12, matching the agent |
 
 - **Same agent version:** recommended. The extension API is published with an `-alpha` suffix and
   may change between minor releases.
