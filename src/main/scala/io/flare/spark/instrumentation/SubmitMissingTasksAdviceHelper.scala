@@ -159,6 +159,14 @@ object SubmitMissingTasksAdviceHelper {
           .startSpan()
       }
 
+      // At `jobs` granularity there are no stage spans: the listener would never adopt one, so it
+      // would never be ended, and the tasks would carry the id of a span no backend ever sees
+      // (#174). The tasks run in the job's context instead.
+      if (!FlareDriverState.tracesStages) {
+        LocalPropertyPropagator.injectIntoProperties(Context.root().`with`(jobSpan), props)
+        return
+      }
+
       // Create stage span as child of job span
       val stageParentCtx = Context.root().`with`(jobSpan)
       val stageSpan = tracer
