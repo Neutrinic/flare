@@ -23,12 +23,14 @@ class FlareMetrics(meter: Meter) {
     .histogramBuilder("flare.task.duration")
     .setDescription("Task execution duration")
     .setUnit("ms")
+    .setExplicitBucketBoundariesAdvice(FlareMetrics.TaskDurationBucketsMs)
     .build()
 
   val taskRecordsThroughput: DoubleHistogram = meter
     .histogramBuilder("flare.task.records_throughput")
     .setDescription("Task records processed per second")
     .setUnit("{records}/s")
+    .setExplicitBucketBoundariesAdvice(FlareMetrics.ThroughputBuckets)
     .build()
 
   val taskShuffleReadBytes: LongCounter = meter
@@ -49,6 +51,7 @@ class FlareMetrics(meter: Meter) {
     .histogramBuilder("flare.stage.executor.run_time")
     .setDescription("Total executor run time per stage")
     .setUnit("ms")
+    .setExplicitBucketBoundariesAdvice(FlareMetrics.StageRunTimeBucketsMs)
     .build()
 
   val stageInputBytes: LongCounter = meter
@@ -145,6 +148,30 @@ class FlareMetrics(meter: Meter) {
 }
 
 object FlareMetrics {
+
+  private def bounds(values: Double*): java.util.List[java.lang.Double] =
+    java.util.Arrays.asList(values.map(java.lang.Double.valueOf): _*)
+
+  // Bucket boundaries (#180). The SDK's defaults stop at 10,000, so every task or stage longer than
+  // ten seconds landed in the overflow bucket and dashboard percentiles stopped at 10 s. Each
+  // boundary is a series per label set, so the lists stay short and roughly logarithmic.
+
+  /** One task, 5 ms to an hour. */
+  private[spark] val TaskDurationBucketsMs: java.util.List[java.lang.Double] = bounds(
+    5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000, 120000, 300000, 600000,
+    1800000, 3600000,
+  )
+
+  /** Summed across a stage's tasks, so far larger than any one task: 100 ms to a day. */
+  private[spark] val StageRunTimeBucketsMs: java.util.List[java.lang.Double] = bounds(
+    100, 1000, 5000, 10000, 30000, 60000, 300000, 600000, 1800000, 3600000, 10800000, 36000000,
+    86400000,
+  )
+
+  /** Records per second, which a single task can push into the millions. */
+  private[spark] val ThroughputBuckets: java.util.List[java.lang.Double] = bounds(
+    10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000,
+  )
 
   /**
    * Create a `FlareMetrics` instance. When `enabled` is false, returns an instance
