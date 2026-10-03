@@ -1,0 +1,117 @@
+# Example Prometheus alert rules for Flare (#92, #168). Load them into Prometheus, the Mimir ruler,
+# or Grafana's alerting. They are starting points: every threshold depends on the workload, so
+# read the reasoning in docs/configuration/alerting.md before relying on one.
+#
+# Metric names are matched with or without units (`flare_job_duration_milliseconds_bucket` in
+# Prometheus, `flare_job_duration_bucket` in Mimir's default OTLP ingestion), as the dashboard does.
+#
+# Each application run is a new JVM with its own `instance` (service.instance.id), so its series
+# start with the first value they report. `increase()` reads zero on such a series, which is why
+# the outcome rules test whether a series appeared in the window, with `max_over_time`, instead.
+groups:
+  - name: flare-outcomes
+    rules:
+      # A run ended in the last hour, and at least one of its jobs failed. Spark reports no result
+      # for an application, so this is Flare's application.result: FAILED when any job failed.
+      - alert: FlareApplicationFailed
+        expr: |
+          max by (job) (
+            max_over_time({__name__=~"flare_application_duration(_seconds)?_count", application_result="FAILED"}[1h])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: a run ended with a failed job"
+
+      # Which query failed, for pipelines that carry on after a failed job.
+      - alert: FlareJobFailed
+        expr: |
+          max by (job, sql_description) (
+            max_over_time({__name__=~"flare_job_duration(_milliseconds)?_count", job_result="FAILED"}[1h])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: a job failed ({{ $labels.sql_description }})"
+
+      # A query's p95 job duration in its latest runs is more than twice its p95 over the previous
+      # week. Needs a week of history. Queries are told apart by sql.description, so give your
+      # queries descriptions (setJobDescription) or similar ones will be lumped together.
+      - alert: FlareQuerySlowerThanUsual
+        expr: |
+          histogram_quantile(0.95, sum by (le, job, sql_description) (
+            max_over_time({__name__=~"flare_job_duration(_milliseconds)?_bucket", job_result="SUCCESS"}[2h])
+          ))
+          > 2 * histogram_quantile(0.95, sum by (le, job, sql_description) (
+            max_over_time({__name__=~"flare_job_duration(_milliseconds)?_bucket", job_result="SUCCESS"}[7d] offset 2h)
+          ))
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.job }}: {{ $labels.sql_description }} ran more than twice as long as usual"
+
+      # A query read less than half the bytes it read at the same time the day before: the classic
+      # silent failure of a load whose upstream delivered a partial or empty drop. Assumes a daily
+      # schedule; change the offset for other cadences.
+      #
+      # Only finished runs are compared: a run's input grows as its stages complete, so comparing a
+      # run in progress with yesterday's total fires partway through a healthy run. A run has
+      # finished once its application recorded flare.application.duration, from the same driver,
+      # so the check matches on `instance` before aggregating, and an earlier finished run cannot
+      # vouch for one still running. An application that never ends is never compared.
+      #
+      # The second half catches a run that read nothing: Flare records no input bytes for a stage
+      # that read none, so there is no current series to compare. It fires when a finished run ran
+      # the query (a job of it finished), the query read input yesterday, and that run has none.
+      - alert: FlareInputVolumeDropped
+        expr: |
+          (
+            sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h])
+              and on (job, instance) max_over_time({__name__=~"flare_application_duration(_seconds)?_count"}[2h])
+            )
+            < 0.5 * sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h] offset 1d)
+            )
+          )
+          or
+          (
+            sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_job_duration(_milliseconds)?_count", sql_description!=""}[2h])
+              and on (job, instance) max_over_time({__name__=~"flare_application_duration(_seconds)?_count"}[2h])
+            )
+            and on (job, sql_description) sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h] offset 1d)
+            )
+            unless on (job, sql_description) sum by (job, sql_description) (
+              max_over_time({__name__=~"flare_stage_input_bytes(_total)?"}[2h])
+              and on (job, instance) max_over_time({__name__=~"flare_application_duration(_seconds)?_count"}[2h])
+            )
+          )
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: {{ $labels.sql_description }} read under half of yesterday's input"
+
+  - name: flare-diagnoses
+    rules:
+      # No partition-skew rule: skew only means something within a stage, and task metrics carry no
+      # stage label (#136). Across a whole application, mixing small and large stages, p99 over
+      # the median is routinely above 10, so such a rule fired on healthy runs. See the per-stage
+      # TraceQL search in docs/configuration/alerting.md.
+
+      # Executors lost for reasons other than a dynamic-allocation scale-down, across all such
+      # reasons. Each removed executor is its own series (executor.id) that starts at 1, and
+      # increase() reads zero on a series that starts that way, including when several appear in
+      # the same scrape. So this counts the removal series present now that were not present 15
+      # minutes ago. The reasons are on the metric: flare_executor_removed by reason.
+      - alert: FlareExecutorsLost
+        expr: |
+          count by (job) (
+            {__name__=~"flare_executor_removed(_total)?", reason!="idle_or_decommissioned"}
+            unless {__name__=~"flare_executor_removed(_total)?", reason!="idle_or_decommissioned"} offset 15m
+          ) > 2
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: more than two executors lost in 15 minutes"

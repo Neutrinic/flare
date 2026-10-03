@@ -33,6 +33,12 @@ object FlareDriverState {
   def initialized: Boolean = _initialized
 
   /**
+   * Whether stage spans are traced. The scheduler advice asks before creating one: at `jobs`
+   * granularity the listener never adopts it, so it would never be ended or exported (#174).
+   */
+  private[spark] def tracesStages: Boolean = listener.forall(_.tracesStages)
+
+  /**
    * Attempt to initialize. Returns true if this call performed the initialization,
    * false if it was already done by another path.
    */

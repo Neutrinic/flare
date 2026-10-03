@@ -28,7 +28,7 @@ class FlareExecutorPluginTest extends FunSuite {
 
   private val flareProps = List(
     "FLARE_TRACE_GRANULARITY", "FLARE_SLOW_TASK_MS", "FLARE_MAX_SPANS_PER_TRACE",
-    "FLARE_SAMPLING_RATIO", "FLARE_METRICS_ENABLED",
+    "FLARE_SAMPLING_RATIO", "FLARE_METRICS_ENABLED", "FLARE_ENABLED",
   )
 
   override def afterEach(context: AfterEach): Unit = {
@@ -166,6 +166,17 @@ class FlareExecutorPluginTest extends FunSuite {
     assertEquals(run.durationCount, 3L)
   }
 
+  test("FLARE_ENABLED=false records no task metrics and exports no spans (#176)") {
+    // The kill switch has to stop everything Flare emits, not only spans: at `all` a task would
+    // otherwise be both traced and measured.
+    sys.props("FLARE_ENABLED") = "false"
+    sys.props("FLARE_TRACE_GRANULARITY") = "all"
+    val run = runTasks(taskCount = 3)
+
+    assertEquals(run.exportedTraceIds, Set.empty[String])
+    assertEquals(run.durationCount, 0L)
+  }
+
   // The executor is the only place Spark exposes the failure as structured fields rather than a
   // formatted string, so this is where the full detail has to survive onto the span.
   test("a failed task span carries the exception class, message and stack trace") {
@@ -284,7 +295,7 @@ class FlareExecutorPluginTest extends FunSuite {
    * instrumentations are active by default alongside it — any task that touches a database or
    * calls a service produces exactly this shape.
    */
-  private def runTaskWithInTaskSpan(): Seq[io.opentelemetry.sdk.trace.data.SpanData] = {
+  private def runTaskWithInTaskSpan(inStage: Boolean = false): Seq[io.opentelemetry.sdk.trace.data.SpanData] = {
     val spanExporter = InMemorySpanExporter.create()
     val sdk = OpenTelemetrySdk.builder()
       .setTracerProvider(
@@ -301,6 +312,11 @@ class FlareExecutorPluginTest extends FunSuite {
       val plugin = new FlareExecutorPlugin()
       plugin.init(StubPluginContext, java.util.Collections.emptyMap[String, String]())
 
+      // Stands in for the TaskRunner advice, which makes the stage's context current around the
+      // whole task on a real executor (#173).
+      val stage      = if (inStage) Some(GlobalOpenTelemetry.getTracer("test").spanBuilder("spark.stage.0").startSpan()) else None
+      val stageScope = stage.map(_.makeCurrent())
+
       FlareTestHelpers.bindEmptyTaskContext()
       plugin.onTaskStart()
 
@@ -310,6 +326,8 @@ class FlareExecutorPluginTest extends FunSuite {
 
       plugin.onTaskSucceeded()
       FlareTestHelpers.unbindTaskContext()
+      stageScope.foreach(_.close())
+      stage.foreach(_.end())
 
       spanExporter.getFinishedSpanItems.asScala.toSeq
     } finally sdk.close()
@@ -340,12 +358,8 @@ class FlareExecutorPluginTest extends FunSuite {
     assertEquals(orphansIn(spans), Seq.empty[String])
   }
 
-  // Tagged `.fail` because it documents a defect that is still open (#100): it asserts the
-  // behaviour Flare promises, and munit passes it precisely because that assertion does not hold
-  // yet. CI therefore stays green on the known-bad state, and the day the fix lands this test
-  // starts failing and forces whoever fixed it to drop the tag. It is a tracked defect, not a
-  // tolerated one.
-  test("a task suppressed by FLARE_SLOW_TASK_MS does not orphan spans created inside it".fail) {
+  // #100. Was tagged `.fail` while the defect was open.
+  test("a task suppressed by FLARE_SLOW_TASK_MS does not orphan spans created inside it") {
     sys.props("FLARE_TRACE_GRANULARITY") = "all"
     // Far above any plausible duration for an empty task, so the task span is suppressed.
     sys.props("FLARE_SLOW_TASK_MS") = "600000"
@@ -365,5 +379,19 @@ class FlareExecutorPluginTest extends FunSuite {
       orphansIn(spans), Seq.empty[String],
       "exported spans reference a parent that was never exported",
     )
+  }
+
+  // #100. Under the slow-task filter the task span is not current, so an in-task span nests under
+  // the stage, which is always exported, rather than under a task span that may be dropped.
+  test("under FLARE_SLOW_TASK_MS an in-task span nests under its stage") {
+    sys.props("FLARE_TRACE_GRANULARITY") = "all"
+    sys.props("FLARE_SLOW_TASK_MS") = "600000"
+    val spans = runTaskWithInTaskSpan(inStage = true)
+
+    val stage = spans.find(_.getName == "spark.stage.0").getOrElse(fail("no stage span was exported"))
+    val child = spans.find(_.getName == "jdbc.query").getOrElse(fail("no in-task span was exported"))
+    assertEquals(child.getParentSpanId, stage.getSpanId)
+    assert(!spans.exists(_.getName == "spark.task.executor"), "the fast task's span was exported")
+    assertEquals(orphansIn(spans), Seq.empty[String])
   }
 }

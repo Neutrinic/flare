@@ -114,6 +114,10 @@ Subject to `FLARE_TRACE_GRANULARITY`, `FLARE_SLOW_TASK_MS`, `FLARE_RETRY_TASKS_O
 `FLARE_MAX_SPANS_PER_TRACE`. This span is built from `TaskContext`, so driver-only `TaskInfo`
 fields (host, locality, speculative) are not available to it.
 
+Under `FLARE_SLOW_TASK_MS`, spans made inside a task, such as a JDBC query, and the task's log
+lines are children of the stage span, not the task span. Whether a task span is kept is only known
+when the task ends, and anything pointing at a dropped one would point at nothing.
+
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `spark.task.partition.id` | long | |

@@ -38,6 +38,7 @@ nav = [
     "configuration/exporting.md",
     "configuration/noise.md",
     "configuration/volume.md",
+    "configuration/alerting.md",
   ] },
   { "Reference" = [
     "reference/spans.md",
