@@ -428,7 +428,13 @@ class TracingSparkListener(
         val info   = event.blockUpdatedInfo
         val blocks = blockSizes.getOrElseUpdate(info.blockManagerId, TrieMap.empty)
         val before = blocks.get(info.blockId)
-        val after  = if (info.storageLevel.isValid) Some((info.memSize, info.diskSize)) else None
+        // Sizes count only where the level stores the block: Spark's report for a block evicted from
+        // memory to disk keeps its old memory size alongside a DISK_ONLY level.
+        val level  = info.storageLevel
+        val after  =
+          if (level.isValid)
+            Some((if (level.useMemory) info.memSize else 0L, if (level.useDisk) info.diskSize else 0L))
+          else None
         after match {
           case Some(sizes) => blocks.put(info.blockId, sizes)
           case None        => blocks.remove(info.blockId)

@@ -144,10 +144,11 @@ object FlareTestHelpers {
   /** `cached = false` reproduces Spark's drop signal: an invalid StorageLevel with the sizes. */
   def blockUpdated(
     execId: String, memSize: Long, diskSize: Long, cached: Boolean, partition: Int = 0,
+    storageLevel: Option[org.apache.spark.storage.StorageLevel] = None,
   ): scheduler.SparkListenerBlockUpdated = {
-    val level =
+    val level = storageLevel.getOrElse(
       if (cached) org.apache.spark.storage.StorageLevel.MEMORY_AND_DISK
-      else org.apache.spark.storage.StorageLevel.NONE
+      else org.apache.spark.storage.StorageLevel.NONE)
     scheduler.SparkListenerBlockUpdated(
       org.apache.spark.storage.BlockUpdatedInfo(
         blockManagerId(execId),

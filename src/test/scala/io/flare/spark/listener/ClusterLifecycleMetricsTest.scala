@@ -131,6 +131,19 @@ class ClusterLifecycleMetricsTest extends FunSuite {
     assertEquals(m.get("flare.storage.blocks"), Some(1L))
   }
 
+  // Spark's eviction report for a block moved from memory to disk carries the old memory size with
+  // a DISK_ONLY level. Counting that size would show the block in memory and on disk at once.
+  test("a block evicted to disk counts on disk only, though the report carries its memory size") {
+    import org.apache.spark.storage.StorageLevel
+    val m = collect(trackBlocks = true) { l =>
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 0L, cached = true, storageLevel = Some(StorageLevel.MEMORY_ONLY)))
+      l.onBlockUpdated(FlareTestHelpers.blockUpdated("1", 4096L, 4096L, cached = true, storageLevel = Some(StorageLevel.DISK_ONLY)))
+    }
+    assertEquals(m.get("flare.storage.memory.bytes"), Some(0L))
+    assertEquals(m.get("flare.storage.disk.bytes"), Some(4096L))
+    assertEquals(m.get("flare.storage.blocks"), Some(1L))
+  }
+
   // #179. No block update follows a block manager's removal; its blocks went with it.
   test("removing a block manager removes its blocks from the totals") {
     val m = collect(trackBlocks = true) { l =>
