@@ -12,8 +12,15 @@ summed stage time, and 100 million records a second; see
 [Histogram buckets](reference/metrics.md#histogram-buckets).
 
 - `histogram_quantile` queries need no change, and resolve long tasks for the first time.
-- A query or alert that names a specific `le` value, such as `le="10000"`, must use the new
-  boundaries. Series with the old `le` values stop and new ones start at the upgrade.
+- A query or alert that names an `le` value the new lists dropped must change; one that names a
+  boundary both lists share, such as `le="10000"`, keeps working. Dropped boundaries, whose series
+  stop at the upgrade:
+
+    | Histogram | No longer a boundary |
+    |---|---|
+    | `flare.task.duration` | 0, 75, 750, 7500 |
+    | `flare.stage.executor.run_time` | 0, 5, 10, 25, 50, 75, 250, 500, 750, 2500, 7500 |
+    | `flare.task.records_throughput` | 0, 5, 25, 50, 75, 250, 500, 750, 2500, 5000, 7500 |
 
 ## 1.2 to 1.3
 
