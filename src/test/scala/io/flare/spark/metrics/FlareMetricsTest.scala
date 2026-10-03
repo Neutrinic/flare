@@ -32,6 +32,29 @@ class FlareMetricsTest extends FunSuite {
     }
   }
 
+  // #180. The SDK's default boundaries stop at 10,000, so anything longer than ten seconds landed in
+  // the overflow bucket and every percentile above it read as 10 s.
+  test("duration histograms resolve minutes, not just the first ten seconds") {
+    withMetrics { (fm, reader) =>
+      fm.taskDuration.record(90000.0, MetricAttributes.forTask("1", "SUCCESS"))
+      fm.stageExecutorRunTime.record(7200000.0, MetricAttributes.forStage("collect at A.scala:1", None))
+      fm.taskRecordsThroughput.record(2500000.0, MetricAttributes.forTask("1", "SUCCESS"))
+      val points = reader.collectAllMetrics().asScala
+        .map(m => m.getName -> m.getHistogramData.getPoints.asScala.head).toMap
+
+      def bucketOf(name: String): (Double, Double) = {
+        val p      = points(name)
+        val bounds = p.getBoundaries.asScala.map(_.doubleValue).toVector
+        val i      = p.getCounts.asScala.indexWhere(_ > 0)
+        assert(i < bounds.size, s"$name landed in the overflow bucket above ${bounds.last}")
+        (if (i == 0) 0.0 else bounds(i - 1), bounds(i))
+      }
+      assertEquals(bucketOf("flare.task.duration"), (60000.0, 120000.0))
+      assertEquals(bucketOf("flare.stage.executor.run_time"), (3600000.0, 10800000.0))
+      assertEquals(bucketOf("flare.task.records_throughput"), (1000000.0, 10000000.0))
+    }
+  }
+
   test("taskRecordsThroughput histogram records a value") {
     withMetrics { (metrics, reader) =>
       val attrs = MetricAttributes.forTask("exec-0", "SUCCESS")

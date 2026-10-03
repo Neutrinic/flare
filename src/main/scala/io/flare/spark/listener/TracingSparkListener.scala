@@ -10,7 +10,9 @@ import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
 import org.apache.spark.FlareJobResultAccess
 import org.apache.spark.scheduler._
+import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.sql.execution.ui.{
+  FlareSqlEndAccess,
   SparkListenerSQLAdaptiveExecutionUpdate,
   SparkListenerSQLExecutionEnd,
   SparkListenerSQLExecutionStart,
@@ -62,6 +64,11 @@ class TracingSparkListener(
   @volatile private var anyJobFailed: Boolean = false
   @volatile private var applicationStartMs: Long = System.currentTimeMillis()
   private val applicationRecorded = new java.util.concurrent.atomic.AtomicBoolean(false)
+
+  // Last reported (memory, disk) bytes of every stored block, per block manager, so block updates,
+  // which report state, can be recorded as changes (#179). Only filled under
+  // FLARE_TRACK_BLOCK_UPDATES, and emptied as blocks and block managers go.
+  private val blockSizes: TrieMap[BlockManagerId, TrieMap[BlockId, (Long, Long)]] = TrieMap.empty
   private val sqlDescriptions: TrieMap[Long, String] = TrieMap.empty
 
   // stageId → summed scheduler delay across the stage's tasks, accumulated at onTaskEnd.
@@ -299,6 +306,28 @@ class TracingSparkListener(
     // Removed unconditionally: a stage whose span was never created still accumulated delay,
     // and this is the only event that tells us the stage is over.
     val schedulerDelay = stageSchedulerDelayMs.remove(stageId)
+
+    // Metrics do not depend on the span: at `jobs` granularity there is none, and turning stage
+    // spans off must not turn the stage metrics off with them (#177).
+    if (config.enabled) Option(event.stageInfo.taskMetrics).foreach { m =>
+      metrics.foreach { fm =>
+        safeHandle("onStageCompleted metrics") {
+          // Safe here because a stage always completes before its job ends, and onJobEnd is what
+          // drops stageToSql.
+          val attrs = MetricAttributes.forStage(event.stageInfo.name, sqlDescriptionOf(stageId))
+          fm.stageExecutorRunTime.record(m.executorRunTime.toDouble, attrs)
+          val inputBytes = m.inputMetrics.bytesRead
+          if (inputBytes > 0) fm.stageInputBytes.add(inputBytes, attrs)
+          val outputBytes = m.outputMetrics.bytesWritten
+          if (outputBytes > 0) fm.stageOutputBytes.add(outputBytes, attrs)
+          val shuffleRead = m.shuffleReadMetrics.totalBytesRead
+          if (shuffleRead > 0) fm.stageShuffleReadBytes.add(shuffleRead, attrs)
+          val shuffleWrite = m.shuffleWriteMetrics.bytesWritten
+          if (shuffleWrite > 0) fm.stageShuffleWriteBytes.add(shuffleWrite, attrs)
+        }
+      }
+    }
+
     activeStageSpans.remove(stageId).foreach { span =>
       safeHandle("onStageCompleted") {
         // Record task metrics as stage attributes
@@ -320,22 +349,6 @@ class TracingSparkListener(
           span.setLong(Stage.ExecutorDeserializeCpuTime, m.executorDeserializeCpuTime / 1000000L) // ns → ms
           span.setLong(Stage.ResultSerializationTime, m.resultSerializationTime)
 
-          // Record OTEL stage-level metrics
-          metrics.foreach { fm =>
-            // Same lookup the span does at onStageSubmitted. Safe here because a stage always
-            // completes before its job ends, and onJobEnd is what drops stageToSql.
-            val attrs =
-              MetricAttributes.forStage(event.stageInfo.name, sqlDescriptionOf(stageId))
-            fm.stageExecutorRunTime.record(m.executorRunTime.toDouble, attrs)
-            val inputBytes = m.inputMetrics.bytesRead
-            if (inputBytes > 0) fm.stageInputBytes.add(inputBytes, attrs)
-            val outputBytes = m.outputMetrics.bytesWritten
-            if (outputBytes > 0) fm.stageOutputBytes.add(outputBytes, attrs)
-            val shuffleRead = m.shuffleReadMetrics.totalBytesRead
-            if (shuffleRead > 0) fm.stageShuffleReadBytes.add(shuffleRead, attrs)
-            val shuffleWrite = m.shuffleWriteMetrics.bytesWritten
-            if (shuffleWrite > 0) fm.stageShuffleWriteBytes.add(shuffleWrite, attrs)
-          }
         }
 
         // Only set when task ends were actually observed. A stage that reported none would
@@ -400,6 +413,17 @@ class TracingSparkListener(
     safeHandle("onBlockManagerRemoved") {
       metrics.foreach(_.blockManagerCount.add(-1L,
         MetricAttributes.forExecutor(event.blockManagerId.executorId)))
+      // Its blocks went with it, though no update says so (#179). Summed first, so a large cache
+      // costs one update per instrument rather than three per block on the listener thread.
+      blockSizes.remove(event.blockManagerId).filter(_.nonEmpty).foreach { blocks =>
+        metrics.foreach { fm =>
+          val attrs = MetricAttributes.forExecutor(event.blockManagerId.executorId)
+          val (mem, disk) = blocks.values.foldLeft((0L, 0L)) { case ((m, d), (bm, bd)) => (m + bm, d + bd) }
+          if (mem != 0L) fm.storageMemoryBytes.add(-mem, attrs)
+          if (disk != 0L) fm.storageDiskBytes.add(-disk, attrs)
+          fm.storageBlocks.add(-blocks.size.toLong, attrs)
+        }
+      }
     }
 
   override def onUnpersistRDD(event: SparkListenerUnpersistRDD): Unit =
@@ -415,59 +439,69 @@ class TracingSparkListener(
    * This fires once per block. On a large cached dataset that is a firehose on the listener
    * bus thread, which is why it is opt-in rather than on by default.
    *
-   * Spark signals a block being dropped by sending an invalid StorageLevel with the sizes it
-   * had, so removal is a negative delta of those sizes rather than a separate event.
+   * Each update reports a block's state, not a change: the same block is reported again when it
+   * moves from memory to disk, and an invalid StorageLevel means it is gone. So the last reported
+   * sizes of every block are kept, and only the difference is recorded (#179). Adding each report
+   * counted a re-reported block twice and left a dropped one's size behind.
    */
   override def onBlockUpdated(event: SparkListenerBlockUpdated): Unit =
     if (config.trackBlockUpdates) safeHandle("onBlockUpdated") {
       metrics.foreach { fm =>
-        val info  = event.blockUpdatedInfo
-        val attrs = MetricAttributes.forExecutor(info.blockManagerId.executorId)
-        val live  = info.storageLevel.isValid
-        val sign  = if (live) 1L else -1L
-
-        if (info.memSize  != 0L) fm.storageMemoryBytes.add(sign * info.memSize, attrs)
-        if (info.diskSize != 0L) fm.storageDiskBytes.add(sign * info.diskSize, attrs)
-        fm.storageBlocks.add(sign, attrs)
+        val info   = event.blockUpdatedInfo
+        val blocks = blockSizes.getOrElseUpdate(info.blockManagerId, TrieMap.empty)
+        val before = blocks.get(info.blockId)
+        // Sizes count only where the level stores the block: Spark's report for a block evicted from
+        // memory to disk keeps its old memory size alongside a DISK_ONLY level.
+        val level  = info.storageLevel
+        val after  =
+          if (level.isValid)
+            Some((if (level.useMemory) info.memSize else 0L, if (level.useDisk) info.diskSize else 0L))
+          else None
+        after match {
+          case Some(sizes) => blocks.put(info.blockId, sizes)
+          case None        => blocks.remove(info.blockId)
+        }
+        recordStorage(fm, info.blockManagerId.executorId, before, after)
       }
     }
+
+  /** Records the change from one reported state of a block to the next; None is "not stored". */
+  private def recordStorage(
+    fm: FlareMetrics, executorId: String, before: Option[(Long, Long)], after: Option[(Long, Long)],
+  ): Unit = {
+    val attrs = MetricAttributes.forExecutor(executorId)
+    val (memBefore, diskBefore) = before.getOrElse((0L, 0L))
+    val (memAfter, diskAfter)   = after.getOrElse((0L, 0L))
+    if (memAfter != memBefore) fm.storageMemoryBytes.add(memAfter - memBefore, attrs)
+    if (diskAfter != diskBefore) fm.storageDiskBytes.add(diskAfter - diskBefore, attrs)
+    val count = (if (after.isDefined) 1L else 0L) - (if (before.isDefined) 1L else 0L)
+    if (count != 0L) fm.storageBlocks.add(count, attrs)
+  }
 
   // ── SQL ──────────────────────────────────────────────────────────────────────
 
   override def onOtherEvent(event: SparkListenerEvent): Unit =
-    if (config.tracesStages) {
+    if (config.tracesJobs) {
       event match {
         case e: SparkListenerSQLExecutionStart => safeHandle("onSQLStart") {
-          applicationSpan.foreach { parent =>
-            val span = tracer
-              .spanBuilder(s"spark.sql.${e.executionId}")
-              .setSpanKind(SpanKind.INTERNAL)
-              .setParent(Context.current().`with`(parent))
-              .startSpan()
-
-            // Fields are read by name, never positionally — see describeSqlExecution.
-            describeSqlExecution(
-              span,
-              e.executionId,
-              e.description,
-              e.details,
-              e.physicalPlanDescription,
-            )
-
-            // Store in shared map so advice and onJobStart can parent jobs under SQL
-            SubmitMissingTasksAdviceHelper.activeSQLSpans.put(e.executionId, span)
-          }
+          // Fields are read by name, never positionally — see describeSqlExecution.
+          onSqlStart(e.executionId, e.description, e.details, e.physicalPlanDescription)
         }
         // AQE re-plans after execution starts, so the tree captured at start is provisional.
         // Every update carries the current plan; the last one to arrive is what ran.
-        case e: SparkListenerSQLAdaptiveExecutionUpdate => safeHandle("onSQLAdaptiveUpdate") {
+        case e: SparkListenerSQLAdaptiveExecutionUpdate if config.tracesStages => safeHandle("onSQLAdaptiveUpdate") {
           Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.get(e.executionId))
             .foreach(span => updateSqlPlan(span, e.physicalPlanDescription))
         }
         case e: SparkListenerSQLExecutionEnd => safeHandle("onSQLEnd") {
           Option(SubmitMissingTasksAdviceHelper.activeSQLSpans.remove(e.executionId))
             .foreach { span =>
-              span.setStatus(StatusCode.OK)
+              // A query can fail before any job starts, leaving no failed job span: the SQL span
+              // is then the only place the failure shows (#175).
+              FlareSqlEndAccess.failure(e) match {
+                case Some(t) => FailureDetail.record(span, FailureDetail.fromThrowable(t))
+                case None    => span.setStatus(StatusCode.OK)
+              }
               span.end()
             }
           // Removed unconditionally: an execution whose span was never created still recorded
@@ -534,6 +568,9 @@ class TracingSparkListener(
       ))
     }
 
+  /** Read by the scheduler advice, which creates stage spans only when the listener adopts them. */
+  private[spark] def tracesStages: Boolean = config.tracesStages
+
   def shutdown(): Unit = {
     logger.info("[Flare] Shutting down listener, ending any open spans")
     recordApplicationEnd(System.currentTimeMillis())
@@ -543,6 +580,11 @@ class TracingSparkListener(
     val sqlSpans = SubmitMissingTasksAdviceHelper.activeSQLSpans
     sqlSpans.values().forEach(_.end())
     sqlSpans.clear()
+    // The advice's own maps (#174). Adopted job spans were ended above through activeJobSpans;
+    // anything left was never adopted, so it is dropped rather than ended, which would export an
+    // empty span.
+    SubmitMissingTasksAdviceHelper.jobSpans.clear()
+    SubmitMissingTasksAdviceHelper.pendingStageSpans.clear()
     applicationSpan.foreach(_.end())
     stageToJob.clear()
     stageToSql.clear()
@@ -577,6 +619,43 @@ class TracingSparkListener(
    * not, so no shared test source set can build a fixture. Keeping the logic here means it stays
    * directly testable without a Spark event at all.
    */
+  /**
+   * A SQL execution started. Takes the event's fields rather than the event, whose constructor is
+   * not source-compatible across the matrix, so tests can drive it.
+   */
+  private[listener] def onSqlStart(
+    executionId:             Long,
+    description:             String,
+    details:                 String,
+    physicalPlanDescription: String,
+  ): Unit = {
+    // At every granularity: the stage metrics are labelled with it, and they are recorded at
+    // `jobs` too (#177). Only the span depends on tracing stages.
+    recordSqlDescription(executionId, description)
+    if (config.tracesStages) applicationSpan.foreach { parent =>
+      // The scheduler advice may already have created it, if a job of this execution was
+      // scheduled before this event reached the listener (#178). Shared through the map, so the
+      // advice and onJobStart parent jobs under it.
+      val span = SubmitMissingTasksAdviceHelper.getOrCreateSqlSpan(executionId) {
+        tracer
+          .spanBuilder(s"spark.sql.$executionId")
+          .setSpanKind(SpanKind.INTERNAL)
+          .setParent(Context.current().`with`(parent))
+          .startSpan()
+      }
+      describeSqlExecution(span, executionId, description, details, physicalPlanDescription)
+    }
+  }
+
+  /**
+   * Keeps a SQL execution's description for the stages that belong to it, at every granularity:
+   * stage spans carry it (#48) and stage metrics are labelled with it (#75), and the metrics are
+   * recorded even when stage spans are off (#177). Callable without a SQL event, whose constructor
+   * is not source-compatible across the matrix.
+   */
+  private[listener] def recordSqlDescription(executionId: Long, description: String): Unit =
+    Option(description).filter(_.nonEmpty).foreach(sqlDescriptions.put(executionId, _))
+
   private[listener] def describeSqlExecution(
     span:                    Span,
     executionId:             Long,
@@ -593,7 +672,7 @@ class TracingSparkListener(
     // here rather than at the event, so the single place that knows both id and description
     // owns it, and so tests can reach it without constructing a SQL event whose constructor
     // is not source-compatible across the matrix.
-    Option(description).filter(_.nonEmpty).foreach(sqlDescriptions.put(executionId, _))
+    recordSqlDescription(executionId, description)
     setIfNonEmpty(span, Sql.Details, details, config.sqlDetailsMaxChars)
 
     // The plan is provisional at this point — AQE has not run. If it re-plans,

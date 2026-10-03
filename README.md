@@ -58,7 +58,7 @@ One task's executor logs, found by its span id:
 
 Put two JARs at the same path on every node, before the JVMs start: the
 [OpenTelemetry Java agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation)
-2.30.0 and the Flare JAR for your Spark and Scala version from
+2.31.1 and the Flare JAR for your Spark and Scala version from
 [Maven Central](https://central.sonatype.com/search?q=io.github.neutrinic) or the
 [latest release](https://github.com/Neutrinic/flare/releases/latest). Then:
 
