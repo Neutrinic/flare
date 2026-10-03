@@ -80,8 +80,11 @@ facts are on the spans, which alert rules cannot read.
   a failed job and carries on still reads `FAILED`, and one that fails outside any job, in driver
   code or before its first query runs, reads `SUCCESS`.
 
-Neither carries an application or run id, so successive runs of the same service share series and
-can be compared.
+Neither carries an application or run id, so successive runs of the same service can be compared.
+`sql.description`, here and on the stage metrics, is the query's call site, such as
+`collect at Job.scala:42`, or the job description when you set one with `setJobDescription`. Keep
+those descriptions stable: one that embeds a date, a batch id or any value that changes per run
+makes a new series every time.
 
 ## In Prometheus
 
