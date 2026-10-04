@@ -3,6 +3,10 @@
 What Flare costs a Spark application: time, CPU, driver memory and telemetry volume, measured
 against the same job with no agent at all (#89).
 
+The `tpch` workload is derived from TPC-H (data and queries generated with DuckDB's `tpch`
+extension). These figures measure Flare's overhead; they aren't TPC-H benchmark results and aren't
+comparable with published TPC-H results.
+
 ## Configurations
 
 Five configurations, from nothing to everything, so each layer's cost can be told apart, and a sixth
@@ -31,7 +35,7 @@ and the average would be noise.
   `tasks-uncapped` lifts the cap, for a per-task cost that is all task spans.
 - **`tpch`** ([`tpch.py`](tpch.py)): the 22 TPC-H queries at scale factor 5, one pass. A realistic
   mix of scans, joins, shuffles and spills. Data and queries from
-  [`tpch_generate.py`](tpch_generate.py). Not an audited TPC-H run; a fixed query mix.
+  [`tpch_generate.py`](tpch_generate.py), which uses DuckDB's `tpch` extension.
 
 ## What is measured
 

@@ -56,7 +56,9 @@ Capturing logs costs no measurable CPU. Their volume is the cost; see
 ## What was measured
 
 - **Workloads:** TPC-H (22 queries, one pass and 20-minute loops), one stage of up to 100,000 tasks,
-  2,000 small jobs, and two Scala RDD applications.
+  2,000 small jobs, and two Scala RDD applications. The TPC-H workload is derived from TPC-H (data
+  and queries generated with DuckDB's `tpch` extension). These figures measure Flare's overhead;
+  they aren't TPC-H benchmark results and aren't comparable with published TPC-H results.
 - **Platforms:** a three-node lab, Dataproc 2.2, and Databricks 15.4 on AWS with and without Photon.
 - **Configurations:** no agent, the agent alone, Flare at its default granularity, Flare with every
   task traced, and every task traced with the agent's own instrumentation off.
