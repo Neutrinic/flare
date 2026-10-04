@@ -1,8 +1,8 @@
 # Telemetry volume
 
 An always-on Spark application can send gigabytes of telemetry a day, and most of it is not Flare's.
-Measured on 20-minute TPC-H applications ([overhead](../reference/overhead.md)), on Databricks with
-4 nodes unless noted:
+Measured on 20-minute applications running a TPC-H-derived workload
+([overhead](../reference/overhead.md#what-was-measured)), on Databricks with 4 nodes unless noted:
 
 | Signal | What drives it | Per hour, gzip | Lever |
 |---|---|---|---|
