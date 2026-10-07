@@ -17,6 +17,25 @@ object SparkAttributes {
     val StageCount  = AttributeKey.longKey("spark.job.stage.count")
   }
 
+  /**
+   * The Lakeflow job, job run and task run that submitted a Spark job (#203). Databricks sets them
+   * as local properties on every job it submits. On a shared job cluster every task, and every
+   * retry, runs in one Spark application, so they are what tells the tasks' work apart. Span
+   * attributes only: a run id is new every run, so as a metric label it would grow without bound.
+   */
+  object Databricks {
+    val JobId     = AttributeKey.stringKey("databricks.job.id")
+    val JobRunId  = AttributeKey.stringKey("databricks.job.run_id")
+    val TaskRunId = AttributeKey.stringKey("databricks.task.run_id")
+
+    /** Each attribute and the Databricks local property it is read from. */
+    val FromProperties: Seq[(AttributeKey[String], String)] = Seq(
+      JobId     -> "spark.databricks.job.id",
+      JobRunId  -> "spark.databricks.job.parentRunId",
+      TaskRunId -> "spark.databricks.job.runId",
+    )
+  }
+
   object Stage {
     val Id              = AttributeKey.longKey("spark.stage.id")
     val AttemptId       = AttributeKey.longKey("spark.stage.attempt.id")
