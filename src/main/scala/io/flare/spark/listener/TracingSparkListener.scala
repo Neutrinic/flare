@@ -6,6 +6,7 @@ import io.flare.spark.attributes.SparkAttributes._
 import io.flare.spark.config.FlareConfig
 import io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper
 import io.flare.spark.metrics.{FlareMetrics, MetricAttributes}
+import io.flare.spark.plugin.FlareDriverState
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
 import org.apache.spark.FlareJobResultAccess
@@ -193,6 +194,9 @@ class TracingSparkListener(
         logger.debug(s"[Flare] Job ${event.jobId} ended")
       }
     }
+
+    // Get this job's metrics out once the driver goes quiet, not on the next 60s export (#199).
+    FlareDriverState.jobEnded()
   }
 
   // ── Stages ───────────────────────────────────────────────────────────────────

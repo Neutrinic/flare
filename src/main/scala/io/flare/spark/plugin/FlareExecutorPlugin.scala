@@ -387,13 +387,17 @@ private[plugin] object MdcEnricher {
 
 private[plugin] object FlareExecutorPlugin {
 
-  /** After an idle flush, how long the next one needs the longer quiet (#139). */
+  /**
+   * After an idle flush, how long the next one needs the longer quiet (#139). Shared by the
+   * executor's flush after tasks and the driver's after jobs (#199).
+   */
   val IdleFlushIntervalMs: Long = 30000L
 
   /**
    * The quiet an idle flush needs within [[IdleFlushIntervalMs]] of the previous one. It has to
    * beat the kill: a Databricks job cluster starts tearing down about 8.6s after its last job ends
-   * (measured on DBR 15.4), so the last flush of a run, 3s after its last task, leaves about 5s.
+   * (measured on DBR 15.4), so the last flush of a run, 3s after its last task or job, leaves
+   * about 5s.
    */
   val IdleFlushThrottledQuietMs: Long = 3000L
 }

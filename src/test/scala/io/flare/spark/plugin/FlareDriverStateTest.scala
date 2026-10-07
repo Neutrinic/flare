@@ -8,6 +8,12 @@ import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
 import io.opentelemetry.sdk.trace.`export`.SimpleSpanProcessor
 import munit.FunSuite
+import org.apache.spark.scheduler.{JobSucceeded, SparkListenerJobEnd, SparkListenerJobStart}
+
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.{util => ju}
+import scala.collection.JavaConverters._
 
 class FlareDriverStateTest extends FunSuite {
 
@@ -142,5 +148,47 @@ class FlareDriverStateTest extends FunSuite {
     latch.await()
     assertEquals(wins.get(), 1, "Exactly one thread should win the init race")
     assert(FlareDriverState.initialized)
+  }
+
+  // ── Idle flush (#199) ───────────────────────────────────────────────────────
+
+  test("the driver flushes once no job has ended for a second, not at the next export interval") {
+    val flushes = new AtomicInteger()
+    FlareDriverState.idleFlushAction = () => flushes.incrementAndGet()
+    try {
+      val listener = new TracingSparkListener(tracer, testConfig, throwOnError = true)
+      FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), listener)
+      // Three jobs in quick succession: one flush, once they stop.
+      (0 to 2).foreach { id =>
+        listener.onJobStart(SparkListenerJobStart(id, System.currentTimeMillis(), Seq.empty, new ju.Properties()))
+        listener.onJobEnd(SparkListenerJobEnd(id, System.currentTimeMillis(), JobSucceeded))
+      }
+      assertEquals(flushes.get(), 0, "flushed before the driver went quiet")
+      val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+      while (flushes.get() == 0 && System.nanoTime() < deadline) Thread.sleep(50)
+      assertEquals(flushes.get(), 1, "the driver did not flush once its jobs stopped")
+    } finally FlareDriverState.idleFlushAction = () => TelemetryFlush.flush("driver idle")
+  }
+
+  test("shutdown cancels a pending idle flush, and a job end after it starts none") {
+    val flushes = new AtomicInteger()
+    FlareDriverState.idleFlushAction = () => flushes.incrementAndGet()
+    def flushThreadAlive = Thread.getAllStackTraces.keySet.asScala
+      .exists(t => t.getName == "flare-driver-idle-flush" && t.isAlive)
+    try {
+      val listener = new TracingSparkListener(tracer, testConfig, throwOnError = true)
+      FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), listener)
+      listener.onJobStart(SparkListenerJobStart(0, System.currentTimeMillis(), Seq.empty, new ju.Properties()))
+      listener.onJobEnd(SparkListenerJobEnd(0, System.currentTimeMillis(), JobSucceeded))
+      assert(flushThreadAlive, "the job end did not schedule a flush")
+
+      FlareDriverState.shutdown() // well inside the 1s quiet period
+      FlareDriverState.jobEnded()
+      val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+      while (flushThreadAlive && System.nanoTime() < deadline) Thread.sleep(50)
+      assert(!flushThreadAlive, "the idle-flush thread outlived shutdown")
+      Thread.sleep(1500) // past the quiet period the cancelled flush would have waited
+      assertEquals(flushes.get(), 0, "a flush ran after shutdown")
+    } finally FlareDriverState.idleFlushAction = () => TelemetryFlush.flush("driver idle")
   }
 }
