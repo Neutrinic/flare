@@ -142,6 +142,10 @@ Each milestone lists its issues. Anything without one is not yet planned.
 
 See [Building Flare](https://neutrinic.github.io/flare/latest/building/). In short: `sbt -DsparkVersion=3.5.1 ++2.13.16 assembly`.
 
+To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md). [GOVERNANCE.md](GOVERNANCE.md) says who
+maintains the project and how decisions are made. To report a vulnerability, see
+[SECURITY.md](SECURITY.md).
+
 ## License
 
 Apache License 2.0
