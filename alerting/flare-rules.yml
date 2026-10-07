@@ -11,31 +11,27 @@
 groups:
   - name: flare-outcomes
     rules:
-      # The latest run that ended in the last hour had a failed job. Spark reports no result for an
-      # application, so this is Flare's application.result: FAILED when any job failed.
+      # The latest run of a service failed, and ended in the last hour. Spark reports no result for
+      # an application, so this is Flare's application.result: FAILED when any job failed.
       #
       # Only the latest run counts (#202). An orchestrator that retries a failed run, such as
       # Airflow's retries, starts a new application, and once the retry succeeds the pipeline is
-      # fine. Each run's series first appears when it ends, so `timestamp` over the window gives
-      # when the newest FAILED and the newest SUCCESS run ended: this fires while the failure is
-      # newer, or when no run succeeded. A retry that succeeds resolves it.
+      # fine. flare.application.end_time holds when each run ended, as its value, so runs are
+      # ordered exactly: this fires while the newest failure is newer than the newest success, or
+      # when no run succeeded, and a retry that succeeds resolves it. When a series appeared would
+      # not do: that depends on how often it is scraped or pushed.
       - alert: FlareApplicationFailed
         expr: |
-          max by (job) (
-            min_over_time(timestamp({__name__=~"flare_application_duration(_seconds)?_count", application_result="FAILED"})[1h:1m])
+          (
+            max by (job) (max_over_time({__name__=~"flare_application_end_time(_seconds)?", application_result="FAILED"}[1h]))
+            > on (job)
+            max by (job) (max_over_time({__name__=~"flare_application_end_time(_seconds)?", application_result="SUCCESS"}[1h]))
+            or
+            max by (job) (max_over_time({__name__=~"flare_application_end_time(_seconds)?", application_result="FAILED"}[1h]))
+            unless on (job)
+            max by (job) (max_over_time({__name__=~"flare_application_end_time(_seconds)?", application_result="SUCCESS"}[1h]))
           )
-          > on (job)
-          max by (job) (
-            min_over_time(timestamp({__name__=~"flare_application_duration(_seconds)?_count", application_result="SUCCESS"})[1h:1m])
-          )
-          or
-          max by (job) (
-            min_over_time(timestamp({__name__=~"flare_application_duration(_seconds)?_count", application_result="FAILED"})[1h:1m])
-          )
-          unless on (job)
-          max by (job) (
-            min_over_time(timestamp({__name__=~"flare_application_duration(_seconds)?_count", application_result="SUCCESS"})[1h:1m])
-          )
+          > time() - 3600
         labels:
           severity: warning
         annotations:

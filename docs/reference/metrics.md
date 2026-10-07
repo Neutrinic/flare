@@ -16,6 +16,7 @@ Nineteen instruments, all under the `io.flare.spark` meter, all turned off by
 | `flare.stage.shuffle.write_bytes` | counter | `By` | `stage.name`, `sql.description` |
 | `flare.job.duration` | histogram | `ms` | `job.result`, `sql.description` |
 | `flare.application.duration` | histogram | `s` | `application.result` |
+| `flare.application.end_time` | gauge | `s` | `application.result` |
 | `flare.executor.count` | updowncounter | `{executor}` | `executor.id` |
 | `flare.executor.removed` | counter | `{executor}` | `executor.id`, `reason` |
 | `flare.executor.excluded` | counter | `{executor}` | `executor.id` |
@@ -101,6 +102,10 @@ facts are on the spans, which alert rules cannot read.
   so `application.result` is `FAILED` when **any of its jobs failed**. An application that catches
   a failed job and carries on still reads `FAILED`, and one that fails outside any job, in driver
   code or before its first query runs, reads `SUCCESS`.
+- **`flare.application.end_time`** is set alongside it, to when the application ended in seconds
+  since the Unix epoch, with the same `application.result`. It puts runs in order, which the
+  example rule that alerts only on a service's latest run needs
+  ([#202](https://github.com/Neutrinic/flare/issues/202)).
 
 Neither carries an application or run id, so successive runs of the same service can be compared.
 `sql.description`, here and on the stage metrics, is the query's call site, such as

@@ -192,6 +192,26 @@ class TracingSparkListenerTest extends FunSuite {
     assertEquals(tagsOf(points.head), Map("application.result" -> "FAILED"))
   }
 
+  test("an application records when it ended, with its result, on flare.application.end_time") {
+    val reader = InMemoryMetricReader.create()
+    val tp = SdkTracerProvider.builder().build()
+    val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
+    try {
+      val l = new TracingSparkListener(
+        tp.get("t"), config, Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true)
+      l.onJobStart(makeJobStart(0, Seq(0)))
+      l.onJobEnd(makeJobEnd(0, succeeded = false))
+      l.onApplicationEnd(SparkListenerApplicationEnd(1791000000500L))
+      l.shutdown()
+      val points = reader.collectAllMetrics().asScala.filter(_.getName == "flare.application.end_time")
+        .flatMap(_.getDoubleGaugeData.getPoints.asScala).toSeq
+      assertEquals(points.size, 1)
+      assertEqualsDouble(points.head.getValue, 1791000000.5, 0.0001)
+      assertEquals(points.head.getAttributes.asMap.asScala.map { case (k, v) => k.getKey -> v.toString }.toMap,
+        Map("application.result" -> "FAILED"))
+    } finally { tp.close(); mp.close() }
+  }
+
   test("an application stopped without an end event is still recorded, at shutdown") {
     val points = outcomes { l =>
       l.onJobStart(makeJobStart(0, Seq(0)))

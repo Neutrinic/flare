@@ -2,7 +2,7 @@ package io.flare.spark.metrics
 
 import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.OpenTelemetry
-import io.opentelemetry.api.metrics.{DoubleHistogram, LongCounter, LongUpDownCounter, Meter}
+import io.opentelemetry.api.metrics.{DoubleGauge, DoubleHistogram, LongCounter, LongUpDownCounter, Meter}
 
 /**
  * Holder for all Flare OTEL metric instruments.
@@ -158,6 +158,18 @@ class FlareMetrics(meter: Meter) {
     .setDescription("Application duration, recorded once when it ends")
     .setUnit("s")
     .setExplicitBucketBoundariesAdvice(FlareMetrics.ApplicationDurationBucketsS)
+    .build()
+
+  /**
+   * When the application ended, in seconds since the Unix epoch, set once alongside
+   * [[applicationDuration]] and with the same `application.result`. It orders runs, which alerting
+   * on a service's latest run needs (#202): when a series first appeared depends on how often it is
+   * scraped or pushed, and cannot be compared to the second.
+   */
+  val applicationEndTime: DoubleGauge = meter
+    .gaugeBuilder("flare.application.end_time")
+    .setDescription("When the application ended, in seconds since the Unix epoch; set once when it ends")
+    .setUnit("s")
     .build()
 
   val storageBlocks: LongUpDownCounter = meter
