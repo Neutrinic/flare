@@ -67,6 +67,7 @@ object SubmitMissingTasksAdviceHelper {
   @volatile private var reflectionReady = false
   private var jobIdToActiveJobField: java.lang.reflect.Field = _
   private var stageIdMethod: java.lang.reflect.Method = _
+  private var stageParentsMethod: java.lang.reflect.Method = _
   private var propertiesMethod: java.lang.reflect.Method = _
 
   private def ensureReflection(dagScheduler: Any): Boolean = {
@@ -86,6 +87,9 @@ object SubmitMissingTasksAdviceHelper {
         // Stage.id — public getter inherited from abstract Stage
         stageIdMethod = Class.forName("org.apache.spark.scheduler.Stage")
           .getMethod("id")
+        // Stage.parents: the stages this one reads from, finished before it is submitted
+        stageParentsMethod = Class.forName("org.apache.spark.scheduler.Stage")
+          .getMethod("parents")
 
         // ActiveJob.properties — public getter on package-private class
         propertiesMethod = Class.forName("org.apache.spark.scheduler.ActiveJob")
@@ -197,11 +201,17 @@ object SubmitMissingTasksAdviceHelper {
         superseded.end()
       }
 
-      // Inject stage span's traceparent into ActiveJob.properties.
-      // The method body reads these properties and passes them to the TaskSet,
-      // so tasks inherit the stage-level context on the executor.
+      // Inject the stage span's context into ActiveJob.properties, under this stage's own keys as
+      // well as the generic ones. The job's stages share this Properties instance and their tasks
+      // read it only at launch, so with the generic keys alone a stage submitted alongside this one
+      // would launch its tasks under this stage (#204).
       val stageCtx = Context.root().`with`(stageSpan)
-      LocalPropertyPropagator.injectIntoProperties(stageCtx, props)
+      LocalPropertyPropagator.injectForStage(stageCtx, props, stageId)
+      // This stage's parents have finished, so all their tasks have launched: drop their keys, or
+      // every later task of the job would carry them.
+      stageParentsMethod.invoke(stage).asInstanceOf[scala.collection.Iterable[AnyRef]].foreach { parent =>
+        LocalPropertyPropagator.removeStage(props, stageIdMethod.invoke(parent).asInstanceOf[java.lang.Integer].intValue())
+      }
 
       logger.fine(s"[Flare] submitMissingTasks: jobId=$jobId stageId=$stageId traceparent injected")
     } catch {
