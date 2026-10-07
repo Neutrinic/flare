@@ -20,7 +20,61 @@ tests:
               severity: warning
               job: etl-driver
             exp_annotations:
-              summary: "etl-driver: a run ended with a failed job"
+              summary: "etl-driver: the latest run ended with a failed job"
+
+  # A failed run whose retry succeeded: fires until the retry ends, then resolves (#202).
+  - interval: 1m
+    input_series:
+      - series: 'flare_application_duration_seconds_count{job="etl-driver", instance="try-1", application_result="FAILED"}'
+        values: "_ _ 1x20"
+      - series: 'flare_application_duration_seconds_count{job="etl-driver", instance="try-2", application_result="SUCCESS"}'
+        values: "_ _ _ _ _ _ 1x20"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: FlareApplicationFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: etl-driver
+            exp_annotations:
+              summary: "etl-driver: the latest run ended with a failed job"
+      - eval_time: 10m
+        alertname: FlareApplicationFailed
+        exp_alerts: []
+
+  # A run that succeeded, then a later one that failed: fires.
+  - interval: 1m
+    input_series:
+      - series: 'flare_application_duration_seconds_count{job="etl-driver", instance="run-1", application_result="SUCCESS"}'
+        values: "_ _ 1x20"
+      - series: 'flare_application_duration_seconds_count{job="etl-driver", instance="run-2", application_result="FAILED"}'
+        values: "_ _ _ _ _ _ 1x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FlareApplicationFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: etl-driver
+            exp_annotations:
+              summary: "etl-driver: the latest run ended with a failed job"
+
+  # Another service's success does not resolve this one's failure.
+  - interval: 1m
+    input_series:
+      - series: 'flare_application_duration_seconds_count{job="etl-driver", instance="run-1", application_result="FAILED"}'
+        values: "_ _ 1x20"
+      - series: 'flare_application_duration_seconds_count{job="report-driver", instance="run-2", application_result="SUCCESS"}'
+        values: "_ _ _ _ _ _ 1x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FlareApplicationFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: etl-driver
+            exp_annotations:
+              summary: "etl-driver: the latest run ended with a failed job"
 
   # Mimir's naming, without the unit, matches too.
   - interval: 1m

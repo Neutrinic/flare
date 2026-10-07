@@ -11,17 +11,35 @@
 groups:
   - name: flare-outcomes
     rules:
-      # A run ended in the last hour, and at least one of its jobs failed. Spark reports no result
-      # for an application, so this is Flare's application.result: FAILED when any job failed.
+      # The latest run that ended in the last hour had a failed job. Spark reports no result for an
+      # application, so this is Flare's application.result: FAILED when any job failed.
+      #
+      # Only the latest run counts (#202). An orchestrator that retries a failed run, such as
+      # Airflow's retries, starts a new application, and once the retry succeeds the pipeline is
+      # fine. Each run's series first appears when it ends, so `timestamp` over the window gives
+      # when the newest FAILED and the newest SUCCESS run ended: this fires while the failure is
+      # newer, or when no run succeeded. A retry that succeeds resolves it.
       - alert: FlareApplicationFailed
         expr: |
           max by (job) (
-            max_over_time({__name__=~"flare_application_duration(_seconds)?_count", application_result="FAILED"}[1h])
-          ) > 0
+            min_over_time(timestamp({__name__=~"flare_application_duration(_seconds)?_count", application_result="FAILED"})[1h:1m])
+          )
+          > on (job)
+          max by (job) (
+            min_over_time(timestamp({__name__=~"flare_application_duration(_seconds)?_count", application_result="SUCCESS"})[1h:1m])
+          )
+          or
+          max by (job) (
+            min_over_time(timestamp({__name__=~"flare_application_duration(_seconds)?_count", application_result="FAILED"})[1h:1m])
+          )
+          unless on (job)
+          max by (job) (
+            min_over_time(timestamp({__name__=~"flare_application_duration(_seconds)?_count", application_result="SUCCESS"})[1h:1m])
+          )
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.job }}: a run ended with a failed job"
+          summary: "{{ $labels.job }}: the latest run ended with a failed job"
 
       # Which query failed, for pipelines that carry on after a failed job.
       - alert: FlareJobFailed
