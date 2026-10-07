@@ -566,10 +566,11 @@ class TracingSparkListener(
    */
   private def recordApplicationEnd(endMs: Long): Unit =
     if (applicationRecorded.compareAndSet(false, true)) safeHandle("onApplicationEnd metrics") {
-      metrics.foreach(_.applicationDuration.record(
-        math.max(0L, endMs - applicationStartMs) / 1000.0,
-        MetricAttributes.forApplication(if (anyJobFailed) "FAILED" else "SUCCESS"),
-      ))
+      metrics.foreach { fm =>
+        val attrs = MetricAttributes.forApplication(if (anyJobFailed) "FAILED" else "SUCCESS")
+        fm.applicationDuration.record(math.max(0L, endMs - applicationStartMs) / 1000.0, attrs)
+        fm.applicationEndTime.set(endMs / 1000.0, attrs)
+      }
     }
 
   /** Read by the scheduler advice, which creates stage spans only when the listener adopts them. */
