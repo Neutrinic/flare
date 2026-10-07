@@ -21,6 +21,9 @@ Your backend receives what Spark reveals about your jobs. Some of it can be sens
 
 Secure your backend as you would the data the jobs process.
 
+If Flare exports something sensitive that this table does not list, report it privately as a
+vulnerability: see the [security policy](https://github.com/Neutrinic/flare/blob/main/SECURITY.md).
+
 ## This site counts page views
 
 Each page of this site loads a one-pixel image from [Scarf](https://about.scarf.sh/), which
