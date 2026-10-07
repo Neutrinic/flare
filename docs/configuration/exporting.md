@@ -101,12 +101,15 @@ To turn logs off: `-Dotel.logs.exporter=none`.
 ## Metrics
 
 Metrics are exported every 60 seconds by default (`otel.metric.export.interval`). Flare also flushes
-at shutdown, and each executor flushes a second after its last task ends, or three seconds if it
-already flushed in the previous 30, so that pauses between stages do not flush every few seconds
-([#139](https://github.com/Neutrinic/flare/issues/139)). A short job, or an executor that is later
-killed without a shutdown call, still reports its final values: a Databricks job cluster starts
-tearing down about 8.6 seconds after its last job. An executor killed sooner than that after its
-last task, or while a task is still running, can lose the metrics it had not exported yet.
+at shutdown, and when things go quiet: each executor a second after its last task ends, and the
+driver a second after its last job ends ([#199](https://github.com/Neutrinic/flare/issues/199)).
+Either waits three seconds instead if it already flushed in the previous 30, so that pauses between
+stages and jobs do not flush every few seconds
+([#139](https://github.com/Neutrinic/flare/issues/139)). A short job, or a JVM that is later killed
+without a shutdown call, still reports its final values: a Databricks job cluster starts tearing
+down about 8.6 seconds after its last job. A JVM killed sooner than that, or while its tasks or jobs
+are still running, can lose the metrics it had not exported yet. To narrow that window, lower
+`otel.metric.export.interval`.
 
 ## Checking what is exported
 

@@ -82,7 +82,7 @@ volume stays flat: on a lab TPC-H application each export stayed at 10 to 13 KB 
 Up to 1.2.0 the task and stage metrics also carried `stage.id`, which grew every export for the life
 of the application; see [Upgrading](../upgrading.md).
 
-Executors also flush when they go quiet, so a job's last metrics can reach the backend on clusters
-that kill executors without warning, provided the executor is still alive when the flush completes;
-see [Metrics](exporting.md#metrics). Most gaps between stages are too
-short to trigger it, so an executor exports metrics a few times a minute rather than once.
+Executors and the driver also flush when they go quiet, so a job's last metrics can reach the
+backend on clusters that kill them without warning, provided the JVM is still alive when the flush
+completes; see [Metrics](exporting.md#metrics). Most gaps between stages and jobs are too short to
+trigger it, so each JVM exports metrics a few times a minute rather than once.

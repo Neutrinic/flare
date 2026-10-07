@@ -29,6 +29,15 @@ object FlareDriverState {
   @volatile private[spark] var applicationSpan: Option[Span] = None
   @volatile private var listener: Option[TracingSparkListener] = None
 
+  // Flushes once no job has ended for a second (#199), as executors do once no task has (#122),
+  // and throttled the same way (#139). The metric reader exports every 60s, so a driver that died
+  // lost the job, stage and executor metrics of up to the last minute, and all of them in its
+  // first minute. One per initialization: closing it at shutdown stops its thread.
+  @volatile private var idleFlush: Option[QuietPeriodAction] = None
+
+  /** What the idle flush runs. Replaced in tests, which have no agent to flush through. */
+  @volatile private[plugin] var idleFlushAction: () => Unit = () => TelemetryFlush.flush("driver idle")
+
   /** Read-only access to initialization state. */
   def initialized: Boolean = _initialized
 
@@ -49,6 +58,11 @@ object FlareDriverState {
     } else {
       applicationSpan = Some(span)
       listener = Some(tracingListener)
+      idleFlush = Some(new QuietPeriodAction(
+        1000L, () => idleFlushAction(), "flare-driver-idle-flush",
+        minIntervalMs = FlareExecutorPlugin.IdleFlushIntervalMs,
+        throttledDelayMs = FlareExecutorPlugin.IdleFlushThrottledQuietMs,
+      ))
       _initialized = true
       registerShutdownHook()
       DriverSpans.register()
@@ -98,6 +112,9 @@ object FlareDriverState {
       }
     }
 
+  /** Called by the listener at every job end: restarts the wait for the driver to go quiet. */
+  private[spark] def jobEnded(): Unit = idleFlush.foreach(_.request())
+
   /**
    * Shutdown: end all open spans including the application span, then flush. Idempotent — safe
    * to call from both plugin shutdown and a JVM shutdown hook.
@@ -123,6 +140,7 @@ object FlareDriverState {
     if (!_initialized) false
     else {
       listener.foreach(_.shutdown())
+      closeIdleFlush()
       applicationSpan = None
       listener = None
       _initialized = false
@@ -133,8 +151,14 @@ object FlareDriverState {
 
   /** Visible for testing — reset all state. */
   private[plugin] def reset(): Unit = synchronized {
+    closeIdleFlush()
     applicationSpan = None
     listener = None
     _initialized = false
+  }
+
+  private def closeIdleFlush(): Unit = {
+    idleFlush.foreach(_.close())
+    idleFlush = None
   }
 }
