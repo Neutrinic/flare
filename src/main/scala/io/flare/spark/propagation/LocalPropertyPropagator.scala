@@ -54,9 +54,9 @@ object LocalPropertyPropagator {
    */
   def extract(taskContext: TaskContext): OtelContext = {
     val propagator = GlobalOpenTelemetry.getPropagators.getTextMapPropagator
-    val parentContext = extractPreferringStage(
-      propagator.extract(OtelContext.root(), taskContext, stageGetter(taskContext.stageId(), TaskContextGetter)),
-      propagator.extract(OtelContext.root(), taskContext, TaskContextGetter))
+    val parentContext = overlayStage(
+      propagator.extract(OtelContext.root(), taskContext, TaskContextGetter),
+      taskContext, stageGetter(taskContext.stageId(), TaskContextGetter))
 
     if (parentContext == OtelContext.root()) {
       logger.debug("[Flare] No trace context found in task properties")
@@ -119,20 +119,23 @@ object LocalPropertyPropagator {
   }
 
   /**
-   * As [[extractFromProperties]], preferring the context written for `stageId` (#204). Falls back
-   * to the generic keys when the stage has none, or when the stage is unknown (`stageId < 0`).
+   * As [[extractFromProperties]], with the context written for `stageId` laid over the generic one
+   * (#204). The stage's keys carry only its span, so anything else in the generic keys, such as
+   * baggage the application set as a local property, is kept. Without stage keys, or with an
+   * unknown stage (`stageId < 0`), this is the generic context.
    */
   def extractFromProperties(props: ju.Properties, stageId: Int): OtelContext = {
     if (props == null) return OtelContext.root()
-    if (stageId < 0) return extractFromProperties(props)
-    val propagator = GlobalOpenTelemetry.getPropagators.getTextMapPropagator
-    extractPreferringStage(
-      propagator.extract(OtelContext.root(), props, stageGetter(stageId, PropertiesGetter)),
-      extractFromProperties(props))
+    val generic = extractFromProperties(props)
+    if (stageId < 0) generic else overlayStage(generic, props, stageGetter(stageId, PropertiesGetter))
   }
 
-  private def extractPreferringStage(stageContext: OtelContext, generic: => OtelContext): OtelContext =
-    if (stageContext != OtelContext.root()) stageContext else generic
+  /**
+   * Extracts the stage's keys into `generic`. A propagator replaces only what it finds, so the
+   * stage's span replaces the generic one, and baggage the stage keys do not carry is kept.
+   */
+  private def overlayStage[C](generic: OtelContext, carrier: C, stageKeys: TextMapGetter[C]): OtelContext =
+    GlobalOpenTelemetry.getPropagators.getTextMapPropagator.extract(generic, carrier, stageKeys)
 
   /** Reads `key` as the stage's own key, `flare.stage.<stageId>.<key>`, through `getter`. */
   private def stageGetter[C](stageId: Int, getter: TextMapGetter[C]): TextMapGetter[C] = {

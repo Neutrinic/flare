@@ -3,9 +3,11 @@ package io.flare.spark.instrumentation
 import io.flare.spark.propagation.LocalPropertyPropagator
 import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.trace.{Span, SpanKind, Tracer}
+import io.opentelemetry.api.baggage.Baggage
+import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
 import io.opentelemetry.context.Context
-import io.opentelemetry.context.propagation.ContextPropagators
+import io.opentelemetry.context.propagation.{ContextPropagators, TextMapPropagator}
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -31,7 +33,8 @@ class TaskRunnerAdviceHelperTest extends FunSuite {
 
   private val sdk: OpenTelemetrySdk = OpenTelemetrySdk.builder()
     .setTracerProvider(tracerProvider)
-    .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+    .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
+      W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
     .buildAndRegisterGlobal()
 
   private val tracer: Tracer = sdk.getTracer("test")
@@ -273,6 +276,20 @@ class TaskRunnerAdviceHelperTest extends FunSuite {
       assertEquals(props.getProperty("flare.stage.1.traceparent"), null)
       assert(props.getProperty("flare.stage.2.traceparent") != null, "stage 2's key was removed")
       assert(props.getProperty("traceparent") != null, "the generic key was removed")
+    } finally { s1.end(); s2.end() }
+  }
+
+  test("a task under its own stage keeps the baggage in the job's properties") {
+    val (s1, s2) = (tracer.spanBuilder("spark.stage.1").startSpan(), tracer.spanBuilder("spark.stage.2").startSpan())
+    try {
+      val props = twoStagesInjected(s1, s2)
+      props.setProperty("baggage", "tenant=acme") // set by the application, as a local property
+      val scope = TaskRunnerAdviceHelper.onEnter(new NamedTaskDescription("task 0.0 in stage 1.0 (TID 2)", props))
+      assert(scope != null, "no context was made current")
+      try {
+        assertEquals(Span.current().getSpanContext.getSpanId, s1.getSpanContext.getSpanId)
+        assertEquals(Baggage.current().getEntryValue("tenant"), "acme")
+      } finally TaskRunnerAdviceHelper.onExit(scope)
     } finally { s1.end(); s2.end() }
   }
 }
