@@ -1,9 +1,15 @@
 package io.flare.spark.plugin
 
 import io.flare.spark.attributes.SparkAttributes.{Error, Task}
+import io.flare.spark.propagation.LocalPropertyPropagator
 import io.opentelemetry.api.GlobalOpenTelemetry
+import io.opentelemetry.api.baggage.Baggage
+import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.trace.StatusCode
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
+import io.opentelemetry.context.Context
+import io.opentelemetry.context.propagation.{ContextPropagators, TextMapPropagator}
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.metrics.SdkMeterProvider
 import io.opentelemetry.sdk.testing.exporter.{InMemoryMetricReader, InMemorySpanExporter}
@@ -108,6 +114,58 @@ class FlareExecutorPluginTest extends FunSuite {
   }
 
   // ── Baseline ───────────────────────────────────────────────────────────────
+
+  test("the context a task's span is parented on keeps the job's baggage (#204)") {
+    val sdk = OpenTelemetrySdk.builder()
+      .setTracerProvider(SdkTracerProvider.builder().build())
+      .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
+        W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
+      .buildAndRegisterGlobal()
+    try {
+      val tracer = GlobalOpenTelemetry.getTracer("test")
+      val (own, other) = (tracer.spanBuilder("spark.stage.0").startSpan(), tracer.spanBuilder("spark.stage.1").startSpan())
+      val props = FlareTestHelpers.localProperties(FlareTestHelpers.bindEmptyTaskContext())
+      props.setProperty("baggage", "tenant=acme")
+      LocalPropertyPropagator.injectForStage(Context.root().`with`(own), props, 0)
+      LocalPropertyPropagator.injectForStage(Context.root().`with`(other), props, 1)
+
+      val extracted = LocalPropertyPropagator.extract(org.apache.spark.TaskContext.get())
+      FlareTestHelpers.unbindTaskContext()
+      own.end(); other.end()
+      assertEquals(io.opentelemetry.api.trace.Span.fromContext(extracted).getSpanContext.getSpanId, own.getSpanContext.getSpanId)
+      assertEquals(Baggage.fromContext(extracted).getEntryValue("tenant"), "acme")
+    } finally sdk.close()
+  }
+
+  test("a task span's parent is its own stage, not a stage submitted alongside it (#204)") {
+    sys.props("FLARE_TRACE_GRANULARITY") = "tasks"
+    val spanExporter = InMemorySpanExporter.create()
+    val sdk = OpenTelemetrySdk.builder()
+      .setTracerProvider(SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(spanExporter)).build())
+      .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(InMemoryMetricReader.create()).build())
+      .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+      .buildAndRegisterGlobal()
+    try {
+      val plugin = new FlareExecutorPlugin()
+      plugin.init(StubPluginContext, java.util.Collections.emptyMap[String, String]())
+      val tracer = GlobalOpenTelemetry.getTracer("test")
+      val (own, other) = (tracer.spanBuilder("spark.stage.0").startSpan(), tracer.spanBuilder("spark.stage.1").startSpan())
+
+      // The task is in stage 0; stage 1 was submitted after it and overwrote the generic keys.
+      val props = FlareTestHelpers.localProperties(FlareTestHelpers.bindEmptyTaskContext())
+      LocalPropertyPropagator.injectForStage(Context.root().`with`(own), props, 0)
+      LocalPropertyPropagator.injectForStage(Context.root().`with`(other), props, 1)
+      plugin.onTaskStart()
+      plugin.onTaskSucceeded()
+      FlareTestHelpers.unbindTaskContext()
+      own.end(); other.end()
+
+      val task = spanExporter.getFinishedSpanItems.asScala.find(_.getName == "spark.task.executor")
+        .getOrElse(fail("no task span was exported"))
+      assertEquals(task.getParentSpanId, own.getSpanContext.getSpanId)
+    } finally sdk.close()
+  }
+
 
   test("a traced task exports one span and one metric point linked by an exemplar") {
     sys.props("FLARE_TRACE_GRANULARITY") = "all"

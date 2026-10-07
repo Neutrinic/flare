@@ -27,7 +27,11 @@ object TaskRunnerAdviceHelper {
   private val logger = Logger.getLogger(TaskRunnerAdviceHelper.getClass.getName)
 
   // Cached reflection — Method objects are thread-safe for invoke()
-  @volatile private var propertiesMethod: java.lang.reflect.Method = _
+  @volatile private var propertiesMethod: (Class[_], java.lang.reflect.Method) = _
+  @volatile private var nameMethod: Option[(Class[_], Option[java.lang.reflect.Method])] = None
+
+  /** `task 3.0 in stage 1.0 (TID 7)`: the name `TaskSetManager` gives every task, 3.3 to 4.2. */
+  private val StageInName = """ in stage (\d+)\.""".r.unanchored
 
   /**
    * Called from `@Advice.OnMethodEnter`.
@@ -44,7 +48,7 @@ object TaskRunnerAdviceHelper {
       val props = getProperties(taskDescription)
       if (props == null) return null
 
-      val parentContext = LocalPropertyPropagator.extractFromProperties(props)
+      val parentContext = LocalPropertyPropagator.extractFromProperties(props, stageIdOf(taskDescription))
       if (parentContext == Context.root()) {
         null
       } else {
@@ -74,24 +78,44 @@ object TaskRunnerAdviceHelper {
   }
 
   /**
+   * The task's stage id, or -1 if it cannot be read. `TaskDescription` has no stage id field, so it
+   * is read from the task's name (#204); the per-stage context then falls back to the generic one.
+   */
+  private[instrumentation] def stageIdOf(taskDescription: Any): Int = {
+    val cls = taskDescription.getClass
+    val method = nameMethod match {
+      case Some((c, m)) if c eq cls => m
+      case _ =>
+        val m = try Some(cls.getMethod("name")) catch { case _: NoSuchMethodException => None }
+        nameMethod = Some((cls, m))
+        m
+    }
+    method.map(_.invoke(taskDescription)).collect { case s: String => s } match {
+      case Some(StageInName(id)) => try id.toInt catch { case _: NumberFormatException => -1 }
+      case _ => -1
+    }
+  }
+
+  /**
    * Access `TaskDescription.properties` via reflection.
    *
    * `TaskDescription` is `private[spark]` so we cannot reference it by type
    * from extension code. The `properties` method is a public accessor on the
    * case class, returning `java.util.Properties`.
    *
-   * The Method reference is cached after first successful lookup. This is a
-   * benign race, not proper double-checked locking — two threads can both see
-   * null and both do the reflective lookup. This is harmless: both resolve to
-   * the same Method object, and the write to `@volatile propertiesMethod` is
-   * atomic. Not worth synchronizing for a one-time-per-JVM lookup.
+   * The Method reference is cached with its class after the first lookup, and looked up again for
+   * another class (only tests pass one). This is a benign race, not proper double-checked locking:
+   * two threads can both miss and both do the reflective lookup. This is harmless: both resolve to
+   * the same Method object, and the write to `@volatile propertiesMethod` is atomic. Not worth
+   * synchronizing for a one-time-per-JVM lookup.
    */
   private def getProperties(taskDescription: Any): java.util.Properties = {
-    var m = propertiesMethod
-    if (m == null) {
-      m = taskDescription.getClass.getMethod("properties")
-      propertiesMethod = m
+    val cls = taskDescription.getClass
+    var cached = propertiesMethod
+    if (cached == null || (cached._1 ne cls)) {
+      cached = (cls, cls.getMethod("properties"))
+      propertiesMethod = cached
     }
-    m.invoke(taskDescription).asInstanceOf[java.util.Properties]
+    cached._2.invoke(taskDescription).asInstanceOf[java.util.Properties]
   }
 }

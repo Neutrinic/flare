@@ -22,6 +22,16 @@ summed stage time, and 100 million records a second; see
     | `flare.stage.executor.run_time` | 0, 5, 10, 25, 50, 75, 250, 500, 750, 2500, 7500 |
     | `flare.task.records_throughput` | 0, 5, 25, 50, 75, 250, 500, 750, 2500, 5000, 7500 |
 
+### Code reading the stage context should read the stage's own key
+
+When a job ran two stages at once, such as an RDD `join`, one stage's tasks ran under the other
+stage's span ([#204](https://github.com/Neutrinic/flare/issues/204)). Flare now also writes each
+stage's context under its own key, `flare.stage.<stage id>.traceparent`, and its own spans use it.
+The plain `traceparent` is still written, but holds whichever stage of the job was submitted last.
+Code that reads it from the task's local properties, such as the
+[PySpark example](getting-started/python.md#adding-your-own-spans-from-python), should read the
+stage's key first and fall back to `traceparent`.
+
 ## 1.2 to 1.3
 
 ### One Flare JAR instead of four

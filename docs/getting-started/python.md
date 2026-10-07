@@ -28,8 +28,13 @@ them:
 ## Adding your own spans from Python
 
 Flare puts the trace context of each task's stage into the task's local properties as
-`traceparent`, and Python can read it. A span started with it as parent joins the application's
-trace, under the stage span and beside that stage's task spans.
+`flare.stage.<stage id>.traceparent`, and Python can read it. A span started with it as parent
+joins the application's trace, under the stage span and beside that stage's task spans.
+
+Read the stage's own key, not the plain `traceparent`. Every stage of a job shares one set of
+properties, so when a job runs two stages at once, as a join does, `traceparent` holds whichever
+stage was submitted last. Flare before 1.4 writes only `traceparent`, which the example falls back
+to.
 
 Install the OpenTelemetry SDK and OTLP exporter into the Python environment Spark uses, the same on
 every node:
@@ -56,7 +61,10 @@ def traced(rows):
         provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter()))
         trace.set_tracer_provider(provider)
 
-    parent = extract({"traceparent": TaskContext.get().getLocalProperty("traceparent") or ""})
+    tc = TaskContext.get()
+    traceparent = (tc.getLocalProperty(f"flare.stage.{tc.stageId()}.traceparent")
+                   or tc.getLocalProperty("traceparent") or "")
+    parent = extract({"traceparent": traceparent})
     with trace.get_tracer("my-app").start_as_current_span("parse", context=parent):
         for row in rows:
             yield row
@@ -66,7 +74,7 @@ result = df.rdd.mapPartitions(traced)
 result.count()  # the spans are made when an action runs the partitions
 ```
 
-The same `TaskContext.get().getLocalProperty("traceparent")` works inside a `udf` or `pandas_udf`.
+The same `TaskContext.get()` lookup works inside a `udf` or `pandas_udf`.
 
 Tell the Python workers where to send spans and what to call them, in the executors' environment:
 

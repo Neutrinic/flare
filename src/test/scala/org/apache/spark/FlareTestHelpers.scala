@@ -78,6 +78,9 @@ object FlareTestHelpers {
 
   def unbindTaskContext(): Unit = TaskContext.unset()
 
+  /** The task's local properties, as Spark ships them from the driver. Stage id is 0. */
+  def localProperties(tc: TaskContext): java.util.Properties = tc.getLocalProperties
+
   def jobFailed(exception: Exception): JobResult = JobFailed(exception)
 
   /**

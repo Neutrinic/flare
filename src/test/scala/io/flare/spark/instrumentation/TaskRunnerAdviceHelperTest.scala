@@ -1,10 +1,13 @@
 package io.flare.spark.instrumentation
 
+import io.flare.spark.propagation.LocalPropertyPropagator
 import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.trace.{Span, SpanKind, Tracer}
+import io.opentelemetry.api.baggage.Baggage
+import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
 import io.opentelemetry.context.Context
-import io.opentelemetry.context.propagation.ContextPropagators
+import io.opentelemetry.context.propagation.{ContextPropagators, TextMapPropagator}
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -30,7 +33,8 @@ class TaskRunnerAdviceHelperTest extends FunSuite {
 
   private val sdk: OpenTelemetrySdk = OpenTelemetrySdk.builder()
     .setTracerProvider(tracerProvider)
-    .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+    .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
+      W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
     .buildAndRegisterGlobal()
 
   private val tracer: Tracer = sdk.getTracer("test")
@@ -212,5 +216,80 @@ class TaskRunnerAdviceHelperTest extends FunSuite {
     } finally {
       parentSpan.end()
     }
+  }
+
+  // ── Per-stage context (#204) ──────────────────────────────────────────
+
+  /** Mimics TaskDescription's `name` and `properties` accessors. */
+  class NamedTaskDescription(val name: String, val props: ju.Properties) {
+    def properties(): ju.Properties = props
+  }
+
+  /** One job's properties after two of its stages were submitted together: 1, then 2. */
+  private def twoStagesInjected(first: Span, second: Span): ju.Properties = {
+    val props = new ju.Properties()
+    LocalPropertyPropagator.injectForStage(Context.root().`with`(first), props, 1)
+    LocalPropertyPropagator.injectForStage(Context.root().`with`(second), props, 2)
+    props
+  }
+
+  private def currentSpanIdOnEnter(td: AnyRef): String = {
+    val scope = TaskRunnerAdviceHelper.onEnter(td)
+    assert(scope != null, "no context was made current")
+    try Span.current().getSpanContext.getSpanId
+    finally TaskRunnerAdviceHelper.onExit(scope)
+  }
+
+  test("a task runs under its own stage when the job's later stage overwrote the generic keys") {
+    val (s1, s2) = (tracer.spanBuilder("spark.stage.1").startSpan(), tracer.spanBuilder("spark.stage.2").startSpan())
+    try {
+      val props = twoStagesInjected(s1, s2)
+      assertEquals(currentSpanIdOnEnter(new NamedTaskDescription("task 3.0 in stage 1.0 (TID 7)", props)),
+        s1.getSpanContext.getSpanId)
+      assertEquals(currentSpanIdOnEnter(new NamedTaskDescription("task 0.0 in stage 2.0 (TID 8)", props)),
+        s2.getSpanContext.getSpanId)
+    } finally { s1.end(); s2.end() }
+  }
+
+  test("a task falls back to the generic keys when its stage has none, or its name has no stage") {
+    val (s1, s2) = (tracer.spanBuilder("spark.stage.1").startSpan(), tracer.spanBuilder("spark.stage.2").startSpan())
+    try {
+      val props = twoStagesInjected(s1, s2)
+      assertEquals(currentSpanIdOnEnter(new NamedTaskDescription("task 0.0 in stage 9.0 (TID 1)", props)),
+        s2.getSpanContext.getSpanId)
+      assertEquals(currentSpanIdOnEnter(new NamedTaskDescription("unnamed", props)), s2.getSpanContext.getSpanId)
+      assertEquals(currentSpanIdOnEnter(new MockTaskDescription(props)), s2.getSpanContext.getSpanId)
+    } finally { s1.end(); s2.end() }
+  }
+
+  test("stageIdOf reads the stage from Spark's task name") {
+    assertEquals(TaskRunnerAdviceHelper.stageIdOf(new NamedTaskDescription("task 12.1 in stage 345.2 (TID 9)", null)), 345)
+    assertEquals(TaskRunnerAdviceHelper.stageIdOf(new NamedTaskDescription("task 1.0", null)), -1)
+    assertEquals(TaskRunnerAdviceHelper.stageIdOf(new MockTaskDescription(null)), -1)
+  }
+
+  test("removeStage drops only that stage's keys") {
+    val (s1, s2) = (tracer.spanBuilder("spark.stage.1").startSpan(), tracer.spanBuilder("spark.stage.2").startSpan())
+    try {
+      val props = twoStagesInjected(s1, s2)
+      LocalPropertyPropagator.removeStage(props, 1)
+      assertEquals(props.getProperty("flare.stage.1.traceparent"), null)
+      assert(props.getProperty("flare.stage.2.traceparent") != null, "stage 2's key was removed")
+      assert(props.getProperty("traceparent") != null, "the generic key was removed")
+    } finally { s1.end(); s2.end() }
+  }
+
+  test("a task under its own stage keeps the baggage in the job's properties") {
+    val (s1, s2) = (tracer.spanBuilder("spark.stage.1").startSpan(), tracer.spanBuilder("spark.stage.2").startSpan())
+    try {
+      val props = twoStagesInjected(s1, s2)
+      props.setProperty("baggage", "tenant=acme") // set by the application, as a local property
+      val scope = TaskRunnerAdviceHelper.onEnter(new NamedTaskDescription("task 0.0 in stage 1.0 (TID 2)", props))
+      assert(scope != null, "no context was made current")
+      try {
+        assertEquals(Span.current().getSpanContext.getSpanId, s1.getSpanContext.getSpanId)
+        assertEquals(Baggage.current().getEntryValue("tenant"), "acme")
+      } finally TaskRunnerAdviceHelper.onExit(scope)
+    } finally { s1.end(); s2.end() }
   }
 }

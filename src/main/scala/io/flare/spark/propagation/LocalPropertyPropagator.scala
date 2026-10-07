@@ -20,6 +20,13 @@ import java.util.Properties
  *
  * IMPORTANT: Use W3C format exclusively. Do NOT use custom traceId-spanId-flags serialization.
  * The property key is the literal string "traceparent" (and "tracestate" if present).
+ *
+ * Each stage's context is also written under its own keys, `flare.stage.<stageId>.<key>` (#204).
+ * Spark hands one job's `Properties` instance, uncloned, to every stage of the job, and a task reads
+ * it only when it is launched. When a job submits two stages at once (any multi-parent shuffle), the
+ * second stage's `traceparent` overwrites the first's before the first stage's tasks have launched,
+ * so they would run under the wrong stage. Executors read their own stage's keys first and fall back
+ * to the generic ones, which a driver without per-stage keys still writes.
  */
 object LocalPropertyPropagator {
 
@@ -28,6 +35,8 @@ object LocalPropertyPropagator {
   // W3C standard header names, used as local property keys
   private val TraceparentKey = "traceparent"
   private val TracestateKey  = "tracestate"
+
+  private def stagePrefix(stageId: Int): String = s"flare.stage.$stageId."
 
   /**
    * Inject current OTEL context into Spark local properties.
@@ -45,7 +54,9 @@ object LocalPropertyPropagator {
    */
   def extract(taskContext: TaskContext): OtelContext = {
     val propagator = GlobalOpenTelemetry.getPropagators.getTextMapPropagator
-    val parentContext = propagator.extract(OtelContext.root(), taskContext, TaskContextGetter)
+    val parentContext = overlayStage(
+      propagator.extract(OtelContext.root(), taskContext, TaskContextGetter),
+      taskContext, stageGetter(taskContext.stageId(), TaskContextGetter))
 
     if (parentContext == OtelContext.root()) {
       logger.debug("[Flare] No trace context found in task properties")
@@ -68,6 +79,32 @@ object LocalPropertyPropagator {
   }
 
   /**
+   * Inject a stage's context under that stage's own keys, and under the generic keys too.
+   * See the object comment for why the generic keys alone are not enough (#204).
+   */
+  def injectForStage(context: OtelContext, props: Properties, stageId: Int): Unit = {
+    val propagator = GlobalOpenTelemetry.getPropagators.getTextMapPropagator
+    propagator.inject(context, props, PropertiesSetter)
+    val prefix = stagePrefix(stageId)
+    propagator.inject(context, props, (carrier: Properties, key: String, value: String) => {
+      carrier.setProperty(prefix + key, value)
+    })
+  }
+
+  /**
+   * Remove a stage's own keys. Called for a stage's parents when the stage is submitted: Spark
+   * submits a stage only once its parents have finished, so every task of theirs has launched and
+   * no longer reads the job's properties. Without this, every task of a long job would carry the
+   * keys of every stage before it.
+   */
+  def removeStage(props: Properties, stageId: Int): Unit = {
+    val prefix = stagePrefix(stageId)
+    props.stringPropertyNames().forEach { key =>
+      if (key.startsWith(prefix)) props.remove(key)
+    }
+  }
+
+  /**
    * Extract OTEL parent context from a raw `java.util.Properties` instance.
    *
    * Used by `TaskRunnerAdviceHelper` where `TaskContext` is not yet available —
@@ -79,6 +116,36 @@ object LocalPropertyPropagator {
     if (props == null) return OtelContext.root()
     val propagator = GlobalOpenTelemetry.getPropagators.getTextMapPropagator
     propagator.extract(OtelContext.root(), props, PropertiesGetter)
+  }
+
+  /**
+   * As [[extractFromProperties]], with the context written for `stageId` laid over the generic one
+   * (#204). The stage's keys carry only its span, so anything else in the generic keys, such as
+   * baggage the application set as a local property, is kept. Without stage keys, or with an
+   * unknown stage (`stageId < 0`), this is the generic context.
+   */
+  def extractFromProperties(props: ju.Properties, stageId: Int): OtelContext = {
+    if (props == null) return OtelContext.root()
+    val generic = extractFromProperties(props)
+    if (stageId < 0) generic else overlayStage(generic, props, stageGetter(stageId, PropertiesGetter))
+  }
+
+  /**
+   * Extracts the stage's keys into `generic`. A propagator replaces only what it finds, so the
+   * stage's span replaces the generic one, and baggage the stage keys do not carry is kept.
+   */
+  private def overlayStage[C](generic: OtelContext, carrier: C, stageKeys: TextMapGetter[C]): OtelContext =
+    GlobalOpenTelemetry.getPropagators.getTextMapPropagator.extract(generic, carrier, stageKeys)
+
+  /** Reads `key` as the stage's own key, `flare.stage.<stageId>.<key>`, through `getter`. */
+  private def stageGetter[C](stageId: Int, getter: TextMapGetter[C]): TextMapGetter[C] = {
+    val prefix = stagePrefix(stageId)
+    new TextMapGetter[C] {
+      override def keys(carrier: C): java.lang.Iterable[String] =
+        ju.Arrays.asList(prefix + TraceparentKey, prefix + TracestateKey)
+
+      override def get(carrier: C, key: String): String = getter.get(carrier, prefix + key)
+    }
   }
 
   // ── TextMapSetter for SparkContext ─────────────────────────────────────────
