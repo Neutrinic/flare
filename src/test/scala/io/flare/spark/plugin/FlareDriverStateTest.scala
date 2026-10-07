@@ -170,12 +170,25 @@ class FlareDriverStateTest extends FunSuite {
     } finally FlareDriverState.idleFlushAction = () => TelemetryFlush.flush("driver idle")
   }
 
-  test("shutdown stops the idle flush") {
-    val listener = new TracingSparkListener(tracer, testConfig)
-    FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), listener)
-    FlareDriverState.shutdown()
-    FlareDriverState.jobEnded() // after shutdown: nothing to request, and no thread started
-    assert(!Thread.getAllStackTraces.keySet.asScala.exists(t => t.getName == "flare-driver-idle-flush" && t.isAlive),
-      "an idle-flush thread outlived shutdown")
+  test("shutdown cancels a pending idle flush, and a job end after it starts none") {
+    val flushes = new AtomicInteger()
+    FlareDriverState.idleFlushAction = () => flushes.incrementAndGet()
+    def flushThreadAlive = Thread.getAllStackTraces.keySet.asScala
+      .exists(t => t.getName == "flare-driver-idle-flush" && t.isAlive)
+    try {
+      val listener = new TracingSparkListener(tracer, testConfig, throwOnError = true)
+      FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), listener)
+      listener.onJobStart(SparkListenerJobStart(0, System.currentTimeMillis(), Seq.empty, new ju.Properties()))
+      listener.onJobEnd(SparkListenerJobEnd(0, System.currentTimeMillis(), JobSucceeded))
+      assert(flushThreadAlive, "the job end did not schedule a flush")
+
+      FlareDriverState.shutdown() // well inside the 1s quiet period
+      FlareDriverState.jobEnded()
+      val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+      while (flushThreadAlive && System.nanoTime() < deadline) Thread.sleep(50)
+      assert(!flushThreadAlive, "the idle-flush thread outlived shutdown")
+      Thread.sleep(1500) // past the quiet period the cancelled flush would have waited
+      assertEquals(flushes.get(), 0, "a flush ran after shutdown")
+    } finally FlareDriverState.idleFlushAction = () => TelemetryFlush.flush("driver idle")
   }
 }
