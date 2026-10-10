@@ -160,4 +160,16 @@ class PlanFingerprintTest extends FunSuite {
     val b = "Condition : id#9L IN (7,8)\nPushedFilters: [In(id, [7,8])]\nLocation: InMemoryFileIndex(1 paths)[s3://b/t/dt=3]"
     assertEquals(PlanFingerprint.of(a), PlanFingerprint.of(b))
   }
+
+  test("a pushed-down filter value with parentheses is one value") {
+    val a = "PushedFilters: [IsNotNull(s), EqualTo(s,prefix(A)), GreaterThan(a,1)]"
+    val b = "PushedFilters: [IsNotNull(s), EqualTo(s,prefix(B)), GreaterThan(a,9)]"
+    assertEquals(PlanFingerprint.of(a), PlanFingerprint.of(b))
+  }
+
+  test("an operand that mentions a column is kept, however it is wrapped") {
+    val cast  = "Condition : (a#1 = cast(b#2 as int))"
+    val other = "Condition : (a#1 = cast(c#3 as int))"
+    assertNotEquals(PlanFingerprint.of(cast), PlanFingerprint.of(other))
+  }
 }

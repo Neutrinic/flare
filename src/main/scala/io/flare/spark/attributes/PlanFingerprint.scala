@@ -69,26 +69,100 @@ object PlanFingerprint {
   private val LocationPattern = """Location: (\w+)(?:\(\d+ paths\))? ?\[[^\]]*\]""".r
 
   /**
-   * The literal side of a comparison with a column, in Catalyst's form, as in `Condition :` and
+   * The start of a comparison with a column, in Catalyst's form, as in `Condition :` and
    * `PartitionFilters:` (after expression ids are stripped): `(dt# = 2024-01-01)`, `(id# > 100)`,
-   * `(name# = abc)`. A daily job filters on a new date every run; the column and operator are the
-   * query, the value is not (#207). A comparison between two columns, such as a join key, is kept:
-   * the right side starting with a column reference is not a literal. The space before it is
-   * matched possessively, or the engine backtracks over it and the column check sees a space.
+   * `(name# = abc)`. The operand after it is a literal unless it starts with a column reference, as a
+   * join key does; it runs to the comparison's closing parenthesis, so a string value printed with
+   * parentheses, `(s# = prefix(A))`, is one operand (#207). The space before the operand is matched
+   * possessively, or the engine backtracks over it and the column check sees a space.
    */
-  private val ColumnComparisonPattern =
-    """([\w.]+#\s*(?:<=>|<=|>=|!=|=|<|>)\s*+)(?![\w.]+#)([^()]+?)(\))""".r
+  private val ColumnComparison = """[\w.]+#\s*(?:<=>|<=|>=|!=|=|<|>)\s*+""".r
 
-  /** `id# IN (1,2,3)` in Catalyst's form: the list is values. */
-  private val ColumnInPattern = """([\w.]+#\s+IN\s+\()[^()]*(\))""".r
+  /** `a# IN (b#,1,2)` in Catalyst's form: columns in the list stay, literals do not. */
+  private val ColumnIn = """[\w.]+#\s+IN\s+\(""".r
+
+  /** `a# INSET 1, 10, 11`: Spark's form for a literal list of more than ten values, all literals. */
+  private val ColumnInSet = """[\w.]+#\s+INSET\s+""".r
 
   /**
-   * Pushed-down filters, in the data source's form: `GreaterThan(id,100)`, `EqualTo(name,abc)`,
-   * `In(id, [1,2,3])`. The value goes; the filter and its column stay.
+   * A pushed-down filter, in the data source's form, up to its value: `GreaterThan(id,` in
+   * `GreaterThan(id,100)`, `EqualTo(name,` in `EqualTo(name,abc)`. The value goes; the filter and its
+   * column stay.
    */
-  private val PushedFilterPattern =
-    """\b(EqualTo|EqualNullSafe|GreaterThan|GreaterThanOrEqual|LessThan|LessThanOrEqual|StringStartsWith|StringEndsWith|StringContains)\(([^,()]+),[^()]*\)""".r
+  private val PushedFilter =
+    """\b(?:EqualTo|EqualNullSafe|GreaterThan|GreaterThanOrEqual|LessThan|LessThanOrEqual|StringStartsWith|StringEndsWith|StringContains)\([^,()]+,""".r
   private val PushedInPattern = """\bIn\(([^,()]+), \[[^\]]*\]\)""".r
+
+  /**
+   * Where the operand starting at `from` ends: at the first closing parenthesis that is not its own,
+   * or at the end of the line, whichever comes first. Parentheses inside the operand, as in a string
+   * value `prefix(A)`, are its own.
+   */
+  private def operandEnd(s: String, from: Int): Int = {
+    var depth = 0
+    var i = from
+    while (i < s.length && s.charAt(i) != '\n') {
+      val c = s.charAt(i)
+      if (c == '(') depth += 1
+      else if (c == ')') { if (depth == 0) return i; depth -= 1 }
+      i += 1
+    }
+    i
+  }
+
+  /**
+   * Rewrites, after every match of `start`, the operand that follows: `rewrite` gets the operand's
+   * text and returns its replacement, or None to leave it.
+   */
+  private def rewriteOperands(s: String, start: scala.util.matching.Regex)(rewrite: String => Option[String]): String = {
+    // Java's builder: Scala's has no append(CharSequence, start, end), and would append a tuple.
+    val out = new java.lang.StringBuilder
+    val m = start.pattern.matcher(s)
+    var copied = 0
+    var from = 0
+    // `from` only moves forward: an operand starts where its match ends, after the match's start.
+    while (from < s.length && m.find(from)) {
+      val opStart = m.end()
+      val opEnd = operandEnd(s, opStart)
+      rewrite(s.substring(opStart, opEnd)).foreach { r =>
+        out.append(s, copied, opStart).append(r)
+        copied = opEnd
+      }
+      from = opEnd max opStart
+    }
+    out.append(s, copied, s.length).toString
+  }
+
+  /**
+   * `?` for a literal operand. One that mentions a column, `b#` or `cast(b# as int)`, is kept: after
+   * expression ids are stripped, every column reference ends in `#`.
+   */
+  private def literal(operand: String): Option[String] =
+    if (operand.contains('#')) None else Some("?")
+
+  /**
+   * The elements of an IN list, split on top-level commas: columns kept, each run of literals one
+   * `?`, so the number of values does not matter either.
+   */
+  private def inList(elements: String): Option[String] = {
+    val parts = new scala.collection.mutable.ListBuffer[String]
+    var depth = 0
+    val cur = new StringBuilder
+    elements.foreach { c =>
+      if (c == ',' && depth == 0) { parts += cur.toString; cur.clear() }
+      else {
+        if (c == '(') depth += 1 else if (c == ')') depth -= 1
+        cur.append(c)
+      }
+    }
+    parts += cur.toString
+    val normalised = parts.toList.map(p => if (p.contains('#')) p.trim else "?")
+    val collapsed = normalised.foldRight(List.empty[String]) {
+      case ("?", "?" :: rest) => "?" :: rest
+      case (e, acc)           => e :: acc
+    }
+    Some(collapsed.mkString(","))
+  }
 
   /**
    * 64 bits of SHA-256, hex encoded. Long enough that collisions between query shapes in one
@@ -104,10 +178,10 @@ object PlanFingerprint {
     val noStats   = StatisticsPattern.replaceAllIn(noCodegen, "Statistics()")
     // Literals and paths (#207): run after expression ids, which the column patterns rely on.
     val noPaths   = LocationPattern.replaceAllIn(noStats, m => scala.util.matching.Regex.quoteReplacement(s"Location: ${m.group(1)}"))
-    val noValues  = ColumnComparisonPattern.replaceAllIn(noPaths, m =>
-      scala.util.matching.Regex.quoteReplacement(m.group(1) + "?" + m.group(3)))
-    val noInLists = ColumnInPattern.replaceAllIn(noValues, m => scala.util.matching.Regex.quoteReplacement(m.group(1) + "?" + m.group(2)))
-    val noPushed  = PushedFilterPattern.replaceAllIn(noInLists, m => scala.util.matching.Regex.quoteReplacement(s"${m.group(1)}(${m.group(2)},?)"))
+    val noValues  = rewriteOperands(noPaths, ColumnComparison)(literal)
+    val noInLists = rewriteOperands(noValues, ColumnIn)(inList)
+    val noInSets  = rewriteOperands(noInLists, ColumnInSet)(_ => Some("?"))
+    val noPushed  = rewriteOperands(noInSets, PushedFilter)(_ => Some("?"))
     PushedInPattern.replaceAllIn(noPushed, m => scala.util.matching.Regex.quoteReplacement(s"In(${m.group(1)}, [?])"))
   }
 

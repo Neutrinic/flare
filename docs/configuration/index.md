@@ -67,10 +67,11 @@ because they change without the shape changing. The statistics track the data, n
 would fingerprint the same query differently on a busy day than a quiet one.
 
 Literal values and input paths are removed too: the value compared with a column in a filter
-(`dt = 2024-01-01`, `id > 100`), `IN` lists, the values of pushed-down filters, and the paths a scan
+(`dt = 2024-01-01`, `id > 100`, a string value even when it contains parentheses), the literal values
+in an `IN` list, however many there are, the values of pushed-down filters, and the paths a scan
 reads from. A daily job filtering on the day's date is the same query every day. What still makes
 two plans different is their shape: the operators, the columns, which columns a filter compares and
-how, and comparisons between columns, such as join keys.
+how, and any operand that names a column, such as a join key or a column in an `IN` list.
 
 The fingerprint is emitted even when the caps are `0` and no plan text is exported. That is the
 lever for backends with a per-trace size limit, such as Tempo's `max_bytes_per_trace`: a large plan
