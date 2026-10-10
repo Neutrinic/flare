@@ -98,6 +98,15 @@ and the JVM command line carries only the configuration file path.
   SIGTERM, so Spark never stops the SparkContext, and executors get no shutdown call at all. Flare
   1.3.0 and later end the root span inside the agent's own shutdown and flush executors when they
   go idle, so nothing is lost. Earlier releases lost the root span on every run.
+- **Shared job clusters** (a `job_clusters` entry that several tasks name by `job_cluster_key`)
+  run every task of the job run, and every retry, in **one** Spark application. Flare's
+  application span, `flare.application.duration` and `application.result` then describe the
+  cluster, not a task: a task that failed and then succeeded on retry leaves the application
+  `FAILED`. Job spans carry `databricks.job.run_id` and `databricks.task.run_id`, so a trace can be
+  split by task run, and a failed try told from its retry. Alert on run outcomes from Lakeflow
+  itself, and on failed queries with `FlareJobFailed`; see
+  [Alerting](../configuration/alerting.md#outcomes). A task with its own `new_cluster` gets a new
+  cluster, and a new application, for each attempt, so none of this applies to it.
 - **All-purpose clusters** keep one SparkContext for their whole life, shared by every notebook and
   job attached. Flare's root span covers the cluster's lifetime, so everything lands in one trace.
   Tracked in [#124](https://github.com/Neutrinic/flare/issues/124).

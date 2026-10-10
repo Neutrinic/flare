@@ -25,6 +25,14 @@ application.
 | `FlareQuerySlowerThanUsual` | A query's p95 job duration in its latest runs is more than twice its p95 over the previous week | Needs a week of history. Queries are told apart by `sql.description`, so give yours descriptions with `setJobDescription` |
 | `FlareInputVolumeDropped` | A query read less than half the bytes it read at the same time the day before, or ran and read nothing at all | The classic silent failure: an upstream that delivered a partial or empty drop, and a load that succeeded on it. A stage that reads nothing records no input bytes, so an empty run is caught separately: the query ran, read input yesterday, and has none today. Compares finished runs only, so it fires once a run is done, not while it is still reading; an application that never ends is never compared. Assumes a daily schedule; change `offset 1d` for other cadences |
 
+`FlareApplicationFailed` treats each Spark application as one run. That holds when each run gets
+its own JVM: `spark-submit`, Airflow, a Databricks task on its own cluster. It does not hold where
+one SparkContext serves many runs: a Databricks [shared job
+cluster](../deploying/databricks.md#job-clusters-and-all-purpose-clusters) runs every task and
+retry of a job run in one application, and an all-purpose cluster, Spark Connect or the Thrift
+server serve many. There, a recovered retry still leaves the application `FAILED`: take run outcomes
+from the orchestrator, and use `FlareJobFailed` for which query failed.
+
 ### A run that did not happen
 
 The first question of all, whether last night's run happened, needs the pipeline's service name,

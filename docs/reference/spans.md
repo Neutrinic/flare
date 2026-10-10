@@ -45,6 +45,9 @@ One per `SparkListenerSQLExecutionStart`. `N` is the execution id.
 | `spark.job.id` | long | |
 | `spark.job.stage.count` | long | Number of stages the job was planned with |
 | `spark.job.description` | string | Conditional: from `spark.job.description` local property |
+| `databricks.job.id` | string | Conditional: the Lakeflow job that submitted the Spark job, on Databricks |
+| `databricks.job.run_id` | string | Conditional: that job's run. Every task of one run shares it |
+| `databricks.task.run_id` | string | Conditional: the task run. A retried task gets a new one |
 | `spark.job.result` | string | `SUCCESS` or `FAILED` |
 | `error.type` | string | Conditional: the exception class, e.g. `java.lang.ArithmeticException` |
 | `error.message` | string | Conditional: present only on `FAILED`, first 500 chars |

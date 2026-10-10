@@ -361,6 +361,29 @@ class TracingSparkListenerTest extends FunSuite {
     }
   }
 
+  test("a job submitted by a Databricks task records the job, job run and task run (#203)") {
+    withListener { (listener, exporter) =>
+      // As Databricks sets them on every job a Lakeflow task submits.
+      val start = makeJobStart(0, Seq(0))
+      start.properties.setProperty("spark.databricks.job.id", "802002467124741")
+      start.properties.setProperty("spark.databricks.job.parentRunId", "198008086831636")
+      start.properties.setProperty("spark.databricks.job.runId", "301687269396858")
+      listener.onJobStart(start)
+      listener.onJobStart(makeJobStart(1, Seq(1))) // a job outside Databricks
+      listener.onJobEnd(makeJobEnd(0, succeeded = true))
+      listener.onJobEnd(makeJobEnd(1, succeeded = true))
+      listener.shutdown()
+
+      val spans = exporter.getFinishedSpanItems.asScala
+      val databricksJob = spans.find(_.getName == "spark.job.0").get.getAttributes
+      assertEquals(databricksJob.get(Databricks.JobId), "802002467124741")
+      assertEquals(databricksJob.get(Databricks.JobRunId), "198008086831636")
+      assertEquals(databricksJob.get(Databricks.TaskRunId), "301687269396858")
+      val plainJob = spans.find(_.getName == "spark.job.1").get.getAttributes
+      Databricks.FromProperties.foreach { case (key, _) => assertEquals(plainJob.get(key), null) }
+    }
+  }
+
   test("stage span uses correct job parent via reverse index") {
     withListener { (listener, exporter) =>
       // Two concurrent jobs, each with its own stage
