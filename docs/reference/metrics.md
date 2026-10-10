@@ -68,6 +68,11 @@ for the whole application would otherwise be a span longer than every trace it o
 They are up-down counters because they go both ways. An increment-only counter would tell you
 how many executors were ever created, never how many exist now.
 
+`flare.executor.count` includes the executors that registered before Flare did. Installed through
+the agent alone, Flare's listener starts as the SparkContext finishes starting, by which time
+Spark has waited for most executors to register on YARN and Kubernetes; Flare counts the ones
+already there at that point.
+
 `flare.executor.removed` carries a `reason` tag, which is the point of it: on a dynamically
 allocated cluster a routine scale-down and a crash both reduce the executor count, and only the
 reason separates them. Spark's reason string is free text that sometimes embeds ids or hostnames,
