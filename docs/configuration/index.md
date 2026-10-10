@@ -17,7 +17,7 @@ agent's own `otel.*` keys, see [Exporting](exporting.md).
 | `FLARE_SQL_DETAILS_MAX_CHARS` | `2048` | Cap on `spark.sql.details`; `0` drops the attribute |
 | `FLARE_SQL_DESCRIPTION_MAX_CHARS` | `1024` | Cap on `spark.sql.description` and the `sql.description` metric label; `0` drops both |
 | `FLARE_SQL_PLAN_INITIAL_MAX_CHARS` | `0` (dropped) | Cap on `spark.sql.plan.initial`, the plan before Adaptive Query Execution |
-| `FLARE_ERROR_MESSAGE_MAX_CHARS` | `500` | Cap on a failure's message, wherever it goes: `error.message`, the span status, the `exception` event and `spark.stage.failure_reason`; `0` drops it everywhere |
+| `FLARE_ERROR_MESSAGE_MAX_CHARS` | `500` | Cap on a failure's message, wherever it goes: `error.message`, the span status, the `exception` event and `spark.stage.failure_reason`; `0` drops it everywhere, and the stack trace with it, since a printed stack trace opens with the message |
 | `FLARE_STACKTRACE_MAX_CHARS` | `8000` | Cap on a failure's stack trace, on the `exception` event; `0` drops it |
 | `FLARE_DROP_NON_SPARK_ROOTS` | `true` | Drop spans with no parent that are not Flare's, such as the platform's own HTTP calls. See [Noise](noise.md) |
 | `FLARE_ENABLED` | `true` | Kill switch |

@@ -148,6 +148,9 @@ object FailureDetail {
    * `FLARE_STACKTRACE_MAX_CHARS`; `0` omits the field everywhere it would go, the status
    * description included (#90). The error status and `error.type` stay: that a task failed, and
    * how, is the signal, and the class name quotes no data.
+   *
+   * Omitting the message omits the stack trace too. A printed stack trace opens with the message
+   * and repeats each cause's on its `Caused by:` line, so exporting it would export the message.
    */
   def record(span: Span, detail: FailureDetail, messageMaxChars: Int, stackTraceMaxChars: Int): Unit = {
     val message = capped(detail.message, messageMaxChars)
@@ -158,7 +161,8 @@ object FailureDetail {
     detail.errorType.foreach(span.setAttribute(Error.Type, _))
     message.foreach(span.setAttribute(Error.Message, _))
 
-    detail.stackTrace.flatMap(capped(_, stackTraceMaxChars)).foreach { trace =>
+    // Only alongside the message: the trace quotes it (see above).
+    detail.stackTrace.filter(_ => message.isDefined).flatMap(capped(_, stackTraceMaxChars)).foreach { trace =>
       val builder = Attributes.builder()
       detail.errorType.foreach(builder.put(ExceptionType, _))
       message.foreach(builder.put(ExceptionMessage, _))

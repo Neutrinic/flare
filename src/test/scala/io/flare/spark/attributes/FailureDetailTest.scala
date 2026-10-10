@@ -157,14 +157,13 @@ class FailureDetailTest extends FunSuite {
   private val ExceptionMessage = io.opentelemetry.api.common.AttributeKey.stringKey("exception.message")
   private val ExceptionStackTrace = io.opentelemetry.api.common.AttributeKey.stringKey("exception.stacktrace")
 
-  test("a message cap of 0 emits the message nowhere: attribute, status or exception event") {
+  test("a message cap of 0 emits the message nowhere: attribute, status, or the stack trace that quotes it") {
     val s = recorded(messageMax = 0, stackMax = 8000)
     assertEquals(s.getStatus.getStatusCode, io.opentelemetry.api.trace.StatusCode.ERROR)
     assertEquals(s.getStatus.getDescription, "")
     assertEquals(s.getAttributes.get(ErrorMessage), null)
-    val event = s.getEvents.get(0)
-    assertEquals(event.getAttributes.get(ExceptionMessage), null)
-    assert(event.getAttributes.get(ExceptionStackTrace) != null, "the stack trace was dropped too")
+    // A printed stack trace opens with the message, so it goes too, and the exception event with it.
+    assert(s.getEvents.isEmpty, s"an exception event was still emitted: ${s.getEvents}")
     assertEquals(s.getAttributes.get(io.opentelemetry.api.common.AttributeKey.stringKey("error.type")), "java.sql.SQLException")
   }
 
