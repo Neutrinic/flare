@@ -2,6 +2,7 @@ package io.flare.spark.listener
 
 import io.flare.spark.config.{FlareConfig, TraceGranularity}
 import io.flare.spark.metrics.FlareMetrics
+import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.sdk.metrics.SdkMeterProvider
 import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader
 import io.opentelemetry.sdk.trace.SdkTracerProvider
@@ -56,6 +57,27 @@ class ClusterLifecycleMetricsTest extends FunSuite {
     assertEquals(m.get("flare.executor.removed"), Some(1L))
   }
 
+  test("a decommissioned executor, removed twice by Spark, is counted once (#196)") {
+    val reader = InMemoryMetricReader.create()
+    val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
+    val tp = SdkTracerProvider.builder().build()
+    try {
+      val l = new TracingSparkListener(tp.get("t"), baseConfig(false),
+        Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true)
+      Seq("1", "2").foreach(id => l.onExecutorAdded(FlareTestHelpers.executorAdded(id)))
+      // What Spark 4.0.4 posted for each decommissioned executor on the lab.
+      l.onExecutorRemoved(FlareTestHelpers.executorRemoved("1", "Executor decommission: Executor 1 is decommissioned."))
+      l.onExecutorRemoved(FlareTestHelpers.executorRemoved("1", "Command exited with code 0"))
+
+      val points = reader.collectAllMetrics().asScala
+      def sumOf(name: String) = points.filter(_.getName == name).flatMap(_.getLongSumData.getPoints.asScala)
+      assertEquals(sumOf("flare.executor.count").map(_.getValue).sum, 1L) // executor 2 is still up
+      val removed = sumOf("flare.executor.removed")
+      assertEquals(removed.map(_.getValue).sum, 1L)
+      assertEquals(removed.map(_.getAttributes.get(AttributeKey.stringKey("reason"))).toSet, Set("idle_or_decommissioned"))
+    } finally { tp.close(); mp.close() }
+  }
+
   test("executor removals are tagged with a bucketed reason") {
     val reader = InMemoryMetricReader.create()
     val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
@@ -63,6 +85,7 @@ class ClusterLifecycleMetricsTest extends FunSuite {
     try {
       val l = new TracingSparkListener(tp.get("t"), baseConfig(false),
         Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true)
+      Seq("1", "2").foreach(id => l.onExecutorAdded(FlareTestHelpers.executorAdded(id)))
       l.onExecutorRemoved(FlareTestHelpers.executorRemoved("1", "Executor idle timeout exceeded"))
       l.onExecutorRemoved(FlareTestHelpers.executorRemoved("2", "Container marked as failed, exit code 137"))
 

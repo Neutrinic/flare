@@ -70,6 +70,10 @@ so it is bucketed into a fixed set (`idle_or_decommissioned`, `preempted`, `hear
 `lost`, `killed`, `exited`, `other`, `unknown`) rather than passed through: an unbounded tag on
 a counter is the cardinality problem these instruments exist to avoid.
 
+Each executor is counted once on removal, with the reason Spark gave first. Spark removes a
+decommissioned executor twice, once as decommissioned and again when its process exits; the second
+is ignored, so a scale-down by decommissioning reads `idle_or_decommissioned`, not also `exited`.
+
 `flare.block_manager.count` includes the **driver's** block manager, not just executors', because
 Spark registers one there too. Expect it to sit one above the executor count.
 

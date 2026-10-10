@@ -66,6 +66,13 @@ class TracingSparkListener(
   @volatile private var applicationStartMs: Long = System.currentTimeMillis()
   private val applicationRecorded = new java.util.concurrent.atomic.AtomicBoolean(false)
 
+  // Executors added and not yet removed (#196). Spark posts two removals for a decommissioned
+  // executor, "decommissioned" and then "Command exited with code 0" when its process ends, so only
+  // the first removal of a live executor is counted. Bounded by the executors alive at once. An
+  // executor Flare never saw added is not counted on removal; the listener is registered before
+  // any executor is.
+  private val liveExecutors = java.util.concurrent.ConcurrentHashMap.newKeySet[String]()
+
   // Last reported (memory, disk) bytes of every stored block, per block manager, so block updates,
   // which report state, can be recorded as changes (#179). Only filled under
   // FLARE_TRACK_BLOCK_UPDATES, and emptied as blocks and block managers go.
@@ -389,11 +396,13 @@ class TracingSparkListener(
 
   override def onExecutorAdded(event: SparkListenerExecutorAdded): Unit =
     safeHandle("onExecutorAdded") {
-      metrics.foreach(_.executorCount.add(1L, MetricAttributes.forExecutor(event.executorId)))
+      if (liveExecutors.add(event.executorId))
+        metrics.foreach(_.executorCount.add(1L, MetricAttributes.forExecutor(event.executorId)))
     }
 
   override def onExecutorRemoved(event: SparkListenerExecutorRemoved): Unit =
-    safeHandle("onExecutorRemoved") {
+    // Only the first removal of a live executor (#196): a decommissioned one is removed twice.
+    if (liveExecutors.remove(event.executorId)) safeHandle("onExecutorRemoved") {
       metrics.foreach { fm =>
         fm.executorCount.add(-1L, MetricAttributes.forExecutor(event.executorId))
         // The reason is the point: it separates a routine dynamic-allocation scale-down from
