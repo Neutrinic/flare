@@ -9,7 +9,7 @@ import io.flare.spark.metrics.{FlareMetrics, MetricAttributes}
 import io.flare.spark.plugin.FlareDriverState
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode, Tracer}
 import io.opentelemetry.context.Context
-import org.apache.spark.FlareJobResultAccess
+import org.apache.spark.{ExecutorLostFailure, FlareJobResultAccess}
 import org.apache.spark.scheduler._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.sql.execution.ui.{
@@ -299,7 +299,23 @@ class TracingSparkListener(
    * derived per task, because it needs the task's wall clock, which lives on TaskInfo rather
    * than TaskMetrics.
    */
-  override def onTaskEnd(event: SparkListenerTaskEnd): Unit =
+  override def onTaskEnd(event: SparkListenerTaskEnd): Unit = {
+    recordLostTask(event)
+    recordSchedulerDelay(event)
+  }
+
+  /**
+   * A task that ended because its executor was lost is counted here, on the driver (#200). Every
+   * other task is counted by its executor, which cannot count these: it died with them.
+   */
+  private def recordLostTask(event: SparkListenerTaskEnd): Unit = event.reason match {
+    case lost: ExecutorLostFailure => safeHandle("onTaskEnd lost task") {
+      metrics.foreach(_.taskLost.add(1L, MetricAttributes.forTaskLost(lost.execId, lost.reason.getOrElse(""))))
+    }
+    case _ => ()
+  }
+
+  private def recordSchedulerDelay(event: SparkListenerTaskEnd): Unit =
     if (config.tracesStages) safeHandle("onTaskEnd") {
       val info = event.taskInfo
       // taskMetrics is null when a task failed before it could report any, and duration throws

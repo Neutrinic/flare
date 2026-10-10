@@ -84,6 +84,16 @@ object FlareTestHelpers {
     sc.listenerBus.findListenersByClass[_root_.io.flare.spark.listener.TracingSparkListener]()
   }
 
+  /** A task's end when its executor was lost, as only the driver sees it. */
+  def executorLostTaskEnd(execId: String, reason: String): scheduler.SparkListenerTaskEnd =
+    scheduler.SparkListenerTaskEnd(
+      stageId = 0, stageAttemptId = 0, taskType = "ResultTask",
+      reason = ExecutorLostFailure(execId, exitCausedByApp = true, Some(reason)),
+      taskInfo = finishedTaskInfo(1L, durationMs = 500L),
+      taskExecutorMetrics = emptyExecutorMetrics(),
+      taskMetrics = null,
+    )
+
   /** What Spark reports for a task it killed, as the losing attempt under speculation. */
   def taskKilled(reason: String): TaskKilled = TaskKilled(reason)
 

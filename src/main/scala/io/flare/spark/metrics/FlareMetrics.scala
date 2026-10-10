@@ -102,6 +102,17 @@ class FlareMetrics(meter: Meter) {
     .setUnit("{executor}")
     .build()
 
+  /**
+   * Tasks that ended because their executor was lost (#200). The executor records every other task
+   * on `flare.task.duration`; these it cannot, since it died with them, and only the driver sees
+   * them end, with `ExecutorLostFailure`. Labelled like `flare.executor.removed`.
+   */
+  val taskLost: LongCounter = meter
+    .counterBuilder("flare.task.lost")
+    .setDescription("Tasks that ended because their executor was lost, by executor and reason")
+    .setUnit("{task}")
+    .build()
+
   val executorExcluded: LongCounter = meter
     .counterBuilder("flare.executor.excluded")
     .setDescription("Executors excluded by Spark's health tracker")
