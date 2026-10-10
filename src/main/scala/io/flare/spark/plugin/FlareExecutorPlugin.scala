@@ -280,7 +280,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       // Not an error (#198): Spark stopped the task itself, mostly because another attempt
       // succeeded first, or because its job or stage was cancelled. The status stays unset.
       span.setAttribute(Task.Result, "KILLED")
-      failure.collect { case k: TaskKilled => k.reason }.filter(_.nonEmpty)
+      failure.collect { case k: TaskKilled => FlareExecutorPlugin.killReason(k.reason) }
         .foreach(span.setAttribute(Task.KillReason, _))
     } else {
       span.setAttribute(Task.Result, "FAILED")
@@ -399,6 +399,19 @@ private[plugin] object FlareExecutorPlugin {
    * (#198): under speculation, the attempt that lost the race once another succeeded, and the tasks
    * of a cancelled job or stage. Counting those as FAILED reported errors on healthy runs.
    */
+  /**
+   * Why Spark killed a task, bucketed: `another_attempt_succeeded` for the losing attempt under
+   * speculation, `cancelled` for a cancelled job, stage or job group, `other` otherwise. Spark's
+   * reason is free text, and a cancellation repeats the stage failure behind it, hostnames and
+   * executor ids included, which the stage span already carries.
+   */
+  def killReason(reason: String): String = {
+    val r = Option(reason).getOrElse("").toLowerCase(java.util.Locale.ROOT)
+    if (r.contains("another attempt succeeded")) "another_attempt_succeeded"
+    else if (r.contains("cancel")) "cancelled"
+    else "other"
+  }
+
   def taskResult(success: Boolean, failure: Option[TaskFailedReason]): String =
     if (success) "SUCCESS"
     else failure match {

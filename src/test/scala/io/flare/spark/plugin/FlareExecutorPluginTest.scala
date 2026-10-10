@@ -329,7 +329,7 @@ class FlareExecutorPluginTest extends FunSuite {
 
       val span = spanExporter.getFinishedSpanItems.asScala.find(_.getName == "spark.task.executor").get
       assertEquals(span.getAttributes.get(Task.Result), "KILLED")
-      assertEquals(span.getAttributes.get(Task.KillReason), "another attempt succeeded")
+      assertEquals(span.getAttributes.get(Task.KillReason), "another_attempt_succeeded")
       assertEquals(span.getStatus.getStatusCode, StatusCode.UNSET)
       assertEquals(span.getAttributes.get(Error.Type), null)
 
@@ -341,6 +341,17 @@ class FlareExecutorPluginTest extends FunSuite {
       sdk.close()
       sys.props.remove("FLARE_TRACE_GRANULARITY")
     }
+  }
+
+  test("kill reasons are bucketed, never passed through") {
+    assertEquals(FlareExecutorPlugin.killReason("another attempt succeeded"), "another_attempt_succeeded")
+    // As Spark 4.0.4 wrote it on the lab when a job aborted: the stage failure, host and executor included.
+    assertEquals(FlareExecutorPlugin.killReason("Stage cancelled: Job aborted due to stage failure: Task 3 in " +
+      "stage 1.0 failed 4 times, most recent failure: Lost task 3.3 in stage 1.0 (TID 12) (192.168.1.87 executor 4)"),
+      "cancelled")
+    assertEquals(FlareExecutorPlugin.killReason("Job group cancelled"), "cancelled")
+    assertEquals(FlareExecutorPlugin.killReason("killed via the Web UI"), "other")
+    assertEquals(FlareExecutorPlugin.killReason(null), "other")
   }
 
   test("a failed task is measured even when its span is suppressed") {
