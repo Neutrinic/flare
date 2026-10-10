@@ -93,4 +93,13 @@ class PlanFingerprintSparkTest extends FunSuite {
     assertNotEquals(PlanFingerprint.of(partitionPlan(s"a IN ($eleven) AND b NOT IN ($eleven)")),
       PlanFingerprint.of(partitionPlan(s"a IN ($eleven) AND c NOT IN ($eleven)")))
   }
+
+  test("an INSET followed by a predicate ignores the INSET's values") {
+    assertEquals(PlanFingerprint.of(plan(s"a IN ($eleven) AND b > 100")),
+      PlanFingerprint.of(plan("a IN (21,22,23,24,25,26,27,28,29,30,31) AND b > 100")))
+  }
+
+  test("a string value containing # is a literal: `s = 'tag#east'`") {
+    assertEquals(PlanFingerprint.of(plan("s = 'tag#east'")), PlanFingerprint.of(plan("s = 'tag#west'")))
+  }
 }

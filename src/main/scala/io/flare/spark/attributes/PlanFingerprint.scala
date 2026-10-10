@@ -78,6 +78,15 @@ object PlanFingerprint {
    */
   private val ColumnComparison = """[\w.]+#\s*(?:<=>|<=|>=|!=|=|<|>)\s*+""".r
 
+  /**
+   * A column reference, once expression ids are stripped: a name and a `#` that nothing word-like
+   * follows, `b#` in `(a# = b#)` or `cast(b# as int)`. A literal can contain `#` too, but not like
+   * that: Spark prints `s = 'tag#east'` as `(s# = tag#east)` (#207).
+   */
+  private val ColumnMention = """[\w.]+#(?!\w)""".r
+
+  private def mentionsColumn(s: String): Boolean = ColumnMention.findFirstIn(s).isDefined
+
   /** `a# IN (b#,1,2)` in Catalyst's form: columns in the list stay, literals do not. */
   private val ColumnIn = """[\w.]+#\s+IN\s+\(""".r
 
@@ -86,9 +95,9 @@ object PlanFingerprint {
    * values are not parenthesised, so a predicate after it shares the enclosing parentheses:
    * `(a# INSET 1, 10, 11 AND (b# > 100))`. The values end at a top-level ` AND ` or ` OR ` too, and
    * in a list such as `PartitionFilters: [a# INSET 1, 10, 11, (b# > 100)]` at the list's `]` or at a
-   * `, ` whose next list element mentions a column. Every filter does, `NOT b# INSET …` and
-   * `isnotnull(c#)` included, and no literal value does: expression ids are stripped to a bare `#`
-   * first, so a `#` in the element marks a column.
+   * `, ` whose next list element mentions a column ([[ColumnMention]]). Every filter does,
+   * `NOT b# INSET …` and `isnotnull(c#)` included, and a literal value does not, even one with a `#`
+   * in it.
    */
   private val ColumnInSet = """[\w.]+#\s+INSET\s+""".r
   private val InSetPattern = """\s+INSET\s+\?""".r
@@ -117,18 +126,23 @@ object PlanFingerprint {
       else if (c == ')') { if (depth == 0) return i; depth -= 1 }
       else if (atConnective && depth == 0 &&
           (s.startsWith(" AND ", i) || s.startsWith(" OR ", i) || c == ']' ||
-            (s.startsWith(", ", i) && listElement(s, i + 2).contains('#')))) return i
+            (s.startsWith(", ", i) && mentionsColumn(listElement(s, i + 2))))) return i
       i += 1
     }
     i
   }
 
-  /** The filter-list element starting at `from`: up to the next top-level `, `, `]` or end of line. */
+  /**
+   * The filter-list element starting at `from`: up to the next top-level `, `, ` AND `, ` OR `, `]`
+   * or end of line. Stopping at ` AND ` keeps `9 AND (b# > 100)`, an INSET's last value followed by
+   * a predicate, from reading as an element that mentions a column.
+   */
   private def listElement(s: String, from: Int): String = {
     var depth = 0
     var i = from
     while (i < s.length && s.charAt(i) != '\n' &&
-        !(depth == 0 && (s.charAt(i) == ']' || s.startsWith(", ", i)))) {
+        !(depth == 0 && (s.charAt(i) == ']' || s.startsWith(", ", i) || s.startsWith(" AND ", i) ||
+          s.startsWith(" OR ", i)))) {
       val c = s.charAt(i)
       if (c == '(') depth += 1 else if (c == ')') depth -= 1
       i += 1
@@ -162,11 +176,11 @@ object PlanFingerprint {
   }
 
   /**
-   * `?` for a literal operand. One that mentions a column, `b#` or `cast(b# as int)`, is kept: after
-   * expression ids are stripped, every column reference ends in `#`.
+   * `?` for a literal operand. One that mentions a column ([[ColumnMention]]), `b#` or
+   * `cast(b# as int)`, is kept.
    */
   private def literal(operand: String): Option[String] =
-    if (operand.contains('#')) None else Some("?")
+    if (mentionsColumn(operand)) None else Some("?")
 
   /**
    * The elements of an IN list, split on top-level commas: columns kept, each run of literals one
@@ -184,7 +198,7 @@ object PlanFingerprint {
       }
     }
     parts += cur.toString
-    val normalised = parts.toList.map(p => if (p.contains('#')) p.trim else "?")
+    val normalised = parts.toList.map(p => if (mentionsColumn(p)) p.trim else "?")
     val collapsed = normalised.foldRight(List.empty[String]) {
       case ("?", "?" :: rest) => "?" :: rest
       case (e, acc)           => e :: acc

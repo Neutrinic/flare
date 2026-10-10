@@ -191,4 +191,16 @@ class PlanFingerprintTest extends FunSuite {
     val function = "PartitionFilters: [isnotnull(b#18), a#17 INSET 1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9, isnotnull(c#19), (b#18 > 1)]"
     assertEquals(PlanFingerprint.normalise(function), "PartitionFilters: [isnotnull(b#), a# IN (?), isnotnull(c#), (b# > ?)]")
   }
+
+  test("an INSET's last value does not survive a predicate after it (Spark's form)") {
+    val cond = (values: String) => s"Condition : (a#5 INSET $values AND (b#6 > 100))"
+    assertEquals(PlanFingerprint.normalise(cond("1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9")), "Condition : (a# IN (?) AND (b# > ?))")
+    assertEquals(PlanFingerprint.of(cond("1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9")),
+      PlanFingerprint.of(cond("21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31")))
+  }
+
+  test("a literal containing # is still a literal: `(s# = tag#east)`") {
+    assertEquals(PlanFingerprint.of("Condition : (s#9 = tag#east)"), PlanFingerprint.of("Condition : (s#9 = tag#west)"))
+    assertEquals(PlanFingerprint.of("Condition : s#9 IN (tag#east,tag#north)"), PlanFingerprint.of("Condition : s#9 IN (tag#west)"))
+  }
 }
