@@ -78,6 +78,12 @@ object FlareTestHelpers {
 
   def unbindTaskContext(): Unit = TaskContext.unset()
 
+  /** Flare's listeners on a live SparkContext, once its listener bus has caught up. */
+  def flareListeners(sc: SparkContext): Seq[_root_.io.flare.spark.listener.TracingSparkListener] = {
+    sc.listenerBus.waitUntilEmpty(10000L)
+    sc.listenerBus.findListenersByClass[_root_.io.flare.spark.listener.TracingSparkListener]()
+  }
+
   /** A task's end when its executor was lost, as only the driver sees it. */
   def executorLostTaskEnd(execId: String, reason: String): scheduler.SparkListenerTaskEnd =
     scheduler.SparkListenerTaskEnd(
