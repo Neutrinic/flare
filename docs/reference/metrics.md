@@ -26,6 +26,10 @@ Nineteen instruments, all under the `io.flare.spark` meter, all turned off by
 | `flare.storage.disk.bytes` | updowncounter | `By` | `executor.id` |
 | `flare.storage.blocks` | updowncounter | `{block}` | `executor.id` |
 
+`task.result` is `SUCCESS`, `FAILED`, or `KILLED` for a task Spark killed itself: the losing
+attempt under speculation, or the tasks of a cancelled job or stage. A task error rate counts
+`FAILED` only.
+
 ## Histogram buckets
 
 | Histogram | Bucket boundaries |

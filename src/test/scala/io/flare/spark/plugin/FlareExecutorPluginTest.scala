@@ -311,6 +311,38 @@ class FlareExecutorPluginTest extends FunSuite {
     }
   }
 
+  test("a task Spark killed is KILLED on its span and metric, and not an error (#198)") {
+    sys.props("FLARE_TRACE_GRANULARITY") = "all"
+    val spanExporter = InMemorySpanExporter.create()
+    val metricReader = InMemoryMetricReader.create()
+    val sdk = OpenTelemetrySdk.builder()
+      .setTracerProvider(SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(spanExporter)).build())
+      .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(metricReader).build())
+      .buildAndRegisterGlobal()
+    try {
+      val plugin = new FlareExecutorPlugin()
+      plugin.init(StubPluginContext, java.util.Collections.emptyMap[String, String]())
+      FlareTestHelpers.bindEmptyTaskContext()
+      plugin.onTaskStart()
+      plugin.onTaskFailed(FlareTestHelpers.taskKilled("another attempt succeeded"))
+      FlareTestHelpers.unbindTaskContext()
+
+      val span = spanExporter.getFinishedSpanItems.asScala.find(_.getName == "spark.task.executor").get
+      assertEquals(span.getAttributes.get(Task.Result), "KILLED")
+      assertEquals(span.getAttributes.get(Task.KillReason), "another attempt succeeded")
+      assertEquals(span.getStatus.getStatusCode, StatusCode.UNSET)
+      assertEquals(span.getAttributes.get(Error.Type), null)
+
+      val results = metricReader.collectAllMetrics().asScala.filter(_.getName == "flare.task.duration")
+        .flatMap(_.getHistogramData.getPoints.asScala)
+        .map(_.getAttributes.get(AttributeKey.stringKey("task.result")))
+      assertEquals(results.toSeq, Seq("KILLED"))
+    } finally {
+      sdk.close()
+      sys.props.remove("FLARE_TRACE_GRANULARITY")
+    }
+  }
+
   test("a failed task is measured even when its span is suppressed") {
     sys.props("FLARE_TRACE_GRANULARITY") = "stages"
     val run = runTasks(taskCount = 2, succeed = false)

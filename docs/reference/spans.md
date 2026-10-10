@@ -127,7 +127,8 @@ when the task ends, and anything pointing at a dropped one would point at nothin
 | `spark.task.attempt.id` | long | `> 0` means a retry |
 | `spark.stage.id` | long | Conditional: only under `FLARE_TRACE_GRANULARITY=all`. The parent span already identifies the stage; this repeats it so you can filter without a join |
 | `spark.task.sql.execution_id` | long | Conditional: present when the task belongs to a SQL execution |
-| `spark.task.result` | string | `SUCCESS`, `FAILED`, or `SHUTDOWN` if the JVM went down mid-task |
+| `spark.task.result` | string | `SUCCESS`, `FAILED`, `KILLED` if Spark killed the task (a losing speculative attempt, or a cancelled job or stage), or `SHUTDOWN` if the JVM went down mid-task. Only `FAILED` and `SHUTDOWN` set an error status |
+| `spark.task.kill_reason` | string | Conditional: why Spark killed a `KILLED` task, such as `another attempt succeeded` |
 | `error.type` | string | Conditional: exception class for a user exception, otherwise the Spark failure reason class, e.g. `org.apache.spark.TaskResultLost` |
 | `error.message` | string | Conditional: present only on `FAILED`, first 500 chars |
 | `spark.task.duration_ms` | long | Wall clock on the executor thread |
