@@ -84,10 +84,19 @@ object PlanFingerprint {
   /**
    * `a# INSET 1, 10, 11`: Spark's form for a literal list of more than ten values, all literals. Its
    * values are not parenthesised, so a predicate after it shares the enclosing parentheses:
-   * `(a# INSET 1, 10, 11 AND (b# > 100))`. The values end at a top-level ` AND ` or ` OR ` too.
+   * `(a# INSET 1, 10, 11 AND (b# > 100))`. The values end at a top-level ` AND ` or ` OR ` too, and
+   * in a list such as `PartitionFilters: [a# INSET 1, 10, 11, (b# > 100)]` at the list's `]` or at a
+   * `, ` that starts the next filter rather than another value (see [[NextFilter]]).
    */
   private val ColumnInSet = """[\w.]+#\s+INSET\s+""".r
   private val InSetPattern = """\s+INSET\s+\?""".r
+
+  /**
+   * What starts a filter, not a literal, after a `, ` in a filter list: a parenthesised predicate, a
+   * function such as `isnotnull(`, or a column reference. A string value printed like one of these
+   * would end the values early, keeping part of it in the fingerprint; it does not hide a filter.
+   */
+  private val NextFilter = """\(|[\w.]+\(|[\w.]+#""".r
 
   /**
    * A pushed-down filter, in the data source's form, up to its value: `GreaterThan(id,` in
@@ -110,7 +119,9 @@ object PlanFingerprint {
       val c = s.charAt(i)
       if (c == '(') depth += 1
       else if (c == ')') { if (depth == 0) return i; depth -= 1 }
-      else if (atConnective && depth == 0 && (s.startsWith(" AND ", i) || s.startsWith(" OR ", i))) return i
+      else if (atConnective && depth == 0 &&
+          (s.startsWith(" AND ", i) || s.startsWith(" OR ", i) || c == ']' ||
+            (s.startsWith(", ", i) && NextFilter.pattern.matcher(s).region(i + 2, s.length).lookingAt()))) return i
       i += 1
     }
     i

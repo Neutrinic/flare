@@ -62,4 +62,28 @@ class PlanFingerprintSparkTest extends FunSuite {
   test("an INSET is the same query as an IN: two values against eleven") {
     assertEquals(PlanFingerprint.of(plan("a IN (1, 2)")), PlanFingerprint.of(plan(s"a IN ($eleven)")))
   }
+
+  /**
+   * A Parquet table partitioned by `a` and `b`, so filters on both are `PartitionFilters`. Planning
+   * lists files but reads none, so an empty file in `a=1/b=200` and an explicit schema are enough,
+   * and nothing goes through Hadoop's file writer (which needs winutils on Windows).
+   */
+  private lazy val partitioned: DataFrame = {
+    val dir = java.nio.file.Files.createTempDirectory("flare-fp-partitioned")
+    val leaf = java.nio.file.Files.createDirectories(dir.resolve("a=1").resolve("b=200"))
+    java.nio.file.Files.createFile(leaf.resolve("part-00000.parquet"))
+    spark.read.schema("id LONG").parquet(dir.toString)
+  }
+
+  private def partitionPlan(condition: String): String =
+    partitioned.filter(condition).queryExecution.explainString(ExplainMode.fromString("formatted"))
+
+  test("in PartitionFilters, a filter listed after an INSET still counts") {
+    // Listing files through Hadoop needs its native Windows libraries; CI runs on Linux, and the unit
+    // test covers the same line taken from real Spark.
+    assume(!sys.props.getOrElse("os.name", "").toLowerCase.contains("windows"), "Hadoop file listing needs winutils on Windows")
+    val gt = partitionPlan(s"a IN ($eleven) AND b > 100")
+    assert(gt.contains("PartitionFilters:") && gt.contains("INSET"), s"not the plan this test is about:\n$gt")
+    assertNotEquals(PlanFingerprint.of(gt), PlanFingerprint.of(partitionPlan(s"a IN ($eleven) AND b < 100")))
+  }
 }

@@ -172,4 +172,14 @@ class PlanFingerprintTest extends FunSuite {
     val other = "Condition : (a#1 = cast(c#3 as int))"
     assertNotEquals(PlanFingerprint.of(cast), PlanFingerprint.of(other))
   }
+
+  /** Spark 4.0.4's `PartitionFilters` for a table partitioned by `a` and `b`, from the lab. */
+  private def partitionFilters(op: String) =
+    s"PartitionFilters: [isnotnull(b#15), a#14 INSET 1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9, (b#15 $op 100)]"
+
+  test("in a PartitionFilters list, an INSET's values end where the next filter starts") {
+    assertEquals(PlanFingerprint.normalise(partitionFilters(">")),
+      "PartitionFilters: [isnotnull(b#), a# IN (?), (b# > ?)]")
+    assertNotEquals(PlanFingerprint.of(partitionFilters(">")), PlanFingerprint.of(partitionFilters("<")))
+  }
 }
