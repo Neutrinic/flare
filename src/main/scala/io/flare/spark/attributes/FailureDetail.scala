@@ -167,9 +167,14 @@ object FailureDetail {
     }
   }
 
-  /** `s` cut to `max` characters, or None when `max` is 0, which omits the field. */
+  /**
+   * `s` cut to `max` characters, or None when `max` is 0, which omits the field. Never ends
+   * between the two halves of a surrogate pair, which would leave an invalid character.
+   */
   def capped(s: String, max: Int): Option[String] =
-    if (max <= 0 || s == null) None else Some(if (s.length <= max) s else s.take(max))
+    if (max <= 0 || s == null) None
+    else if (s.length <= max) Some(s)
+    else Some(if (Character.isHighSurrogate(s.charAt(max - 1))) s.take(max - 1) else s.take(max))
 
   private def stackTraceToString(t: Throwable): String = {
     val writer = new java.io.StringWriter()

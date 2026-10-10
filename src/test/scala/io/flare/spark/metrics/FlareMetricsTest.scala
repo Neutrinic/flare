@@ -178,4 +178,16 @@ class FlareMetricsTest extends FunSuite {
     }
     assertEquals(MetricAttributes.bucketRemovalReason(null), "unknown")
   }
+
+  test("utf8Prefix bounds UTF-8 bytes and never splits a character") {
+    val grin = new String(Character.toChars(0x1F600)) // 4 bytes, two Java chars
+    assertEquals(MetricAttributes.utf8Prefix("a" + grin * 3, 6), "a" + grin)
+    assertEquals(MetricAttributes.utf8Prefix("数据", 5), "数") // 3 bytes each
+    assertEquals(MetricAttributes.utf8Prefix("plain", 2048), "plain")
+  }
+
+  test("a character cap never ends inside a surrogate pair") {
+    val grin = new String(Character.toChars(0x1F600))
+    assertEquals(io.flare.spark.attributes.FailureDetail.capped("ab" + grin, 3), Some("ab"))
+  }
 }

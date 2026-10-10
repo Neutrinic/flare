@@ -700,6 +700,18 @@ class TracingSparkListenerTest extends FunSuite {
     assertEquals(labels.map(_.map(_.length)), Seq(Some(256), Some(256)))
   }
 
+  test("a non-ASCII statement stays under 2,048 UTF-8 bytes on the label, at the default cap") {
+    // Mimir counts bytes: 1,024 Chinese characters are about 3,000 (Codex, #229).
+    val statement = "SELECT * FROM 订单 WHERE 名称 = '" + "数据" * 700 + "'"
+    val labels = descriptionLabels(cap = 1024, statement).flatten
+    assertEquals(labels.size, 2)
+    labels.foreach { l =>
+      val bytes = l.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+      assert(bytes.length <= 2048, s"label is ${bytes.length} bytes")
+      assertEquals(new String(bytes, java.nio.charset.StandardCharsets.UTF_8), l) // cut between characters
+    }
+  }
+
   test("a sql.description cap of 0 drops the metric label") {
     assertEquals(descriptionLabels(cap = 0, "load orders"), Seq(None, None))
   }
