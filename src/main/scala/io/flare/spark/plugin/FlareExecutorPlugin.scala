@@ -401,13 +401,20 @@ private[plugin] object FlareExecutorPlugin {
    */
   /**
    * Why Spark killed a task, bucketed: `another_attempt_succeeded` for the losing attempt under
-   * speculation, `cancelled` for a cancelled job, stage or job group, `other` otherwise. Spark's
-   * reason is free text, and a cancellation repeats the stage failure behind it, hostnames and
-   * executor ids included, which the stage span already carries.
+   * speculation, `stage_finished` for a task still running when its stage finished, `cancelled`
+   * for a cancelled job, stage or job group, `other` otherwise. Spark's reason is free text, and a
+   * cancellation repeats the stage failure behind it, hostnames and executor ids included, which the
+   * stage span already carries.
+   *
+   * `stage_finished` is checked before `cancelled` (#227): Spark words it "Stage cancelled: Stage
+   * finished", though nothing was cancelled. It is how the original attempt is killed when a
+   * speculative copy of its stage's last task wins (Spark 4.0.4 on the lab), and how a stage that
+   * finishes early, as for a `take()`, stops the tasks it no longer needs.
    */
   def killReason(reason: String): String = {
     val r = Option(reason).getOrElse("").toLowerCase(java.util.Locale.ROOT)
     if (r.contains("another attempt succeeded")) "another_attempt_succeeded"
+    else if (r.contains("stage finished")) "stage_finished"
     else if (r.contains("cancel")) "cancelled"
     else "other"
   }

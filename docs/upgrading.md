@@ -28,7 +28,9 @@ With speculation on, Spark kills the slower copy of a task once another succeeds
 running tasks of a cancelled job or stage. These were recorded as `task.result=FAILED`, with error
 spans, so a healthy run with speculation showed task errors
 ([#198](https://github.com/Neutrinic/flare/issues/198)). They are now `KILLED`, with no error
-status and why in `spark.task.kill_reason`: `another_attempt_succeeded`, `cancelled` or `other`.
+status and why in `spark.task.kill_reason`: `another_attempt_succeeded`, `stage_finished`,
+`cancelled` or `other`. Under speculation, the original is usually `stage_finished`: the copy that
+wins finishes the stage, and Spark stops the original with it.
 
 - A query or alert on `task_result="FAILED"` now counts real failures only, and will read lower on
   runs with speculation or cancelled jobs.
