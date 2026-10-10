@@ -84,15 +84,11 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
 
   @Override
   public void customize(AutoConfigurationCustomizer customizer) {
-    if (!isFlareEnabled()) {
-      logger.info("[Flare] Disabled via FLARE_ENABLED=false");
-      return;
-    }
-
+    // The agent defaults and the root filter stay when Flare is disabled (#206). They are what keeps
+    // the agent quiet: without them it is back to its full instrumentation, a span per S3 or GCS
+    // request and the platform's HTTP traces, so turning Flare off to cut overhead produced more
+    // telemetry than leaving it on. Each still has its own opt-out.
     customizer.addPropertiesSupplier(() -> AGENT_DEFAULTS);
-
-    customizer.addResourceCustomizer(
-        (resource, config) -> Resource.create(flareResourceAttributes()).merge(resource));
 
     // Driver and executors alike: each traces its own platform calls, the driver the cluster
     // manager's HTTP traffic (#123) and executors their start-up, such as fetching the application
@@ -100,6 +96,14 @@ public class FlareAutoConfig implements AutoConfigurationCustomizerProvider {
     if (dropsNonSparkRoots()) {
       customizer.addSamplerCustomizer((sampler, config) -> new SparkRootSampler(sampler));
     }
+
+    if (!isFlareEnabled()) {
+      logger.info("[Flare] Disabled via FLARE_ENABLED=false; the agent's defaults stay quiet");
+      return;
+    }
+
+    customizer.addResourceCustomizer(
+        (resource, config) -> Resource.create(flareResourceAttributes()).merge(resource));
 
     if ("driver".equals(detectRole())) {
       customizer.addSpanProcessorCustomizer(

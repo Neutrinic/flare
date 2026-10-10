@@ -20,7 +20,7 @@ agent's own `otel.*` keys, see [Exporting](exporting.md).
 | `FLARE_ERROR_MESSAGE_MAX_CHARS` | `500` | Cap on a failure's message, wherever it goes: `error.message`, the span status, the `exception` event and `spark.stage.failure_reason`; `0` drops it everywhere, and the stack trace with it, since a printed stack trace opens with the message |
 | `FLARE_STACKTRACE_MAX_CHARS` | `8000` | Cap on a failure's stack trace, on the `exception` event; `0` drops it |
 | `FLARE_DROP_NON_SPARK_ROOTS` | `true` | Drop spans with no parent that are not Flare's, such as the platform's own HTTP calls. See [Noise](noise.md) |
-| `FLARE_ENABLED` | `true` | Kill switch |
+| `FLARE_ENABLED` | `true` | Kill switch: `false` stops Flare's spans, metrics and resource attributes. The agent stays as quiet as with Flare on: its own instrumentation stays off and non-Spark root spans are still dropped. To have the agent's full instrumentation back, set `otel.instrumentation.common.default-enabled=true` and `FLARE_DROP_NON_SPARK_ROOTS=false` as well |
 
 `FLARE_ENABLED` and `FLARE_DROP_NON_SPARK_ROOTS` turn off only for the literal value `false`, in any
 case. Any other value leaves them on.

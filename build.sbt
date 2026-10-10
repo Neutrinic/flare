@@ -181,6 +181,25 @@ lazy val root = (project in file("."))
     AgentTest / fork := true,
     AgentTest / parallelExecution := false,
     AgentTest / testFrameworks := Seq(new TestFramework("munit.Framework")),
+    // Every agent test runs with Flare enabled. The two that prove the agent stays quiet run again in
+    // their own JVM with FLARE_ENABLED=false (#206): disabling Flare must not bring the agent's full
+    // instrumentation back, and the setting is read once, at agent start-up.
+    AgentTest / testGrouping := {
+      val fork  = (AgentTest / forkOptions).value
+      val tests = (AgentTest / definedTests).value
+      val quietWhenDisabled = Set(
+        "io.flare.spark.config.AgentDefaultsAgentTest",
+        "io.flare.spark.config.SparkRootSamplerAgentTest",
+      )
+      Seq(
+        Tests.Group("flare-enabled", tests, Tests.SubProcess(fork)),
+        Tests.Group(
+          "flare-disabled",
+          tests.filter(t => quietWhenDisabled(t.name)),
+          Tests.SubProcess(fork.withRunJVMOptions(fork.runJVMOptions :+ "-DFLARE_ENABLED=false")),
+        ),
+      )
+    },
     AgentTest / javaOptions ++= {
       val agentJar = (AgentTest / dependencyClasspath).value
         .map(_.data)
