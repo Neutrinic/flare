@@ -89,6 +89,18 @@ class ClusterLifecycleMetricsTest extends FunSuite {
     assertEquals(m.getOrElse("flare.executor.count", 0L), 0L) // never seen added, so not decremented
   }
 
+  test("with metrics off, removed executors are still forgotten") {
+    val tp = SdkTracerProvider.builder().build()
+    try {
+      val l = new TracingSparkListener(tp.get("t"), baseConfig(false), metrics = None, throwOnError = true)
+      (1 to 50).foreach { i =>
+        l.onExecutorAdded(FlareTestHelpers.executorAdded(i.toString))
+        l.onExecutorRemoved(FlareTestHelpers.executorRemoved(i.toString, "Executor idle timeout exceeded"))
+      }
+      assertEquals(l.liveExecutorCount, 0)
+    } finally tp.close()
+  }
+
   test("executor removals are tagged with a bucketed reason") {
     val reader = InMemoryMetricReader.create()
     val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()

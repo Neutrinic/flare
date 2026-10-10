@@ -70,6 +70,9 @@ class TracingSparkListener(
   // Bounded by the executors alive at once.
   private val liveExecutors = java.util.concurrent.ConcurrentHashMap.newKeySet[String]()
 
+  /** How many executors the listener holds as live. For tests. */
+  private[listener] def liveExecutorCount: Int = liveExecutors.size
+
   // Executors already removed (#196). Spark posts two removals for a decommissioned executor,
   // "decommissioned" and then "Command exited with code 0" when its process ends; only the first
   // is counted. Keyed on removals, not on having seen the executor added: a listener registered
@@ -413,9 +416,10 @@ class TracingSparkListener(
   override def onExecutorRemoved(event: SparkListenerExecutorRemoved): Unit =
     // Only the first removal (#196): a decommissioned executor is removed twice.
     if (removedExecutors.add(event.executorId)) safeHandle("onExecutorRemoved") {
+      // Outside metrics.foreach: the add is too, so with metrics off the set still empties.
+      val wasLive = liveExecutors.remove(event.executorId)
       metrics.foreach { fm =>
-        if (liveExecutors.remove(event.executorId))
-          fm.executorCount.add(-1L, MetricAttributes.forExecutor(event.executorId))
+        if (wasLive) fm.executorCount.add(-1L, MetricAttributes.forExecutor(event.executorId))
         // The reason is the point: it separates a routine dynamic-allocation scale-down from
         // a crash, which is otherwise indistinguishable in the executor count alone.
         fm.executorRemoved.add(1L, MetricAttributes.forExecutorRemoval(event.executorId, event.reason))
