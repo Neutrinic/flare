@@ -37,6 +37,14 @@ wins finishes the stage, and Spark stops the original with it.
 - One that sums every `task_result` value, such as a task count, is unchanged. One that lists the
   values explicitly needs `KILLED` added.
 
+### Plan fingerprints ignore literal values and input paths
+
+`spark.sql.plan.fingerprint` and `spark.sql.plan.initial.fingerprint` no longer change when only a
+filter's value or a scan's paths change, so a date-partitioned daily job keeps one fingerprint
+([#207](https://github.com/Neutrinic/flare/issues/207)). Plans that contain literals or file paths,
+which is most, fingerprint differently from 1.3, so a search grouping by fingerprint across the
+upgrade shows each query change shape once.
+
 ### Code reading the stage context should read the stage's own key
 
 When a job ran two stages at once, such as an RDD `join`, one stage's tasks ran under the other

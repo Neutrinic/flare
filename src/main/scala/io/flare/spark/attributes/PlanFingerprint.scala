@@ -62,6 +62,35 @@ object PlanFingerprint {
   private val StatisticsPattern = """Statistics\([^)]*\)""".r
 
   /**
+   * Where a scan read from: `Location: InMemoryFileIndex [file:/data/orders/dt=2024-01-01]`, or
+   * `InMemoryFileIndex(1 paths)[...]`. The paths change with every run of a date-partitioned job,
+   * so only the index's class is kept (#207).
+   */
+  private val LocationPattern = """Location: (\w+)(?:\(\d+ paths\))? ?\[[^\]]*\]""".r
+
+  /**
+   * The literal side of a comparison with a column, in Catalyst's form, as in `Condition :` and
+   * `PartitionFilters:` (after expression ids are stripped): `(dt# = 2024-01-01)`, `(id# > 100)`,
+   * `(name# = abc)`. A daily job filters on a new date every run; the column and operator are the
+   * query, the value is not (#207). A comparison between two columns, such as a join key, is kept:
+   * the right side starting with a column reference is not a literal. The space before it is
+   * matched possessively, or the engine backtracks over it and the column check sees a space.
+   */
+  private val ColumnComparisonPattern =
+    """([\w.]+#\s*(?:<=>|<=|>=|!=|=|<|>)\s*+)(?![\w.]+#)([^()]+?)(\))""".r
+
+  /** `id# IN (1,2,3)` in Catalyst's form: the list is values. */
+  private val ColumnInPattern = """([\w.]+#\s+IN\s+\()[^()]*(\))""".r
+
+  /**
+   * Pushed-down filters, in the data source's form: `GreaterThan(id,100)`, `EqualTo(name,abc)`,
+   * `In(id, [1,2,3])`. The value goes; the filter and its column stay.
+   */
+  private val PushedFilterPattern =
+    """\b(EqualTo|EqualNullSafe|GreaterThan|GreaterThanOrEqual|LessThan|LessThanOrEqual|StringStartsWith|StringEndsWith|StringContains)\(([^,()]+),[^()]*\)""".r
+  private val PushedInPattern = """\bIn\(([^,()]+), \[[^\]]*\]\)""".r
+
+  /**
    * 64 bits of SHA-256, hex encoded. Long enough that collisions between query shapes in one
    * deployment are not a practical concern, short enough to stay a cheap label.
    */
@@ -72,7 +101,14 @@ object PlanFingerprint {
     val noExprIds = ExprIdPattern.replaceAllIn(plan, "#")
     val noPlanIds = PlanIdPattern.replaceAllIn(noExprIds, "plan_id=")
     val noCodegen = CodegenIdPattern.replaceAllIn(noPlanIds, "[codegen id]")
-    StatisticsPattern.replaceAllIn(noCodegen, "Statistics()")
+    val noStats   = StatisticsPattern.replaceAllIn(noCodegen, "Statistics()")
+    // Literals and paths (#207): run after expression ids, which the column patterns rely on.
+    val noPaths   = LocationPattern.replaceAllIn(noStats, m => scala.util.matching.Regex.quoteReplacement(s"Location: ${m.group(1)}"))
+    val noValues  = ColumnComparisonPattern.replaceAllIn(noPaths, m =>
+      scala.util.matching.Regex.quoteReplacement(m.group(1) + "?" + m.group(3)))
+    val noInLists = ColumnInPattern.replaceAllIn(noValues, m => scala.util.matching.Regex.quoteReplacement(m.group(1) + "?" + m.group(2)))
+    val noPushed  = PushedFilterPattern.replaceAllIn(noInLists, m => scala.util.matching.Regex.quoteReplacement(s"${m.group(1)}(${m.group(2)},?)"))
+    PushedInPattern.replaceAllIn(noPushed, m => scala.util.matching.Regex.quoteReplacement(s"In(${m.group(1)}, [?])"))
   }
 
   /**
