@@ -1,7 +1,5 @@
 package io.flare.spark.plugin
 
-import io.opentelemetry.api.GlobalOpenTelemetry
-
 import java.lang.reflect.Method
 import java.util.concurrent.{Executors, ScheduledExecutorService, ScheduledFuture, ThreadFactory, TimeUnit}
 import java.util.logging.{Level, Logger}
@@ -19,7 +17,8 @@ import java.util.logging.{Level, Logger}
  * agent's API bridge. The agent does publish a flush entry point for this, in its bootstrap
  * classloader so every classloader can see it: `OpenTelemetrySdkAccess.forceFlush`, which its AWS
  * Lambda instrumentation calls before the process is frozen. It is looked up reflectively so Flare
- * still loads without the agent, where the SDK path below applies instead.
+ * still loads without the agent, where there is nothing to flush (#219): an SDK installed as the
+ * global cannot be reached either, since `GlobalOpenTelemetry` hands back a wrapper that hides it.
  *
  * Uses java.util.logging because [[FlareDriverState]] calls this, and it may be loaded by the
  * agent's extension classloader, where SLF4J is shaded away.
@@ -53,11 +52,11 @@ private[spark] object TelemetryFlush {
   }
 
   /**
-   * Flush through the agent, or failing that through a plain SDK installed as the global. Blocks
-   * for at most roughly `timeoutMs` per provider.
+   * Flush through the agent. Blocks for at most roughly `timeoutMs` per provider. Without the agent
+   * there is nothing to flush: the supported install is the agent and this extension.
    *
    * `verbose` logs the outcome at INFO. Use it for one-off flushes at shutdown, where it is the only
-   * evidence the flush ran, and not for the executor's frequent idle flushes.
+   * evidence the flush ran, and not for the frequent idle flushes.
    */
   def flush(reason: String, timeoutMs: Long = 5000L, verbose: Boolean = false): Unit = {
     val level = if (verbose) Level.INFO else Level.FINE
@@ -67,27 +66,8 @@ private[spark] object TelemetryFlush {
         s"${(System.nanoTime() - started) / 1000000L} ms")
     } else {
       agentForceFlush match {
-        case Left(why) => logger.log(level, s"[Flare] Agent flush unavailable ($why)")
-        case Right(_)  => ()
-      }
-      try {
-        // getOrNoop, not get: get() installs a no-op global when none is set yet, and a flush
-        // must never decide what the global is.
-        GlobalOpenTelemetry.getOrNoop() match {
-          case sdk: io.opentelemetry.sdk.OpenTelemetrySdk =>
-            sdk.getSdkTracerProvider.forceFlush().join(timeoutMs, TimeUnit.MILLISECONDS)
-            sdk.getSdkMeterProvider.forceFlush().join(timeoutMs, TimeUnit.MILLISECONDS)
-            logger.log(level, s"[Flare] Flushed the global SDK ($reason)")
-          case other =>
-            logger.log(level, s"[Flare] Nothing to flush ($reason): no agent, and " +
-              s"GlobalOpenTelemetry is ${other.getClass.getName}")
-        }
-      } catch {
-        // The SDK is not on this classloader, or an older API without getOrNoop is. Nothing to
-        // flush from here.
-        case _: LinkageError => ()
-        case e: Exception =>
-          logger.log(Level.WARNING, s"[Flare] Flush failed ($reason): ${e.getMessage}", e)
+        case Left(why) => logger.log(level, s"[Flare] Nothing to flush ($reason): no agent ($why)")
+        case Right(_)  => () // the agent was there and the flush failed; flushAgent logged why
       }
     }
   }
