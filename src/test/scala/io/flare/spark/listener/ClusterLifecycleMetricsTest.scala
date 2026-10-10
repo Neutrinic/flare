@@ -101,6 +101,18 @@ class ClusterLifecycleMetricsTest extends FunSuite {
     } finally tp.close()
   }
 
+  test("seeded executors are counted once, and an executor already removed is not seeded (#224)") {
+    val m = collect() { l =>
+      l.onExecutorRemoved(FlareTestHelpers.executorRemoved("3", "Executor idle timeout exceeded"))
+      l.seedExecutors(Seq("1", "2", "3")) // as the advice reads them after registering
+      l.onExecutorAdded(FlareTestHelpers.executorAdded("2")) // an event that also got through
+      l.onExecutorRemoved(FlareTestHelpers.executorRemoved("1", "Command exited with code 137"))
+    }
+    // 1 and 2 seeded (3 was already gone), 2 not counted twice, 1 removed: one live executor.
+    assertEquals(m.get("flare.executor.count"), Some(1L))
+    assertEquals(m.get("flare.executor.removed"), Some(2L))
+  }
+
   test("executor removals are tagged with a bucketed reason") {
     val reader = InMemoryMetricReader.create()
     val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()

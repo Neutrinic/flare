@@ -71,7 +71,25 @@ class TracingSparkListener(
   private val liveExecutors = java.util.concurrent.ConcurrentHashMap.newKeySet[String]()
 
   /** How many executors the listener holds as live. For tests. */
-  private[listener] def liveExecutorCount: Int = liveExecutors.size
+  private[spark] def liveExecutorCount: Int = liveExecutors.size
+
+  // Executor adds, removals and seeding are rare; one lock keeps a seed and a concurrent removal
+  // from leaving a removed executor counted as live.
+  private val executorLock = new Object
+
+  /**
+   * Counts executors the SparkContext registered before this listener was added (#224), which it
+   * never heard announced. Call after adding the listener. An executor whose event also arrives is
+   * counted once, and one already removed is not counted.
+   */
+  def seedExecutors(executorIds: Seq[String]): Unit = safeHandle("seedExecutors") {
+    executorLock.synchronized {
+      executorIds.foreach { id =>
+        if (!removedExecutors.contains(id) && liveExecutors.add(id))
+          metrics.foreach(_.executorCount.add(1L, MetricAttributes.forExecutor(id)))
+      }
+    }
+  }
 
   // Executors already removed (#196). Spark posts two removals for a decommissioned executor,
   // "decommissioned" and then "Command exited with code 0" when its process ends; only the first
@@ -409,15 +427,20 @@ class TracingSparkListener(
 
   override def onExecutorAdded(event: SparkListenerExecutorAdded): Unit =
     safeHandle("onExecutorAdded") {
-      if (liveExecutors.add(event.executorId))
-        metrics.foreach(_.executorCount.add(1L, MetricAttributes.forExecutor(event.executorId)))
+      executorLock.synchronized {
+        if (liveExecutors.add(event.executorId))
+          metrics.foreach(_.executorCount.add(1L, MetricAttributes.forExecutor(event.executorId)))
+      }
     }
 
-  override def onExecutorRemoved(event: SparkListenerExecutorRemoved): Unit =
-    // Only the first removal (#196): a decommissioned executor is removed twice.
-    if (removedExecutors.add(event.executorId)) safeHandle("onExecutorRemoved") {
-      // Outside metrics.foreach: the add is too, so with metrics off the set still empties.
-      val wasLive = liveExecutors.remove(event.executorId)
+  override def onExecutorRemoved(event: SparkListenerExecutorRemoved): Unit = {
+    // Only the first removal (#196): a decommissioned executor is removed twice. Outside
+    // metrics.foreach, as the add is, so with metrics off the live set still empties.
+    val (first, wasLive) = executorLock.synchronized {
+      if (removedExecutors.add(event.executorId)) (true, liveExecutors.remove(event.executorId))
+      else (false, false)
+    }
+    if (first) safeHandle("onExecutorRemoved") {
       metrics.foreach { fm =>
         if (wasLive) fm.executorCount.add(-1L, MetricAttributes.forExecutor(event.executorId))
         // The reason is the point: it separates a routine dynamic-allocation scale-down from
@@ -425,6 +448,7 @@ class TracingSparkListener(
         fm.executorRemoved.add(1L, MetricAttributes.forExecutorRemoval(event.executorId, event.reason))
       }
     }
+  }
 
   // Spark posts SparkListenerExecutorExcluded since 3.1; the older Blacklisted event and its
   // callback still exist on every version in the matrix but are not what the health tracker

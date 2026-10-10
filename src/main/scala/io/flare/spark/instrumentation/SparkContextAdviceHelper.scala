@@ -10,7 +10,7 @@ import io.flare.spark.propagation.LocalPropertyPropagator
 import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.trace.SpanKind
 import io.opentelemetry.context.Context
-import org.apache.spark.SparkContext
+import org.apache.spark.{FlareExecutorAccess, SparkContext}
 
 import java.util.logging.{Level, Logger}
 
@@ -83,6 +83,11 @@ object SparkContextAdviceHelper {
 
       // 5. Won the race — safe to register the listener now
       sc.addSparkListener(tracingListener)
+
+      // 6. Count the executors announced before the listener existed (#224): local mode's one
+      //    executor, and on YARN and Kubernetes most of the cluster. After adding the listener, so
+      //    an executor is either in this list or its event reaches the listener; both is fine.
+      tracingListener.seedExecutors(FlareExecutorAccess.registeredExecutorIds(sc))
 
       logger.info(
         s"[Flare] ByteBuddy advice initialized — " +

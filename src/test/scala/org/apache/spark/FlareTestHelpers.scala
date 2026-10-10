@@ -78,6 +78,12 @@ object FlareTestHelpers {
 
   def unbindTaskContext(): Unit = TaskContext.unset()
 
+  /** Flare's listeners on a live SparkContext, once its listener bus has caught up. */
+  def flareListeners(sc: SparkContext): Seq[_root_.io.flare.spark.listener.TracingSparkListener] = {
+    sc.listenerBus.waitUntilEmpty(10000L)
+    sc.listenerBus.findListenersByClass[_root_.io.flare.spark.listener.TracingSparkListener]()
+  }
+
   /** What Spark reports for a task it killed, as the losing attempt under speculation. */
   def taskKilled(reason: String): TaskKilled = TaskKilled(reason)
 
