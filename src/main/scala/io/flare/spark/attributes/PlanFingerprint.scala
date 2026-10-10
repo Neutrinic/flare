@@ -86,17 +86,13 @@ object PlanFingerprint {
    * values are not parenthesised, so a predicate after it shares the enclosing parentheses:
    * `(a# INSET 1, 10, 11 AND (b# > 100))`. The values end at a top-level ` AND ` or ` OR ` too, and
    * in a list such as `PartitionFilters: [a# INSET 1, 10, 11, (b# > 100)]` at the list's `]` or at a
-   * `, ` that starts the next filter rather than another value (see [[NextFilter]]).
+   * `, ` whose next list element mentions a column. Every filter does, `NOT b# INSET …` and
+   * `isnotnull(c#)` included, and no literal value does: expression ids are stripped to a bare `#`
+   * first, so a `#` in the element marks a column.
    */
   private val ColumnInSet = """[\w.]+#\s+INSET\s+""".r
   private val InSetPattern = """\s+INSET\s+\?""".r
 
-  /**
-   * What starts a filter, not a literal, after a `, ` in a filter list: a parenthesised predicate, a
-   * function such as `isnotnull(`, or a column reference. A string value printed like one of these
-   * would end the values early, keeping part of it in the fingerprint; it does not hide a filter.
-   */
-  private val NextFilter = """\(|[\w.]+\(|[\w.]+#""".r
 
   /**
    * A pushed-down filter, in the data source's form, up to its value: `GreaterThan(id,` in
@@ -121,10 +117,23 @@ object PlanFingerprint {
       else if (c == ')') { if (depth == 0) return i; depth -= 1 }
       else if (atConnective && depth == 0 &&
           (s.startsWith(" AND ", i) || s.startsWith(" OR ", i) || c == ']' ||
-            (s.startsWith(", ", i) && NextFilter.pattern.matcher(s).region(i + 2, s.length).lookingAt()))) return i
+            (s.startsWith(", ", i) && listElement(s, i + 2).contains('#')))) return i
       i += 1
     }
     i
+  }
+
+  /** The filter-list element starting at `from`: up to the next top-level `, `, `]` or end of line. */
+  private def listElement(s: String, from: Int): String = {
+    var depth = 0
+    var i = from
+    while (i < s.length && s.charAt(i) != '\n' &&
+        !(depth == 0 && (s.charAt(i) == ']' || s.startsWith(", ", i)))) {
+      val c = s.charAt(i)
+      if (c == '(') depth += 1 else if (c == ')') depth -= 1
+      i += 1
+    }
+    s.substring(from, i)
   }
 
   /**

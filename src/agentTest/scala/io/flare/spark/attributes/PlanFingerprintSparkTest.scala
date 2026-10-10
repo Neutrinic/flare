@@ -64,13 +64,14 @@ class PlanFingerprintSparkTest extends FunSuite {
   }
 
   /**
-   * A Parquet table partitioned by `a` and `b`, so filters on both are `PartitionFilters`. Planning
-   * lists files but reads none, so an empty file in `a=1/b=200` and an explicit schema are enough,
+   * A Parquet table partitioned by `a`, `b` and `c`, so filters on them are `PartitionFilters`.
+   * Planning lists files but reads none, so an empty file in `a=1/b=200/c=300` and an explicit schema
+   * are enough,
    * and nothing goes through Hadoop's file writer (which needs winutils on Windows).
    */
   private lazy val partitioned: DataFrame = {
     val dir = java.nio.file.Files.createTempDirectory("flare-fp-partitioned")
-    val leaf = java.nio.file.Files.createDirectories(dir.resolve("a=1").resolve("b=200"))
+    val leaf = java.nio.file.Files.createDirectories(dir.resolve("a=1").resolve("b=200").resolve("c=300"))
     java.nio.file.Files.createFile(leaf.resolve("part-00000.parquet"))
     spark.read.schema("id LONG").parquet(dir.toString)
   }
@@ -85,5 +86,11 @@ class PlanFingerprintSparkTest extends FunSuite {
     val gt = partitionPlan(s"a IN ($eleven) AND b > 100")
     assert(gt.contains("PartitionFilters:") && gt.contains("INSET"), s"not the plan this test is about:\n$gt")
     assertNotEquals(PlanFingerprint.of(gt), PlanFingerprint.of(partitionPlan(s"a IN ($eleven) AND b < 100")))
+  }
+
+  test("in PartitionFilters, a NOT IN listed after an INSET still counts") {
+    assume(!sys.props.getOrElse("os.name", "").toLowerCase.contains("windows"), "Hadoop file listing needs winutils on Windows")
+    assertNotEquals(PlanFingerprint.of(partitionPlan(s"a IN ($eleven) AND b NOT IN ($eleven)")),
+      PlanFingerprint.of(partitionPlan(s"a IN ($eleven) AND c NOT IN ($eleven)")))
   }
 }

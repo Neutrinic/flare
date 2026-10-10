@@ -182,4 +182,13 @@ class PlanFingerprintTest extends FunSuite {
       "PartitionFilters: [isnotnull(b#), a# IN (?), (b# > ?)]")
     assertNotEquals(PlanFingerprint.of(partitionFilters(">")), PlanFingerprint.of(partitionFilters("<")))
   }
+
+  test("an INSET's values end before a negated or function filter too (Spark 4.0.4 lines)") {
+    val notIn = (col: String) =>
+      s"PartitionFilters: [a#17 INSET 1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9, NOT $col#18 INSET 1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9]"
+    assertEquals(PlanFingerprint.normalise(notIn("b")), "PartitionFilters: [a# IN (?), NOT b# IN (?)]")
+    assertNotEquals(PlanFingerprint.of(notIn("b")), PlanFingerprint.of(notIn("c")))
+    val function = "PartitionFilters: [isnotnull(b#18), a#17 INSET 1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9, isnotnull(c#19), (b#18 > 1)]"
+    assertEquals(PlanFingerprint.normalise(function), "PartitionFilters: [isnotnull(b#), a# IN (?), isnotnull(c#), (b# > ?)]")
+  }
 }
