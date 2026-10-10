@@ -75,6 +75,10 @@ so it is bucketed into a fixed set (`idle_or_decommissioned`, `preempted`, `hear
 `lost`, `killed`, `exited`, `other`, `unknown`) rather than passed through: an unbounded tag on
 a counter is the cardinality problem these instruments exist to avoid.
 
+Each executor is counted once on removal, with the reason Spark gave first. Spark removes a
+decommissioned executor twice, once as decommissioned and again when its process exits; the second
+is ignored, so a scale-down by decommissioning reads `idle_or_decommissioned`, not also `exited`.
+
 `flare.task.lost` counts tasks that ended because their executor was lost: killed, out of memory,
 preempted or gone silent. The executor records every other task on the `flare.task.*` instruments,
 but not these, since it died with them; the driver records them, labelled like
