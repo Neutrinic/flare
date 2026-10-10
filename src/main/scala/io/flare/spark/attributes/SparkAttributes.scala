@@ -114,6 +114,9 @@ object SparkAttributes {
     val PartitionId = AttributeKey.longKey("spark.task.partition.id")
     val AttemptId   = AttributeKey.longKey("spark.task.attempt.id")
     val Result      = AttributeKey.stringKey("spark.task.result")
+    // Why Spark killed the task, on a KILLED task's span (#198), bucketed: another_attempt_succeeded
+    // (the losing copy under speculation), cancelled, or other. A span attribute only.
+    val KillReason  = AttributeKey.stringKey("spark.task.kill_reason")
     // v0.2 — task-level metrics (recorded at task end from TaskMetrics)
     val ShuffleReadBytes  = AttributeKey.longKey("spark.task.shuffle.read_bytes")
     val ShuffleWriteBytes = AttributeKey.longKey("spark.task.shuffle.write_bytes")

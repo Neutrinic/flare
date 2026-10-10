@@ -311,6 +311,49 @@ class FlareExecutorPluginTest extends FunSuite {
     }
   }
 
+  test("a task Spark killed is KILLED on its span and metric, and not an error (#198)") {
+    sys.props("FLARE_TRACE_GRANULARITY") = "all"
+    val spanExporter = InMemorySpanExporter.create()
+    val metricReader = InMemoryMetricReader.create()
+    val sdk = OpenTelemetrySdk.builder()
+      .setTracerProvider(SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(spanExporter)).build())
+      .setMeterProvider(SdkMeterProvider.builder().registerMetricReader(metricReader).build())
+      .buildAndRegisterGlobal()
+    try {
+      val plugin = new FlareExecutorPlugin()
+      plugin.init(StubPluginContext, java.util.Collections.emptyMap[String, String]())
+      FlareTestHelpers.bindEmptyTaskContext()
+      plugin.onTaskStart()
+      plugin.onTaskFailed(FlareTestHelpers.taskKilled("another attempt succeeded"))
+      FlareTestHelpers.unbindTaskContext()
+
+      val span = spanExporter.getFinishedSpanItems.asScala.find(_.getName == "spark.task.executor").get
+      assertEquals(span.getAttributes.get(Task.Result), "KILLED")
+      assertEquals(span.getAttributes.get(Task.KillReason), "another_attempt_succeeded")
+      assertEquals(span.getStatus.getStatusCode, StatusCode.UNSET)
+      assertEquals(span.getAttributes.get(Error.Type), null)
+
+      val results = metricReader.collectAllMetrics().asScala.filter(_.getName == "flare.task.duration")
+        .flatMap(_.getHistogramData.getPoints.asScala)
+        .map(_.getAttributes.get(AttributeKey.stringKey("task.result")))
+      assertEquals(results.toSeq, Seq("KILLED"))
+    } finally {
+      sdk.close()
+      sys.props.remove("FLARE_TRACE_GRANULARITY")
+    }
+  }
+
+  test("kill reasons are bucketed, never passed through") {
+    assertEquals(FlareExecutorPlugin.killReason("another attempt succeeded"), "another_attempt_succeeded")
+    // As Spark 4.0.4 wrote it on the lab when a job aborted: the stage failure, host and executor included.
+    assertEquals(FlareExecutorPlugin.killReason("Stage cancelled: Job aborted due to stage failure: Task 3 in " +
+      "stage 1.0 failed 4 times, most recent failure: Lost task 3.3 in stage 1.0 (TID 12) (192.168.1.87 executor 4)"),
+      "cancelled")
+    assertEquals(FlareExecutorPlugin.killReason("Job group cancelled"), "cancelled")
+    assertEquals(FlareExecutorPlugin.killReason("killed via the Web UI"), "other")
+    assertEquals(FlareExecutorPlugin.killReason(null), "other")
+  }
+
   test("a failed task is measured even when its span is suppressed") {
     sys.props("FLARE_TRACE_GRANULARITY") = "stages"
     val run = runTasks(taskCount = 2, succeed = false)

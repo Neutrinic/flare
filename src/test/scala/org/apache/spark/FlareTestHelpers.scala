@@ -78,6 +78,9 @@ object FlareTestHelpers {
 
   def unbindTaskContext(): Unit = TaskContext.unset()
 
+  /** What Spark reports for a task it killed, as the losing attempt under speculation. */
+  def taskKilled(reason: String): TaskKilled = TaskKilled(reason)
+
   /** The task's local properties, as Spark ships them from the driver. Stage id is 0. */
   def localProperties(tc: TaskContext): java.util.Properties = tc.getLocalProperties
 

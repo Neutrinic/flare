@@ -11,7 +11,7 @@ import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.trace.{Span, SpanKind, StatusCode}
 import io.opentelemetry.context.Scope
 import org.apache.spark.TaskContext
-import org.apache.spark.TaskFailedReason
+import org.apache.spark.{TaskFailedReason, TaskKilled}
 import org.apache.spark.api.plugin.{ExecutorPlugin, PluginContext}
 import org.slf4j.LoggerFactory
 
@@ -200,6 +200,7 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     endTask(success = false, failure = Option(failureReason))
 
   private def endTask(success: Boolean, failure: Option[TaskFailedReason]): Unit = {
+    val result = FlareExecutorPlugin.taskResult(success, failure)
     val metricState = Option(taskMetricState.get()).flatten
     val durationMs  = metricState
       .map { case (_, startNanos) => (System.nanoTime() - startNanos) / 1000000L }
@@ -212,11 +213,11 @@ class FlareExecutorPlugin extends ExecutorPlugin {
         // a span that really will be exported.
         case (Some((span, scope)), Some((tc, _))) if !isSuppressedAsFast(durationMs) =>
           try {
-            describeTaskSpan(span, tc, durationMs, success, failure)
+            describeTaskSpan(span, tc, durationMs, result, failure)
             // A span kept by the slow-task filter was never current; make it current for the
             // recording only, so the exemplar still names this task.
             val recordScope = if (scope.isEmpty) Some(span.makeCurrent()) else None
-            try recordTaskMetrics(tc, durationMs, success)
+            try recordTaskMetrics(tc, durationMs, result)
             finally recordScope.foreach(_.close())
           } finally {
             MdcEnricher.remove()
@@ -242,14 +243,14 @@ class FlareExecutorPlugin extends ExecutorPlugin {
           MdcEnricher.remove()
           scope.foreach(_.close())
           spanCount.decrementAndGet() // reclaim slot — this span won't be exported
-          recordTaskMetrics(tc, durationMs, success)
+          recordTaskMetrics(tc, durationMs, result)
 
         // No span: a guard in onTaskStart suppressed it. The task still ran and is still
         // measured — this is the case that keeps the task histogram honest when the
         // maxSpansPerTrace circuit breaker trips, or when driver sampling excluded the trace.
         // No scope is open here, so no exemplar is attached, which is correct.
         case (None, Some((tc, _))) =>
-          recordTaskMetrics(tc, durationMs, success)
+          recordTaskMetrics(tc, durationMs, result)
 
         // No TaskContext was available at task start. Nothing to record.
         case _ => ()
@@ -269,12 +270,18 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     span:       Span,
     tc:         TaskContext,
     durationMs: Long,
-    success:    Boolean,
+    result:     String,
     failure:    Option[TaskFailedReason],
   ): Unit = {
-    if (success) {
+    if (result == "SUCCESS") {
       span.setStatus(StatusCode.OK)
       span.setAttribute(Task.Result, "SUCCESS")
+    } else if (result == "KILLED") {
+      // Not an error (#198): Spark stopped the task itself, mostly because another attempt
+      // succeeded first, or because its job or stage was cancelled. The status stays unset.
+      span.setAttribute(Task.Result, "KILLED")
+      failure.collect { case k: TaskKilled => FlareExecutorPlugin.killReason(k.reason) }
+        .foreach(span.setAttribute(Task.KillReason, _))
     } else {
       span.setAttribute(Task.Result, "FAILED")
       FailureDetail.record(
@@ -311,10 +318,10 @@ class FlareExecutorPlugin extends ExecutorPlugin {
       .foreach(id => span.setLong(Task.SqlExecutionId, id))
   }
 
-  private def recordTaskMetrics(tc: TaskContext, durationMs: Long, success: Boolean): Unit = {
+  private def recordTaskMetrics(tc: TaskContext, durationMs: Long, result: String): Unit = {
     try {
       val eid = this.executorId
-      val attrs = MetricAttributes.forTask(eid, if (success) "SUCCESS" else "FAILED")
+      val attrs = MetricAttributes.forTask(eid, result)
 
       if (durationMs >= 0) {
         metrics.taskDuration.record(durationMs.toDouble, attrs)
@@ -386,6 +393,31 @@ private[plugin] object MdcEnricher {
 }
 
 private[plugin] object FlareExecutorPlugin {
+
+  /**
+   * A task's `task.result`: SUCCESS, KILLED or FAILED. KILLED is a task Spark stopped itself
+   * (#198): under speculation, the attempt that lost the race once another succeeded, and the tasks
+   * of a cancelled job or stage. Counting those as FAILED reported errors on healthy runs.
+   */
+  /**
+   * Why Spark killed a task, bucketed: `another_attempt_succeeded` for the losing attempt under
+   * speculation, `cancelled` for a cancelled job, stage or job group, `other` otherwise. Spark's
+   * reason is free text, and a cancellation repeats the stage failure behind it, hostnames and
+   * executor ids included, which the stage span already carries.
+   */
+  def killReason(reason: String): String = {
+    val r = Option(reason).getOrElse("").toLowerCase(java.util.Locale.ROOT)
+    if (r.contains("another attempt succeeded")) "another_attempt_succeeded"
+    else if (r.contains("cancel")) "cancelled"
+    else "other"
+  }
+
+  def taskResult(success: Boolean, failure: Option[TaskFailedReason]): String =
+    if (success) "SUCCESS"
+    else failure match {
+      case Some(_: TaskKilled) => "KILLED"
+      case _                   => "FAILED"
+    }
 
   /**
    * After an idle flush, how long the next one needs the longer quiet (#139). Shared by the

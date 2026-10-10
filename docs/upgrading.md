@@ -22,6 +22,19 @@ summed stage time, and 100 million records a second; see
     | `flare.stage.executor.run_time` | 0, 5, 10, 25, 50, 75, 250, 500, 750, 2500, 7500 |
     | `flare.task.records_throughput` | 0, 5, 25, 50, 75, 250, 500, 750, 2500, 5000, 7500 |
 
+### Tasks Spark killed are `KILLED`, not `FAILED`
+
+With speculation on, Spark kills the slower copy of a task once another succeeds, and it kills the
+running tasks of a cancelled job or stage. These were recorded as `task.result=FAILED`, with error
+spans, so a healthy run with speculation showed task errors
+([#198](https://github.com/Neutrinic/flare/issues/198)). They are now `KILLED`, with no error
+status and why in `spark.task.kill_reason`: `another_attempt_succeeded`, `cancelled` or `other`.
+
+- A query or alert on `task_result="FAILED"` now counts real failures only, and will read lower on
+  runs with speculation or cancelled jobs.
+- One that sums every `task_result` value, such as a task count, is unchanged. One that lists the
+  values explicitly needs `KILLED` added.
+
 ### Code reading the stage context should read the stage's own key
 
 When a job ran two stages at once, such as an RDD `join`, one stage's tasks ran under the other
