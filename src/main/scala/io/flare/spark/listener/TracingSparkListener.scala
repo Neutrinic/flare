@@ -566,11 +566,20 @@ class TracingSparkListener(
    * Spark reports no result for an application, so `application.result` is FAILED when any of its
    * jobs failed. An application can catch a failed job and go on to succeed, and can fail outside
    * any job; the documentation says so.
+   *
+   * It is also FAILED when a job is still running as the application ends (#197): the application
+   * was killed mid-run, by an orchestrator's timeout or a cluster manager's SIGTERM, and shutdown got
+   * here before Spark posted the end of the job it cancelled. A normal stop never looks like this:
+   * `sc.stop()` cancels running jobs first, and their ends reach the listener before the
+   * application's does.
    */
   private def recordApplicationEnd(endMs: Long): Unit =
     if (applicationRecorded.compareAndSet(false, true)) safeHandle("onApplicationEnd metrics") {
+      val interrupted = jobStarts.nonEmpty
+      if (interrupted) logger.info(s"[Flare] Application ended with ${jobStarts.size} job(s) still " +
+        "running; recording it as FAILED")
       metrics.foreach { fm =>
-        val attrs = MetricAttributes.forApplication(if (anyJobFailed) "FAILED" else "SUCCESS")
+        val attrs = MetricAttributes.forApplication(if (anyJobFailed || interrupted) "FAILED" else "SUCCESS")
         fm.applicationDuration.record(math.max(0L, endMs - applicationStartMs) / 1000.0, attrs)
         fm.applicationEndTime.set(endMs / 1000.0, attrs)
       }

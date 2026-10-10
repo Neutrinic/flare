@@ -99,9 +99,10 @@ facts are on the spans, which alert rules cannot read.
   so one query's runs share a series.
 - **`flare.application.duration`** is recorded once, when the application ends: on a normal stop,
   or at shutdown when the JVM goes down without one. Spark reports no result for an application,
-  so `application.result` is `FAILED` when **any of its jobs failed**. An application that catches
-  a failed job and carries on still reads `FAILED`, and one that fails outside any job, in driver
-  code or before its first query runs, reads `SUCCESS`.
+  so `application.result` is `FAILED` when **any of its jobs failed**, or when a job was still
+  running as it ended: an application killed mid-run, by an orchestrator's timeout or a SIGTERM,
+  reads `FAILED`. An application that catches a failed job and carries on still reads `FAILED`, and
+  one that fails outside any job, in driver code or before its first query runs, reads `SUCCESS`.
 - **`flare.application.end_time`** is set alongside it, to when the application ended in seconds
   since the Unix epoch, with the same `application.result`. It puts runs in order, which the
   example rule that alerts only on a service's latest run needs

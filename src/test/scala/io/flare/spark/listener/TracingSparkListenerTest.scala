@@ -212,6 +212,17 @@ class TracingSparkListenerTest extends FunSuite {
     } finally { tp.close(); mp.close() }
   }
 
+  test("an application killed with a job still running records FAILED (#197)") {
+    val points = outcomes { l =>
+      l.onJobStart(makeJobStart(0, Seq(0)))
+      l.onJobEnd(makeJobEnd(0, succeeded = true))
+      l.onJobStart(makeJobStart(1, Seq(1))) // running when the SIGTERM arrives
+      l.shutdown()
+    }("flare.application.duration")
+    assertEquals(points.map(_.getCount).sum, 1L)
+    assertEquals(tagsOf(points.head), Map("application.result" -> "FAILED"))
+  }
+
   test("an application stopped without an end event is still recorded, at shutdown") {
     val points = outcomes { l =>
       l.onJobStart(makeJobStart(0, Seq(0)))
