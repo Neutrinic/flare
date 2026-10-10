@@ -101,6 +101,26 @@ class ClusterLifecycleMetricsTest extends FunSuite {
     } finally tp.close()
   }
 
+  test("tasks lost with their executor are counted on the driver (#200)") {
+    val reader = InMemoryMetricReader.create()
+    val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
+    val tp = SdkTracerProvider.builder().build()
+    try {
+      val l = new TracingSparkListener(tp.get("t"), baseConfig(false),
+        Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true)
+      // Two tasks on an executor that was killed, one on another whose heartbeats stopped.
+      l.onTaskEnd(FlareTestHelpers.executorLostTaskEnd("4", "Command exited with code 137"))
+      l.onTaskEnd(FlareTestHelpers.executorLostTaskEnd("4", "Command exited with code 137"))
+      l.onTaskEnd(FlareTestHelpers.executorLostTaskEnd("5", "Executor heartbeat timed out after 120000 ms"))
+
+      val lost = reader.collectAllMetrics().asScala.filter(_.getName == "flare.task.lost")
+        .flatMap(_.getLongSumData.getPoints.asScala)
+        .map(p => (p.getAttributes.get(AttributeKey.stringKey("executor.id")), p.getAttributes.get(AttributeKey.stringKey("reason"))) -> p.getValue)
+        .toMap
+      assertEquals(lost, Map(("4", "exited") -> 2L, ("5", "heartbeat_timeout") -> 1L))
+    } finally { tp.close(); mp.close() }
+  }
+
   test("executor removals are tagged with a bucketed reason") {
     val reader = InMemoryMetricReader.create()
     val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
