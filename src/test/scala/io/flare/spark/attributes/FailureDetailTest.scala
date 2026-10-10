@@ -136,4 +136,46 @@ class FailureDetailTest extends FunSuite {
   test("fromReasonString does not match a bare class name with no package") {
     assertEquals(FailureDetail.fromReasonString("RuntimeException: boom").errorType, None)
   }
+
+  // ── Payload caps (#90, #205) ──────────────────────────────────────────────
+
+  private def recorded(messageMax: Int, stackMax: Int): io.opentelemetry.sdk.trace.data.SpanData = {
+    val exporter = io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter.create()
+    val tp = io.opentelemetry.sdk.trace.SdkTracerProvider.builder()
+      .addSpanProcessor(io.opentelemetry.sdk.trace.`export`.SimpleSpanProcessor.create(exporter)).build()
+    try {
+      val span = tp.get("t").spanBuilder("spark.task.executor").startSpan()
+      val detail = FailureDetail(Some("java.sql.SQLException"),
+        "authentication failed for user=admin password=secret123", Some("java.sql.SQLException: authentication failed (stack trace follows)"))
+      FailureDetail.record(span, detail, messageMax, stackMax)
+      span.end()
+      exporter.getFinishedSpanItems.get(0)
+    } finally tp.close()
+  }
+
+  private val ErrorMessage = io.opentelemetry.api.common.AttributeKey.stringKey("error.message")
+  private val ExceptionMessage = io.opentelemetry.api.common.AttributeKey.stringKey("exception.message")
+  private val ExceptionStackTrace = io.opentelemetry.api.common.AttributeKey.stringKey("exception.stacktrace")
+
+  test("a message cap of 0 emits the message nowhere: attribute, status, or the stack trace that quotes it") {
+    val s = recorded(messageMax = 0, stackMax = 8000)
+    assertEquals(s.getStatus.getStatusCode, io.opentelemetry.api.trace.StatusCode.ERROR)
+    assertEquals(s.getStatus.getDescription, "")
+    assertEquals(s.getAttributes.get(ErrorMessage), null)
+    // A printed stack trace opens with the message, so it goes too, and the exception event with it.
+    assert(s.getEvents.isEmpty, s"an exception event was still emitted: ${s.getEvents}")
+    assertEquals(s.getAttributes.get(io.opentelemetry.api.common.AttributeKey.stringKey("error.type")), "java.sql.SQLException")
+  }
+
+  test("a stack trace cap of 0 drops the exception event's stack trace, and the event with it") {
+    val s = recorded(messageMax = 500, stackMax = 0)
+    assertEquals(s.getAttributes.get(ErrorMessage), "authentication failed for user=admin password=secret123")
+    assert(s.getEvents.isEmpty, s"an exception event was still emitted: ${s.getEvents}")
+  }
+
+  test("a positive cap keeps the first characters, which is size limiting, not redaction") {
+    val s = recorded(messageMax = 30, stackMax = 8000)
+    assertEquals(s.getAttributes.get(ErrorMessage), "authentication failed for user")
+    assertEquals(s.getStatus.getDescription, "authentication failed for user")
+  }
 }

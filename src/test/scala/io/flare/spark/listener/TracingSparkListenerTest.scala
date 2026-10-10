@@ -670,6 +670,52 @@ class TracingSparkListenerTest extends FunSuite {
       ),
     )
 
+  /** The `sql.description` label on the stage and job metrics, under the given cap (#205). */
+  private def descriptionLabels(cap: Int, description: String): Seq[Option[String]] = {
+    val reader = InMemoryMetricReader.create()
+    val tp = SdkTracerProvider.builder().build()
+    val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
+    try {
+      val listener = new TracingSparkListener(tp.get("t"), config.copy(sqlDescriptionMaxChars = cap),
+        Some(new FlareMetrics(mp.get("io.flare.spark"))), throwOnError = true)
+      listener.describeSqlExecution(Span.getInvalid, 4L, description, "", "")
+      listener.onJobStart(makeJobStart(0, Seq(0), sqlExecution = Some(4L)))
+      listener.onStageSubmitted(makeStageSubmitted(0))
+      listener.onStageCompleted(makeStageCompletedWithMetrics(0))
+      listener.onJobEnd(makeJobEnd(0, succeeded = true))
+      reader.collectAllMetrics().asScala
+        .filter(m => m.getName == "flare.stage.executor.run_time" || m.getName == "flare.job.duration")
+        .flatMap(_.getHistogramData.getPoints.asScala)
+        .map(p => Option(p.getAttributes.get(AttributeKey.stringKey("sql.description"))))
+        .toSeq
+    } finally { tp.close(); mp.close() }
+  }
+
+  test("the sql.description metric label is capped like the span attribute (#205)") {
+    // What the Thrift server and spark-sql CLI send: the statement itself.
+    val statement = "SELECT " + (1 to 700).map(i => s"c$i").mkString(", ") + " FROM t"
+    assert(statement.length > 4000)
+    val labels = descriptionLabels(cap = 256, statement)
+    assertEquals(labels.size, 2) // the stage and the job
+    assertEquals(labels.map(_.map(_.length)), Seq(Some(256), Some(256)))
+  }
+
+  test("a non-ASCII statement stays under 2,048 UTF-8 bytes on the label, at the default cap") {
+    // Mimir counts bytes: 1,024 Chinese characters are about 3,000 (Codex, #229).
+    val statement = "SELECT * FROM 订单 WHERE 名称 = '" + "数据" * 700 + "'"
+    val labels = descriptionLabels(cap = 1024, statement).flatten
+    assertEquals(labels.size, 2)
+    labels.foreach { l =>
+      val bytes = l.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+      assert(bytes.length <= 2048, s"label is ${bytes.length} bytes")
+      assertEquals(new String(bytes, java.nio.charset.StandardCharsets.UTF_8), l) // cut between characters
+    }
+  }
+
+  test("a sql.description cap of 0 drops the metric label") {
+    assertEquals(descriptionLabels(cap = 0, "load orders"), Seq(None, None))
+  }
+
   test("stage span records the timing breakdown and disk spill") {
     val attrs = stageAttributes(FlareTestHelpers.taskMetrics(
       jvmGcTime                  = 420L,

@@ -229,7 +229,7 @@ class TracingSparkListener(
               .failureException(failed)
               .map(FailureDetail.fromThrowable)
               .getOrElse(FailureDetail.fromReasonString(failed.toString))
-            FailureDetail.record(span, detail)
+            FailureDetail.record(span, detail, config.errorMessageMaxChars, config.stackTraceMaxChars)
         }
         span.end()
         logger.debug(s"[Flare] Job ${event.jobId} ended")
@@ -375,7 +375,7 @@ class TracingSparkListener(
         safeHandle("onStageCompleted metrics") {
           // Safe here because a stage always completes before its job ends, and onJobEnd is what
           // drops stageToSql.
-          val attrs = MetricAttributes.forStage(event.stageInfo.name, sqlDescriptionOf(stageId))
+          val attrs = MetricAttributes.forStage(event.stageInfo.name, sqlDescriptionLabelOf(sqlDescriptionOf(stageId)))
           fm.stageExecutorRunTime.record(m.executorRunTime.toDouble, attrs)
           val inputBytes = m.inputMetrics.bytesRead
           if (inputBytes > 0) fm.stageInputBytes.add(inputBytes, attrs)
@@ -421,8 +421,8 @@ class TracingSparkListener(
             // Spark only ever gives the stage a formatted string here — no Throwable, no
             // structured fields — so error.type is recovered by pattern and left unset when
             // nothing matches. Task spans carry the structured version of the same failure.
-            FailureDetail.record(span, FailureDetail.fromReasonString(reason))
-            span.setAttribute(Stage.FailureReason, reason.take(500)) // cap length
+            FailureDetail.record(span, FailureDetail.fromReasonString(reason), config.errorMessageMaxChars, config.stackTraceMaxChars)
+            FailureDetail.capped(reason, config.errorMessageMaxChars).foreach(span.setAttribute(Stage.FailureReason, _))
           case None =>
             span.setStatus(StatusCode.OK)
         }
@@ -570,7 +570,8 @@ class TracingSparkListener(
               // A query can fail before any job starts, leaving no failed job span: the SQL span
               // is then the only place the failure shows (#175).
               FlareSqlEndAccess.failure(e) match {
-                case Some(t) => FailureDetail.record(span, FailureDetail.fromThrowable(t))
+                case Some(t) => FailureDetail.record(span, FailureDetail.fromThrowable(t),
+                  config.errorMessageMaxChars, config.stackTraceMaxChars)
                 case None    => span.setStatus(StatusCode.OK)
               }
               span.end()
@@ -597,6 +598,16 @@ class TracingSparkListener(
    * disagree about what a stage is called. None for a pure-RDD stage, which has no description
    * to report rather than an empty one.
    */
+  /**
+   * The `sql.description` metric label, under `FLARE_SQL_DESCRIPTION_MAX_CHARS` like the span
+   * attribute (#205). Under the Thrift server and the spark-sql CLI the description is the
+   * statement itself, which went to the label whole: thousands of characters, past the 2,048 that
+   * Mimir and similar backends accept. The cap limits length only. A statement with changing
+   * literals is still a new series per run; `0` drops the label.
+   */
+  private def sqlDescriptionLabelOf(description: Option[String]): Option[String] =
+    description.flatMap(FailureDetail.capped(_, config.sqlDescriptionMaxChars))
+
   private def sqlDescriptionOf(stageId: Int): Option[String] =
     stageToSql.get(stageId).flatMap(sqlDescriptions.get)
 
@@ -618,7 +629,7 @@ class TracingSparkListener(
     jobStarts.remove(event.jobId).foreach { case (startMs, sqlExecution) =>
       metrics.foreach(_.jobDuration.record(
         math.max(0L, event.time - startMs).toDouble,
-        MetricAttributes.forJob(if (failed) "FAILED" else "SUCCESS", sqlExecution.flatMap(sqlDescriptions.get)),
+        MetricAttributes.forJob(if (failed) "FAILED" else "SUCCESS", sqlDescriptionLabelOf(sqlExecution.flatMap(sqlDescriptions.get))),
       ))
     }
   }

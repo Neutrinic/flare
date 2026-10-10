@@ -132,7 +132,11 @@ Neither carries an application or run id, so successive runs of the same service
 `sql.description`, here and on the stage metrics, is the query's call site, such as
 `collect at Job.scala:42`, or the job description when you set one with `setJobDescription`. Keep
 those descriptions stable: one that embeds a date, a batch id or any value that changes per run
-makes a new series every time.
+makes a new series every time. Under the Thrift server and the `spark-sql` CLI the description is
+the SQL statement itself. The label is capped by `FLARE_SQL_DESCRIPTION_MAX_CHARS` (1,024 characters
+by default) and is never longer than 2,048 bytes in UTF-8, the limit Mimir and similar backends
+apply, which a statement in Chinese reaches at about 680 characters. A cap limits length, not
+cardinality; `0` drops the label.
 
 ## In Prometheus
 

@@ -42,6 +42,8 @@ final case class FlareConfig(
   sqlPlanMaxChars:        Int = FlareConfig.DefaultSqlPlanChars,
   sqlDetailsMaxChars:     Int = FlareConfig.DefaultSqlDetailsChars,
   sqlDescriptionMaxChars: Int = FlareConfig.DefaultSqlDescriptionChars,
+  errorMessageMaxChars:   Int = FlareConfig.DefaultErrorMessageChars,
+  stackTraceMaxChars:     Int = FlareConfig.DefaultStackTraceChars,
   // Cap for the retained pre-AQE plan. Defaults to 0 (dropped) because keeping it doubles the
   // worst-case plan payload on every SQL span, and the post-AQE plan is the one that ran.
   // Raise it when you want the AQE decision itself, recoverable as a diff against spark.sql.plan.
@@ -107,6 +109,20 @@ object FlareConfig {
   val DefaultSqlPlanChars        = 4096
   val DefaultSqlDetailsChars     = 2048
   val DefaultSqlDescriptionChars = 1024
+
+  /**
+   * Caps on a failure's message and stack trace (#90, #205), which were fixed at these sizes.
+   *
+   * The message goes to `error.message`, the span status, the `exception` event and
+   * `spark.stage.failure_reason`; Spark's messages can quote the data being processed. The stack
+   * trace is far more generous, since avoiding a trip to the executor logs is its point, but still
+   * bounded, because a span over the exporter's payload limit is dropped with its failure signal.
+   *
+   * Like every cap here, `0` omits the field, which is the only setting that guarantees Flare does
+   * not emit it. A positive cap limits size: it keeps the first characters, whatever they contain.
+   */
+  val DefaultErrorMessageChars = 500
+  val DefaultStackTraceChars   = 8000
 
   /**
    * The pre-AQE plan is off by default.
@@ -250,6 +266,8 @@ object FlareConfig {
       sqlPlanMaxChars        = charCap("FLARE_SQL_PLAN_MAX_CHARS", DefaultSqlPlanChars),
       sqlDetailsMaxChars     = charCap("FLARE_SQL_DETAILS_MAX_CHARS", DefaultSqlDetailsChars),
       sqlDescriptionMaxChars = charCap("FLARE_SQL_DESCRIPTION_MAX_CHARS", DefaultSqlDescriptionChars),
+      errorMessageMaxChars   = charCap("FLARE_ERROR_MESSAGE_MAX_CHARS", DefaultErrorMessageChars),
+      stackTraceMaxChars     = charCap("FLARE_STACKTRACE_MAX_CHARS", DefaultStackTraceChars),
       sqlPlanInitialMaxChars = charCap("FLARE_SQL_PLAN_INITIAL_MAX_CHARS", DefaultSqlPlanInitialChars),
     )
   }

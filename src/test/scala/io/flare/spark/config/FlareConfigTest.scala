@@ -136,7 +136,7 @@ class FlareConfigTest extends FunSuite {
     "FLARE_MAX_SPANS_PER_TRACE", "FLARE_SLOW_TASK_MS", "FLARE_RETRY_TASKS_ONLY",
     "FLARE_TASK_STAGES", "FLARE_TASK_STAGE_PATTERN", "FLARE_METRICS_ENABLED",
     "FLARE_SQL_PLAN_MAX_CHARS", "FLARE_SQL_DETAILS_MAX_CHARS", "FLARE_SQL_DESCRIPTION_MAX_CHARS",
-    "FLARE_SQL_PLAN_INITIAL_MAX_CHARS",
+    "FLARE_SQL_PLAN_INITIAL_MAX_CHARS", "FLARE_ERROR_MESSAGE_MAX_CHARS", "FLARE_STACKTRACE_MAX_CHARS",
   )
 
   override def afterEach(context: AfterEach): Unit = {
@@ -223,6 +223,17 @@ class FlareConfigTest extends FunSuite {
     // The pre-AQE plan is opt-in: it doubles the plan payload and spark.sql.plan already
     // carries the plan that ran.
     assertEquals(config.sqlPlanInitialMaxChars, 0)
+    // The failure caps default to the sizes Flare used before they were configurable (#90).
+    assertEquals(config.errorMessageMaxChars, 500)
+    assertEquals(config.stackTraceMaxChars, 8000)
+  }
+
+  test("load() parses the failure caps, 0 included") {
+    sys.props("FLARE_ERROR_MESSAGE_MAX_CHARS") = "0"
+    sys.props("FLARE_STACKTRACE_MAX_CHARS")    = "2000"
+    val config = FlareConfig.load()
+    assertEquals(config.errorMessageMaxChars, 0)
+    assertEquals(config.stackTraceMaxChars, 2000)
   }
 
   test("load() parses FLARE_SQL_PLAN_INITIAL_MAX_CHARS") {

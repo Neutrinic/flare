@@ -18,6 +18,31 @@ object MetricAttributes {
   private val AppResult      = AttributeKey.stringKey("application.result")
 
   /**
+   * The longest `sql.description` label value, in UTF-8 bytes (#205). Mimir and Cortex reject a
+   * label value over 2,048 bytes by default, and they count bytes, not characters: 1,024 Chinese
+   * characters, under `FLARE_SQL_DESCRIPTION_MAX_CHARS`'s default, are about 3,000 bytes. This bounds
+   * the label whatever the character cap is set to.
+   */
+  val MaxLabelValueBytes: Int = 2048
+
+  /**
+   * The longest prefix of `s` that is at most `maxBytes` long in UTF-8, cut between characters,
+   * never inside one, a surrogate pair included.
+   */
+  def utf8Prefix(s: String, maxBytes: Int): String = {
+    var bytes = 0
+    var i = 0
+    while (i < s.length) {
+      val cp = s.codePointAt(i)
+      val n = if (cp < 0x80) 1 else if (cp < 0x800) 2 else if (cp < 0x10000) 3 else 4
+      if (bytes + n > maxBytes) return s.substring(0, i)
+      bytes += n
+      i += Character.charCount(cp)
+    }
+    s
+  }
+
+  /**
    * Tags for task-level instruments, recorded on the executor.
    *
    * No stage id, and nothing else that is new for every stage (#136). A stage id is used once and
@@ -54,7 +79,7 @@ object MetricAttributes {
   def forStage(stageName: String, sqlDescription: Option[String]): Attributes = {
     val b = Attributes.builder()
       .put(StageName, stageName)
-    sqlDescription.filter(_.nonEmpty).foreach(b.put(SqlDescription, _))
+    sqlDescription.filter(_.nonEmpty).foreach(d => b.put(SqlDescription, utf8Prefix(d, MaxLabelValueBytes)))
     b.build()
   }
 
@@ -65,7 +90,7 @@ object MetricAttributes {
    */
   def forJob(result: String, sqlDescription: Option[String]): Attributes = {
     val b = Attributes.builder().put(JobResult, result)
-    sqlDescription.filter(_.nonEmpty).foreach(b.put(SqlDescription, _))
+    sqlDescription.filter(_.nonEmpty).foreach(d => b.put(SqlDescription, utf8Prefix(d, MaxLabelValueBytes)))
     b.build()
   }
 
