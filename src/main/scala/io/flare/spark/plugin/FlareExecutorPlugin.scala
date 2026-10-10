@@ -290,6 +290,8 @@ class FlareExecutorPlugin extends ExecutorPlugin {
           // onTaskFailed is contractually given a reason, so this is defensive only.
           FailureDetail(errorType = None, message = "Task failed", stackTrace = None)
         ),
+        config.errorMessageMaxChars,
+        config.stackTraceMaxChars,
       )
     }
 

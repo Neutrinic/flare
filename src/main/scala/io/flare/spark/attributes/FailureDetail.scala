@@ -24,16 +24,6 @@ final case class FailureDetail(
 
 object FailureDetail {
 
-  /** Matches the message cap already used for `spark.stage.failure_reason`. */
-  private val MaxMessageChars = 500
-
-  /**
-   * Stack traces are unbounded and the whole point is to avoid a trip to the executor logs, so
-   * this is far more generous than the message cap — but still bounded, because a span that
-   * blows the exporter's payload limit is dropped, taking the failure signal with it.
-   */
-  private val MaxStackTraceChars = 8000
-
   // OTEL semantic conventions for the `exception` span event. Deliberately not reusing
   // Span.recordException: it needs a live Throwable, which only the job path ever has.
   private val ExceptionType       = AttributeKey.stringKey("exception.type")
@@ -151,20 +141,35 @@ object FailureDetail {
       .orElse(ErrorClassPattern.findFirstMatchIn(reason).map(_.group(1)))
   }
 
-  /** Applies the detail to a span: status, attributes, and an `exception` event if we have one. */
-  def record(span: Span, detail: FailureDetail): Unit = {
-    span.setStatus(StatusCode.ERROR, truncate(detail.message, MaxMessageChars))
+  /**
+   * Applies the detail to a span: status, attributes, and an `exception` event if we have one.
+   *
+   * `messageMaxChars` and `stackTraceMaxChars` are `FLARE_ERROR_MESSAGE_MAX_CHARS` and
+   * `FLARE_STACKTRACE_MAX_CHARS`; `0` omits the field everywhere it would go, the status
+   * description included (#90). The error status and `error.type` stay: that a task failed, and
+   * how, is the signal, and the class name quotes no data.
+   */
+  def record(span: Span, detail: FailureDetail, messageMaxChars: Int, stackTraceMaxChars: Int): Unit = {
+    val message = capped(detail.message, messageMaxChars)
+    message match {
+      case Some(m) => span.setStatus(StatusCode.ERROR, m)
+      case None    => span.setStatus(StatusCode.ERROR)
+    }
     detail.errorType.foreach(span.setAttribute(Error.Type, _))
-    span.setAttribute(Error.Message, truncate(detail.message, MaxMessageChars))
+    message.foreach(span.setAttribute(Error.Message, _))
 
-    detail.stackTrace.foreach { trace =>
+    detail.stackTrace.flatMap(capped(_, stackTraceMaxChars)).foreach { trace =>
       val builder = Attributes.builder()
       detail.errorType.foreach(builder.put(ExceptionType, _))
-      builder.put(ExceptionMessage, truncate(detail.message, MaxMessageChars))
-      builder.put(ExceptionStackTrace, truncate(trace, MaxStackTraceChars))
+      message.foreach(builder.put(ExceptionMessage, _))
+      builder.put(ExceptionStackTrace, trace)
       span.addEvent("exception", builder.build())
     }
   }
+
+  /** `s` cut to `max` characters, or None when `max` is 0, which omits the field. */
+  def capped(s: String, max: Int): Option[String] =
+    if (max <= 0 || s == null) None else Some(if (s.length <= max) s else s.take(max))
 
   private def stackTraceToString(t: Throwable): String = {
     val writer = new java.io.StringWriter()
@@ -172,6 +177,4 @@ object FailureDetail {
     writer.toString
   }
 
-  private def truncate(s: String, max: Int): String =
-    if (s.length <= max) s else s.take(max)
 }
