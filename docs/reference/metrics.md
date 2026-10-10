@@ -19,6 +19,7 @@ Nineteen instruments, all under the `io.flare.spark` meter, all turned off by
 | `flare.application.end_time` | gauge | `s` | `application.result` |
 | `flare.executor.count` | updowncounter | `{executor}` | `executor.id` |
 | `flare.executor.removed` | counter | `{executor}` | `executor.id`, `reason` |
+| `flare.task.lost` | counter | `{task}` | `executor.id`, `reason` |
 | `flare.executor.excluded` | counter | `{executor}` | `executor.id` |
 | `flare.block_manager.count` | updowncounter | `{block_manager}` | `executor.id` |
 | `flare.rdd.unpersisted` | counter | `{rdd}` | none |
@@ -73,6 +74,12 @@ reason separates them. Spark's reason string is free text that sometimes embeds 
 so it is bucketed into a fixed set (`idle_or_decommissioned`, `preempted`, `heartbeat_timeout`,
 `lost`, `killed`, `exited`, `other`, `unknown`) rather than passed through: an unbounded tag on
 a counter is the cardinality problem these instruments exist to avoid.
+
+`flare.task.lost` counts tasks that ended because their executor was lost: killed, out of memory,
+preempted or gone silent. The executor records every other task on the `flare.task.*` instruments,
+but not these, since it died with them; the driver records them, labelled like
+`flare.executor.removed`. A task error rate that should include them adds `flare_task_lost` to the
+failed tasks.
 
 `flare.block_manager.count` includes the **driver's** block manager, not just executors', because
 Spark registers one there too. Expect it to sit one above the executor count.

@@ -90,6 +90,9 @@ object MetricAttributes {
    * bucketed rather than passed through — an unbounded tag on a counter is exactly the
    * cardinality problem these instruments exist to avoid.
    */
+  /** A task lost with its executor (#200): the executor, and why it was lost, bucketed as below. */
+  def forTaskLost(executorId: String, reason: String): Attributes = forExecutorRemoval(executorId, reason)
+
   def forExecutorRemoval(executorId: String, reason: String): Attributes =
     Attributes.builder()
       .put(ExecutorId, executorId)
