@@ -18,7 +18,7 @@ agent's own `otel.*` keys, see [Exporting](exporting.md).
 | `FLARE_SQL_DESCRIPTION_MAX_CHARS` | `1024` | Cap on `spark.sql.description`; `0` drops the attribute |
 | `FLARE_SQL_PLAN_INITIAL_MAX_CHARS` | `0` (dropped) | Cap on `spark.sql.plan.initial`, the plan before Adaptive Query Execution |
 | `FLARE_DROP_NON_SPARK_ROOTS` | `true` | Drop spans with no parent that are not Flare's, such as the platform's own HTTP calls. See [Noise](noise.md) |
-| `FLARE_ENABLED` | `true` | Kill switch |
+| `FLARE_ENABLED` | `true` | Kill switch: `false` stops Flare's spans, metrics and resource attributes. The agent stays as quiet as with Flare on: its own instrumentation stays off and non-Spark root spans are still dropped. To have the agent's full instrumentation back, set `otel.instrumentation.common.default-enabled=true` and `FLARE_DROP_NON_SPARK_ROOTS=false` as well |
 
 `FLARE_ENABLED` and `FLARE_DROP_NON_SPARK_ROOTS` turn off only for the literal value `false`, in any
 case. Any other value leaves them on.

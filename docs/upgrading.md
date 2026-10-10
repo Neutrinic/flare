@@ -37,6 +37,15 @@ wins finishes the stage, and Spark stops the original with it.
 - One that sums every `task_result` value, such as a task count, is unchanged. One that lists the
   values explicitly needs `KILLED` added.
 
+### `FLARE_ENABLED=false` keeps the agent quiet
+
+Up to 1.3, turning Flare off also dropped the defaults it gives the agent, so the agent's full
+instrumentation came back, with a span per S3 or GCS request and the platform's HTTP traces
+([#206](https://github.com/Neutrinic/flare/issues/206)). Turning Flare off to cut overhead produced
+more telemetry than leaving it on. Now the agent's own instrumentation stays off and non-Spark root
+spans are still dropped. To have the agent's full instrumentation back with Flare off, set
+`otel.instrumentation.common.default-enabled=true` and `FLARE_DROP_NON_SPARK_ROOTS=false`.
+
 ### Code reading the stage context should read the stage's own key
 
 When a job ran two stages at once, such as an RDD `join`, one stage's tasks ran under the other
