@@ -350,6 +350,8 @@ class FlareExecutorPluginTest extends FunSuite {
       "stage 1.0 failed 4 times, most recent failure: Lost task 3.3 in stage 1.0 (TID 12) (192.168.1.87 executor 4)"),
       "cancelled")
     assertEquals(FlareExecutorPlugin.killReason("Job group cancelled"), "cancelled")
+    // Spark 4.0.4's reason for the original when its speculative copy finished the stage (#227).
+    assertEquals(FlareExecutorPlugin.killReason("Stage cancelled: Stage finished"), "stage_finished")
     assertEquals(FlareExecutorPlugin.killReason("killed via the Web UI"), "other")
     assertEquals(FlareExecutorPlugin.killReason(null), "other")
   }
