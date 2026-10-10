@@ -66,12 +66,22 @@ class TracingSparkListener(
   @volatile private var applicationStartMs: Long = System.currentTimeMillis()
   private val applicationRecorded = new java.util.concurrent.atomic.AtomicBoolean(false)
 
-  // Executors added and not yet removed (#196). Spark posts two removals for a decommissioned
-  // executor, "decommissioned" and then "Command exited with code 0" when its process ends, so only
-  // the first removal of a live executor is counted. Bounded by the executors alive at once. An
-  // executor Flare never saw added is not counted on removal; the listener is registered before
-  // any executor is.
+  // Executors added and not yet removed, so the executor count only falls for one it rose for.
+  // Bounded by the executors alive at once.
   private val liveExecutors = java.util.concurrent.ConcurrentHashMap.newKeySet[String]()
+
+  // Executors already removed (#196). Spark posts two removals for a decommissioned executor,
+  // "decommissioned" and then "Command exited with code 0" when its process ends; only the first
+  // is counted. Keyed on removals, not on having seen the executor added: a listener registered
+  // when the SparkContext constructor returns has missed every executor announced before then,
+  // which on YARN and Kubernetes is most of them, and their removals, crashes included, must still
+  // count. Spark never reuses an executor id and the duplicate follows within minutes, so the most
+  // recent ids are enough.
+  private val removedExecutors: java.util.Set[String] = java.util.Collections.newSetFromMap(
+    java.util.Collections.synchronizedMap(new java.util.LinkedHashMap[String, java.lang.Boolean]() {
+      override def removeEldestEntry(eldest: java.util.Map.Entry[String, java.lang.Boolean]): Boolean =
+        size() > TracingSparkListener.RemovedExecutorsKept
+    }))
 
   // Last reported (memory, disk) bytes of every stored block, per block manager, so block updates,
   // which report state, can be recorded as changes (#179). Only filled under
@@ -401,10 +411,11 @@ class TracingSparkListener(
     }
 
   override def onExecutorRemoved(event: SparkListenerExecutorRemoved): Unit =
-    // Only the first removal of a live executor (#196): a decommissioned one is removed twice.
-    if (liveExecutors.remove(event.executorId)) safeHandle("onExecutorRemoved") {
+    // Only the first removal (#196): a decommissioned executor is removed twice.
+    if (removedExecutors.add(event.executorId)) safeHandle("onExecutorRemoved") {
       metrics.foreach { fm =>
-        fm.executorCount.add(-1L, MetricAttributes.forExecutor(event.executorId))
+        if (liveExecutors.remove(event.executorId))
+          fm.executorCount.add(-1L, MetricAttributes.forExecutor(event.executorId))
         // The reason is the point: it separates a routine dynamic-allocation scale-down from
         // a crash, which is otherwise indistinguishable in the executor count alone.
         fm.executorRemoved.add(1L, MetricAttributes.forExecutorRemoval(event.executorId, event.reason))
@@ -793,4 +804,10 @@ class TracingSparkListener(
     val v = Option(value).getOrElse("")
     if (v.nonEmpty && maxChars > 0) span.setAttribute(key, v.take(maxChars))
   }
+}
+
+private[spark] object TracingSparkListener {
+
+  /** How many removed executor ids are kept to recognise Spark's duplicate removal (#196). */
+  val RemovedExecutorsKept: Int = 10000
 }

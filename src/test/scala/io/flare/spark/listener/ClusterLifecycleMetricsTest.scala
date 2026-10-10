@@ -78,6 +78,17 @@ class ClusterLifecycleMetricsTest extends FunSuite {
     } finally { tp.close(); mp.close() }
   }
 
+  test("an executor announced before the listener registered still has its removal counted") {
+    // Under automatic initialization the listener registers as the SparkContext constructor
+    // returns, after the startup executors were announced: on YARN and Kubernetes, most of them.
+    val m = collect() { l =>
+      l.onExecutorRemoved(FlareTestHelpers.executorRemoved("7", "Container marked as failed, exit code 137"))
+      l.onExecutorRemoved(FlareTestHelpers.executorRemoved("7", "Command exited with code 137"))
+    }
+    assertEquals(m.get("flare.executor.removed"), Some(1L)) // counted, once
+    assertEquals(m.getOrElse("flare.executor.count", 0L), 0L) // never seen added, so not decremented
+  }
+
   test("executor removals are tagged with a bucketed reason") {
     val reader = InMemoryMetricReader.create()
     val mp = SdkMeterProvider.builder().registerMetricReader(reader).build()
