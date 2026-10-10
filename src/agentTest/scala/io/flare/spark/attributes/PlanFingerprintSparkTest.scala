@@ -49,4 +49,17 @@ class PlanFingerprintSparkTest extends FunSuite {
   test("a literal IN list of a different length is the same query") {
     assertEquals(PlanFingerprint.of(plan("a IN (1, 2)")), PlanFingerprint.of(plan("a IN (5, 6, 7)")))
   }
+
+  private val eleven = "1,2,3,4,5,6,7,8,9,10,11"
+
+  test("a predicate after an INSET still counts: `... AND b > 100` against `... AND c > 100`") {
+    assertNotEquals(PlanFingerprint.of(plan(s"a IN ($eleven) AND b > 100")),
+      PlanFingerprint.of(plan(s"a IN ($eleven) AND c > 100")))
+    assertNotEquals(PlanFingerprint.of(plan(s"a IN ($eleven) OR b > 100")),
+      PlanFingerprint.of(plan(s"a IN ($eleven) OR c > 100")))
+  }
+
+  test("an INSET is the same query as an IN: two values against eleven") {
+    assertEquals(PlanFingerprint.of(plan("a IN (1, 2)")), PlanFingerprint.of(plan(s"a IN ($eleven)")))
+  }
 }

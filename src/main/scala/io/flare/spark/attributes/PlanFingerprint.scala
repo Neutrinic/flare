@@ -81,8 +81,13 @@ object PlanFingerprint {
   /** `a# IN (b#,1,2)` in Catalyst's form: columns in the list stay, literals do not. */
   private val ColumnIn = """[\w.]+#\s+IN\s+\(""".r
 
-  /** `a# INSET 1, 10, 11`: Spark's form for a literal list of more than ten values, all literals. */
+  /**
+   * `a# INSET 1, 10, 11`: Spark's form for a literal list of more than ten values, all literals. Its
+   * values are not parenthesised, so a predicate after it shares the enclosing parentheses:
+   * `(a# INSET 1, 10, 11 AND (b# > 100))`. The values end at a top-level ` AND ` or ` OR ` too.
+   */
   private val ColumnInSet = """[\w.]+#\s+INSET\s+""".r
+  private val InSetPattern = """\s+INSET\s+\?""".r
 
   /**
    * A pushed-down filter, in the data source's form, up to its value: `GreaterThan(id,` in
@@ -98,13 +103,14 @@ object PlanFingerprint {
    * or at the end of the line, whichever comes first. Parentheses inside the operand, as in a string
    * value `prefix(A)`, are its own.
    */
-  private def operandEnd(s: String, from: Int): Int = {
+  private def operandEnd(s: String, from: Int, atConnective: Boolean = false): Int = {
     var depth = 0
     var i = from
     while (i < s.length && s.charAt(i) != '\n') {
       val c = s.charAt(i)
       if (c == '(') depth += 1
       else if (c == ')') { if (depth == 0) return i; depth -= 1 }
+      else if (atConnective && depth == 0 && (s.startsWith(" AND ", i) || s.startsWith(" OR ", i))) return i
       i += 1
     }
     i
@@ -114,7 +120,9 @@ object PlanFingerprint {
    * Rewrites, after every match of `start`, the operand that follows: `rewrite` gets the operand's
    * text and returns its replacement, or None to leave it.
    */
-  private def rewriteOperands(s: String, start: scala.util.matching.Regex)(rewrite: String => Option[String]): String = {
+  private def rewriteOperands(s: String, start: scala.util.matching.Regex, atConnective: Boolean = false)(
+    rewrite: String => Option[String]
+  ): String = {
     // Java's builder: Scala's has no append(CharSequence, start, end), and would append a tuple.
     val out = new java.lang.StringBuilder
     val m = start.pattern.matcher(s)
@@ -123,7 +131,7 @@ object PlanFingerprint {
     // `from` only moves forward: an operand starts where its match ends, after the match's start.
     while (from < s.length && m.find(from)) {
       val opStart = m.end()
-      val opEnd = operandEnd(s, opStart)
+      val opEnd = operandEnd(s, opStart, atConnective)
       rewrite(s.substring(opStart, opEnd)).foreach { r =>
         out.append(s, copied, opStart).append(r)
         copied = opEnd
@@ -180,7 +188,10 @@ object PlanFingerprint {
     val noPaths   = LocationPattern.replaceAllIn(noStats, m => scala.util.matching.Regex.quoteReplacement(s"Location: ${m.group(1)}"))
     val noValues  = rewriteOperands(noPaths, ColumnComparison)(literal)
     val noInLists = rewriteOperands(noValues, ColumnIn)(inList)
-    val noInSets  = rewriteOperands(noInLists, ColumnInSet)(_ => Some("?"))
+    // An all-literal INSET normalises exactly as an all-literal IN, so a list's length does not
+    // matter either side of the ten values at which Spark switches from one to the other.
+    val noInSets  = InSetPattern.replaceAllIn(
+      rewriteOperands(noInLists, ColumnInSet, atConnective = true)(_ => Some("?")), " IN (?)")
     val noPushed  = rewriteOperands(noInSets, PushedFilter)(_ => Some("?"))
     PushedInPattern.replaceAllIn(noPushed, m => scala.util.matching.Regex.quoteReplacement(s"In(${m.group(1)}, [?])"))
   }
