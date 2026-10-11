@@ -49,9 +49,10 @@ Writing `[.]` for a dot, rather than `\.`, saves escaping the backslash inside
 
 #### PySpark
 
-A stage carries your Python line only when the action brings rows back to Python: DataFrame
-`collect`, `toLocalIterator`, `tail` and `toPandas`, and RDD actions. Other actions are named after
-the JVM side of the call, and a pattern on your script's name cannot select their stages:
+A stage carries your Python line when the action brings rows back to Python: DataFrame actions
+such as `collect`, `take`, `head`, `first`, `tail`, `toLocalIterator` and `toPandas`, and RDD
+actions. Actions that do not, such as writes, `count()` and `show()`, are named after the JVM side
+of the call, and a pattern on your script's name cannot select their stages:
 
 | Action | Stage name |
 |---|---|
@@ -77,8 +78,9 @@ before the first `getOrCreate()`, since the driver reads it at start-up.
 #### Databricks
 
 Databricks wraps PySpark's actions, so every Python stage is named `wrapper`, with your file and
-line after it. Only the actions listed under [PySpark](#pyspark) carry them; `count()` and writes
-are named after Databricks' frames, such as `$anonfun$withThreadLocalCaptured$10 at LexicalThreadLocal.scala:63`.
+line after it. As [elsewhere](#pyspark), actions that bring rows back to Python carry them;
+`count()` and writes are named after Databricks' frames, such as
+`$anonfun$withThreadLocalCaptured$10 at LexicalThreadLocal.scala:63`.
 
 | Task | Stage name | Pattern |
 |---|---|---|
