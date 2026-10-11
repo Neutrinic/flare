@@ -240,7 +240,7 @@ class PlanFingerprintTest extends FunSuite {
       |(51) ResultQueryStage
       |Output [2]: [cd_gender#93, cnt1#701L]
       |Arguments: 14
-      |""".stripMargin
+      |""".stripMargin.replace("\r\n", "\n") // Spark's plans use \n; a CRLF checkout must not change that
     assertEquals(PlanFingerprint.of(q10(12, 13, 11)), PlanFingerprint.of(q10(11, 12, 13)))
     // Spark 3.5+'s cached-table stage prints its output without a count.
     assertEquals(
