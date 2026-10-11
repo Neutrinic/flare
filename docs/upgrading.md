@@ -2,6 +2,13 @@
 
 ## 1.3 to 1.4
 
+### Spark 3.3 is deprecated
+
+Spark 3.3 is no longer maintained upstream: its last release, 3.3.4, was in December 2023. Flare
+1.4 still publishes and tests the Spark 3.3 JARs, `flare-spark-3-3_2.12` and `flare-spark-3-3_2.13`;
+2.0 will not. HDInsight 5.1 runs Spark 3.3. Move to a 3.4 or later JAR when the cluster's Spark
+allows.
+
 ### Histograms have new bucket boundaries
 
 `flare.task.duration`, `flare.stage.executor.run_time` and `flare.task.records_throughput` used

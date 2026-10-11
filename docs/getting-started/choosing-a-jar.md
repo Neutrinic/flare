@@ -5,10 +5,13 @@ often with an unhelpful error, so match it to what the cluster runs.
 
 | Spark | Scala 2.12 | Scala 2.13 |
 |---|---|---|
-| 3.3 | `flare-spark-3-3_2.12` | `flare-spark-3-3_2.13` |
+| 3.3 (deprecated) | `flare-spark-3-3_2.12` | `flare-spark-3-3_2.13` |
 | 3.4 | `flare-spark-3-4_2.12` | `flare-spark-3-4_2.13` |
 | 3.5 | `flare-spark-3-5_2.12` | `flare-spark-3-5_2.13` |
 | 4.0, 4.1 | | `flare-spark-4-0_2.13` |
+
+Spark 3.3 is deprecated in 1.4 and its JARs end with 2.0; see
+[Upgrading](../upgrading.md#spark-33-is-deprecated).
 
 All are under the Maven group `io.github.neutrinic`, for example:
 
