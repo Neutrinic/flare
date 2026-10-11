@@ -288,4 +288,12 @@ class FlareConfigTest extends FunSuite {
     val config = FlareConfig.load()
     assert(config.metricsEnabled)
   }
+
+  test("tracesTasksOfStage matches the whole stage name, and no pattern admits every stage (#208)") {
+    val config = baseConfig(taskStagePattern = Some("""map at .*""".r))
+    assert(config.tracesTasksOfStage("map at Etl.scala:42"))
+    assert(!config.tracesTasksOfStage("keyBy at Etl.scala:43"))
+    assert(!config.tracesTasksOfStage("flatMap at Etl.scala:44"), "matched part of the name, not all of it")
+    assert(baseConfig().tracesTasksOfStage("anything at all"))
+  }
 }

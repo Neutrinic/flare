@@ -10,6 +10,8 @@ agent's own `otel.*` keys, see [Exporting](exporting.md).
 | `FLARE_SAMPLING_RATIO` | | **Removed** in 1.3.0: it never had an effect ([#130](https://github.com/Neutrinic/flare/issues/130)). Ignored with a warning. See [Sampling](#sampling) |
 | `FLARE_SLOW_TASK_MS` | `0` (off) | Only emit task spans that took longer than this. Spans and log lines from inside tasks then sit under the stage span; see [Spans](../reference/spans.md) |
 | `FLARE_RETRY_TASKS_ONLY` | `false` | Only emit task spans for retries and speculative tasks |
+| `FLARE_TASK_STAGE_PATTERN` | none | Only emit task spans for stages whose name matches this regex, such as `.*Etl\.scala.*`. The regex must match the whole name, which is the call site, `collect at Etl.scala:42`. Set it on the **driver**: the driver decides as each stage is submitted, and the executors follow. See [Choosing stages](#choosing-stages-for-task-spans) |
+| `FLARE_TASK_STAGES` | none | Only emit task spans for these stage ids, comma-separated, such as `7,12`. Read by the executors. Ids restart in every application and move when the code changes, so prefer the pattern |
 | `FLARE_MAX_SPANS_PER_TRACE` | `10000` | Circuit breaker for task spans, counted **per executor**, not per trace ([#101](https://github.com/Neutrinic/flare/issues/101)): each executor stops creating task spans once it has made this many in a trace, so a trace can hold up to this many per executor. Job and stage spans continue. On an application that runs for hours task spans stop partway; see [Telemetry volume](volume.md#flares-own-spans) |
 | `FLARE_METRICS_ENABLED` | `true` | Flare's metrics: task duration, shuffle bytes, stage aggregates |
 | `FLARE_TRACK_BLOCK_UPDATES` | `false` | Per-block storage totals. Off by default: Spark reports every block, which on a large cached dataset floods the listener thread |
@@ -28,6 +30,18 @@ case. Any other value leaves them on.
 The `*_MAX_CHARS` caps limit size. A positive cap keeps the first characters, whatever they
 contain, so it is not a privacy control; `0` is, because it stops Flare emitting the field at all.
 See [Privacy](../privacy.md#limiting-what-flare-sends).
+
+### Choosing stages for task spans
+
+Task spans are the most numerous Flare emits, so on a large job it can pay to keep them for the
+stages being investigated only. `FLARE_TASK_STAGE_PATTERN` selects stages by name, the call site that
+created them, as the Spark UI shows it: `collect at Etl.scala:42`, `map at Ingest.scala:17`. A name
+survives between runs unless its line of code moves, which makes it the setting to reach for;
+some stages that adaptive execution adds are named after Spark's own call sites instead.
+`FLARE_TASK_STAGES` selects by stage id, which is only good for one run.
+
+With both set, a task needs both. Tasks the filters leave out still count in the task metrics; only
+their spans are dropped.
 
 ## Sampling
 

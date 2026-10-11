@@ -39,6 +39,13 @@ object LocalPropertyPropagator {
   private def stagePrefix(stageId: Int): String = s"flare.stage.$stageId."
 
   /**
+   * Set to `false` when `FLARE_TASK_STAGE_PATTERN` excludes the stage (#208), and absent otherwise:
+   * absence means the stage's tasks may be traced. Under the stage's own prefix, so
+   * [[removeStage]] clears it with the stage's context.
+   */
+  def stageTasksKey(stageId: Int): String = stagePrefix(stageId) + "tasks"
+
+  /**
    * Inject current OTEL context into Spark local properties.
    * Call on the driver before submitting tasks.
    */

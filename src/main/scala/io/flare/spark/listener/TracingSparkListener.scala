@@ -663,6 +663,9 @@ class TracingSparkListener(
   /** Read by the scheduler advice, which creates stage spans only when the listener adopts them. */
   private[spark] def tracesStages: Boolean = config.tracesStages
 
+  /** Read by the scheduler advice, which decides `FLARE_TASK_STAGE_PATTERN` per stage (#208). */
+  private[spark] def tracesTasksOfStage(stageName: String): Boolean = config.tracesTasksOfStage(stageName)
+
   def shutdown(): Unit = {
     logger.info("[Flare] Shutting down listener, ending any open spans")
     recordApplicationEnd(System.currentTimeMillis())

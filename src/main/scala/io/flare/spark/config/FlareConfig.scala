@@ -67,6 +67,14 @@ final case class FlareConfig(
    * calling from ExecutorPlugin. Pass -1 / "" when calling from driver-side code (where
    * stage filtering does not apply — driver spans are never filtered by stage).
    */
+  /**
+   * Whether `FLARE_TASK_STAGE_PATTERN` admits a stage, by its name (#208). The regex must match the
+   * whole name (`matches`), as in `.*Etl\.scala.*`. No pattern admits every stage. Decided on the
+   * driver, which has the stage's name, as the stage is submitted; executors read the decision.
+   */
+  def tracesTasksOfStage(stageName: String): Boolean =
+    taskStagePattern.forall(_.pattern.matcher(stageName).matches())
+
   def shouldTraceTask(
     attemptNumber: Int,
     speculative:   Boolean,
@@ -77,9 +85,9 @@ final case class FlareConfig(
     if (!tracesTasks) return false
     // Stage ID filter — skip if IDs are configured and this stage is not in the set
     if (taskStageIds.nonEmpty && stageId >= 0 && !taskStageIds.contains(stageId)) return false
-    // Stage name pattern filter — skip if pattern configured and name does not match
-    if (taskStagePattern.isDefined && stageName.nonEmpty &&
-        !taskStagePattern.get.pattern.matcher(stageName).matches()) return false
+    // Stage name pattern filter — skip if pattern configured and name does not match. Executors have
+    // no stage name and pass "": the driver decides for them (#208), see tracesTasksOfStage.
+    if (stageName.nonEmpty && !tracesTasksOfStage(stageName)) return false
     // Retry-only filter
     if (retryTasksOnly && attemptNumber == 0 && !speculative) return false
     // Slow task filter — only applied when duration is known (task end)
