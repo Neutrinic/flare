@@ -124,8 +124,9 @@ worst-case plan payload on every SQL span.
 
 `spark.sql.plan.fingerprint` hashes the plan's **shape** into 16 hex characters, so the same query
 groups across executions and across applications, which the Spark UI cannot do. Expression ids
-(`#133`), `plan_id=142`, codegen ids and AQE's runtime statistics are removed before hashing,
-because they change without the shape changing. The statistics track the data, not the query, and
+(`#133`), `plan_id=142`, codegen ids, AQE's query-stage ids and its runtime statistics are removed
+before hashing, because they change without the shape changing. AQE numbers its query stages in
+the order it creates them, which differs from run to run. The statistics track the data, not the query, and
 would fingerprint the same query differently on a busy day than a quiet one.
 
 Literal values and input paths are removed too: the value compared with a column in a filter
@@ -142,7 +143,12 @@ on every SQL span fills a trace quickly, while 16 bytes of grouping does not.
 `spark.sql.plan.initial.fingerprint` is taken from the pre-AQE tree and not changed by re-plans, so
 the pair is "shape as planned" against "shape as executed". Under AQE the two differ for almost
 every query, because the final tree always gains query-stage wrappers, so a difference does not
-mean AQE changed anything. The initial fingerprint is the more stable grouping key.
+mean AQE changed anything. The initial fingerprint is the more stable grouping key: the final
+fingerprint can still differ between two runs of the same query on the same data, when AQE reuses a
+different copy of an exchange the query computes twice. Over TPC-DS's queries, run twice in one
+application on the lab's three nodes, the initial fingerprint was the same for every query and the
+final one differed for 7 to 10 of 102, varying from run to run. Group by the initial fingerprint to tell when a query changed, and use the
+final one to see what AQE made of it.
 
 ## Resource attributes
 

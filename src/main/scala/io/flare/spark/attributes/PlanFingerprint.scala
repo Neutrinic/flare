@@ -47,6 +47,18 @@ object PlanFingerprint {
   /** AQE / exchange reuse identifiers: `plan_id=142`. */
   private val PlanIdPattern = """plan_id=\d+""".r
 
+  /**
+   * An AQE query stage's id, the `Arguments` line of its details:
+   * {{{
+   * (22) BroadcastQueryStage
+   * Output [1]: [ss_customer_sk#212L]
+   * Arguments: 12
+   * }}}
+   * AQE numbers stages as it creates them, which follows which stages finish first, so the same
+   * query gets different ids from run to run (#244). `TableCacheQueryStage` prints `Output: []`.
+   */
+  private val QueryStageIdPattern = """(QueryStage\nOutput(?: \[\d+\])?: [^\n]*\nArguments: )\d+""".r
+
   /** Whole-stage codegen stage numbering: `[codegen id : 1]`. */
   private val CodegenIdPattern = """\[codegen id : \d+\]""".r
 
@@ -228,7 +240,7 @@ object PlanFingerprint {
     val noPushed  = rewriteOperands(noInSets, PushedFilter)(_ => Some("?"))
     val noLiterals = PushedInPattern.replaceAllIn(noPushed, m => scala.util.matching.Regex.quoteReplacement(s"In(${m.group(1)}, [?])"))
     val noExprIds = ExprIdPattern.replaceAllIn(noLiterals, "#")
-    val noPlanIds = PlanIdPattern.replaceAllIn(noExprIds, "plan_id=")
+    val noPlanIds = QueryStageIdPattern.replaceAllIn(PlanIdPattern.replaceAllIn(noExprIds, "plan_id="), "$1?")
     val noCodegen = CodegenIdPattern.replaceAllIn(noPlanIds, "[codegen id]")
     StatisticsPattern.replaceAllIn(noCodegen, "Statistics()")
   }

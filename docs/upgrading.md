@@ -57,9 +57,12 @@ spans are still dropped. To have the agent's full instrumentation back with Flar
 
 `spark.sql.plan.fingerprint` and `spark.sql.plan.initial.fingerprint` no longer change when only a
 filter's value or a scan's paths change, so a date-partitioned daily job keeps one fingerprint
-([#207](https://github.com/Neutrinic/flare/issues/207)). Plans that contain literals or file paths,
-which is most, fingerprint differently from 1.3, so a search grouping by fingerprint across the
-upgrade shows each query change shape once.
+([#207](https://github.com/Neutrinic/flare/issues/207)). The post-AQE fingerprint no longer changes
+with the numbers AQE gives its query stages either
+([#244](https://github.com/Neutrinic/flare/issues/244)). Plans that contain literals or file paths,
+which is most, and every plan AQE re-planned fingerprint differently from 1.3, so a search grouping
+by fingerprint across the upgrade shows each query change shape once. The plan-change search on the
+[Alerting](configuration/alerting.md) page now groups by the initial fingerprint; update a copy of it.
 
 ### Code reading the stage context should read the stage's own key
 

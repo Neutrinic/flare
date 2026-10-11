@@ -217,4 +217,43 @@ class PlanFingerprintTest extends FunSuite {
     assertEquals(PlanFingerprint.of("Condition : (s#9 = C#)"), PlanFingerprint.of("Condition : (s#9 = F#)"))
     assertEquals(PlanFingerprint.normalise("Condition : (s#9 = C#)"), "Condition : (s# = ?)")
   }
+
+  /**
+   * AQE numbers its query stages in the order it creates them, which follows which stages finish
+   * first, so the same query gets different ids from run to run (#244). TPC-DS q10, two passes in
+   * one application on Spark 4.0.4: only these ids differed.
+   */
+  test("AQE's query-stage ids do not change the fingerprint (#244)") {
+    def q10(a: Int, b: Int, c: Int) = s"""
+      |(22) BroadcastQueryStage
+      |Output [1]: [ss_customer_sk#212L]
+      |Arguments: $a
+      |
+      |(35) BroadcastQueryStage
+      |Output [1]: [ws_bill_customer_sk#318L]
+      |Arguments: $b
+      |
+      |(48) ShuffleQueryStage
+      |Output [1]: [cs_ship_customer_sk#402L]
+      |Arguments: $c
+      |
+      |(51) ResultQueryStage
+      |Output [2]: [cd_gender#93, cnt1#701L]
+      |Arguments: 14
+      |""".stripMargin.replace("\r\n", "\n") // Spark's plans use \n; a CRLF checkout must not change that
+    assertEquals(PlanFingerprint.of(q10(12, 13, 11)), PlanFingerprint.of(q10(11, 12, 13)))
+    // Spark 3.5+'s cached-table stage prints its output without a count.
+    assertEquals(
+      PlanFingerprint.of("(5) TableCacheQueryStage\nOutput: []\nArguments: 0\n"),
+      PlanFingerprint.of("(5) TableCacheQueryStage\nOutput: []\nArguments: 3\n"))
+  }
+
+  test("the arguments of other operators are kept: only a query stage's id is dropped (#244)") {
+    def exchange(partitions: Int) =
+      s"(19) Exchange\nInput [2]: [k#1L, v#2L]\nArguments: hashpartitioning(k#1L, $partitions), ENSURE_REQUIREMENTS, [plan_id=7]\n"
+    assertNotEquals(PlanFingerprint.of(exchange(12)), PlanFingerprint.of(exchange(200)))
+    assertEquals(
+      PlanFingerprint.normalise("(9) ShuffleQueryStage\nOutput [1]: [k#1L]\nArguments: 4\n"),
+      "(9) ShuffleQueryStage\nOutput [1]: [k#]\nArguments: ?\n")
+  }
 }
