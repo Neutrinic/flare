@@ -34,8 +34,9 @@ object SparkContextAdviceHelper {
   def onSparkContextInit(sc: SparkContext): Unit = {
     FlareConfig.warnIfSamplingRatioSet(w => logger.warning(w))
 
-    // Fast path: already initialized by SparkPlugin or a previous advice call
-    if (FlareDriverState.initialized) {
+    // Fast path: already initialized by SparkPlugin or a previous advice call, for a SparkContext
+    // still running; state left by one that stopped is released first (#232)
+    if (FlareDriverState.initializedForLiveContext) {
       logger.fine("[Flare] ByteBuddy advice: already initialized, skipping")
       return
     }
@@ -74,7 +75,7 @@ object SparkContextAdviceHelper {
       //    If we added the listener first and then lost the race, the duplicate listener
       //    would remain registered on the SparkContext (no removeSparkListener API) and
       //    produce duplicate job/stage spans for the lifetime of the application.
-      if (!FlareDriverState.initialize(appSpan, tracingListener)) {
+      if (!FlareDriverState.initialize(appSpan, tracingListener, FlareDriverState.stoppedCheck(sc))) {
         // Another path won the race — clean up our span; listener was never registered
         appSpan.end()
         logger.info("[Flare] ByteBuddy advice: lost init race to SparkPlugin, cleaned up")

@@ -194,14 +194,33 @@ class FlareDriverStateTest extends FunSuite {
 
   // ── Application end (#232) ──────────────────────────────────────────────────
 
-  test("the owning listener's application end clears the state; another listener's does not") {
-    val owner  = new TracingSparkListener(tracer, testConfig)
-    val other  = new TracingSparkListener(tracer, testConfig)
-    FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), owner)
-    FlareDriverState.applicationEnded(other)
-    assert(FlareDriverState.initialized, "a listener that does not own the state cleared it")
-    FlareDriverState.applicationEnded(owner)
-    assert(!FlareDriverState.initialized, "the owner's application end left the state initialised")
-    assertEquals(FlareDriverState.currentListener, None)
+  test("state left by a stopped SparkContext is released by the next initialisation") {
+    var firstStopped = false
+    val first  = new TracingSparkListener(tracer, testConfig)
+    val second = new TracingSparkListener(tracer, testConfig)
+    assert(FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), first, () => firstStopped))
+    // While the owner runs, a second context is a duplicate, as before.
+    assert(!FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), second))
+    firstStopped = true
+    assert(!FlareDriverState.initializedForLiveContext, "a stopped owner's state still counts as live")
+    assert(FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), second))
+    assertEquals(FlareDriverState.currentListener, Some(second))
   }
+
+  test("a job cancelled by the stop still ends FAILED: Spark posts the application end first") {
+    // SparkContext.stop posts ApplicationEnd before stopping the scheduler, which then cancels
+    // running jobs, so their ends arrive after it (Codex, #234).
+    val listener = new TracingSparkListener(tracer, testConfig, throwOnError = true)
+    val app = tracer.spanBuilder("spark.application").startSpan()
+    listener.setApplicationSpan(app)
+    FlareDriverState.initialize(app, listener)
+    listener.onJobStart(SparkListenerJobStart(0, System.currentTimeMillis(), Seq.empty, new ju.Properties()))
+    listener.onApplicationEnd(org.apache.spark.scheduler.SparkListenerApplicationEnd(System.currentTimeMillis()))
+    listener.onJobEnd(SparkListenerJobEnd(0, System.currentTimeMillis(),
+      org.apache.spark.FlareTestHelpers.jobFailed(new RuntimeException("Job 0 cancelled because SparkContext was shut down"))))
+    val job = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.job.0").getOrElse(fail("no job span was exported"))
+    assertEquals(job.getStatus.getStatusCode, io.opentelemetry.api.trace.StatusCode.ERROR)
+    assertEquals(job.getAttributes.get(io.opentelemetry.api.common.AttributeKey.stringKey("spark.job.result")), "FAILED")
+  }
+
 }

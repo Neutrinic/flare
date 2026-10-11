@@ -9,6 +9,7 @@ import org.apache.spark.{FlareTestHelpers, SparkConf, SparkContext}
  * A second SparkContext in one JVM gets Flare's driver telemetry after an agent-initialised one
  * stops (#232). Installed through the agent alone, nothing reset the driver state when a context
  * stopped, so the next one found Flare already initialised with the stopped context's listener.
+ * The next context's initialisation now releases state whose SparkContext has stopped.
  */
 class SecondContextAgentTest extends FunSuite {
 
@@ -25,7 +26,7 @@ class SecondContextAgentTest extends FunSuite {
         assertEquals(FlareDriverState.currentListener, ls.headOption, "the first context does not own the state")
         ls.head
       } finally first.stop()
-      assert(!FlareDriverState.initialized, "stopping the first context left Flare's driver state initialised")
+      // Released lazily, by the next SparkContext's initialisation, not at the first one's stop.
 
       val second = context("flare-second-context")
       try {

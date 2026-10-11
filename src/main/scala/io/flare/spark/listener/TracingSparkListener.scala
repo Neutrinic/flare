@@ -138,9 +138,6 @@ class TracingSparkListener(
       span.end()
       logger.info("[Flare] Application span ended")
     }
-    // Release the driver state this listener owns, so the next SparkContext in the JVM starts
-    // fresh (#232).
-    FlareDriverState.applicationEnded(this)
   }
 
   // ── Jobs ─────────────────────────────────────────────────────────────────────
