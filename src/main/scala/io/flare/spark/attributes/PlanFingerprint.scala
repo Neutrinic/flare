@@ -220,9 +220,11 @@ object PlanFingerprint {
     val noValues  = rewriteOperands(noPaths, ColumnComparison)(literal)
     val noInLists = rewriteOperands(noValues, ColumnIn)(inList)
     // An all-literal INSET normalises exactly as an all-literal IN, so a list's length does not
-    // matter either side of the ten values at which Spark switches from one to the other.
+    // matter either side of the ten values at which Spark switches from one to the other. Guarded
+    // like any operand: Spark prints INSET strings unquoted, so a value such as `(` can carry the
+    // scan past the ` AND ` after it, and an operand that took in a column is kept whole.
     val noInSets  = InSetPattern.replaceAllIn(
-      rewriteOperands(noInLists, ColumnInSet, atConnective = true)(_ => Some("?")), " IN (?)")
+      rewriteOperands(noInLists, ColumnInSet, atConnective = true)(literal), " IN (?)")
     val noPushed  = rewriteOperands(noInSets, PushedFilter)(_ => Some("?"))
     val noLiterals = PushedInPattern.replaceAllIn(noPushed, m => scala.util.matching.Regex.quoteReplacement(s"In(${m.group(1)}, [?])"))
     val noExprIds = ExprIdPattern.replaceAllIn(noLiterals, "#")

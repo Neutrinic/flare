@@ -109,4 +109,11 @@ class PlanFingerprintSparkTest extends FunSuite {
     def uplan(cond: String) = unicode.filter(cond).queryExecution.explainString(ExplainMode.fromString("formatted"))
     assertNotEquals(PlanFingerprint.of(uplan("a = `\u7532`")), PlanFingerprint.of(uplan("a = `\u4e59`")))
   }
+
+  test("an INSET string value that is a bare parenthesis does not swallow the predicate after it") {
+    val values = ("'('" +: ('b' to 'k').map(c => s"'$c'")).mkString(", ") // 11 values, so an INSET
+    val printed = plan(s"s IN ($values) AND a > 100")
+    assert(printed.contains("INSET"), s"not the plan this test is about:\n$printed")
+    assertNotEquals(PlanFingerprint.of(printed), PlanFingerprint.of(plan(s"s IN ($values) AND b > 100")))
+  }
 }
