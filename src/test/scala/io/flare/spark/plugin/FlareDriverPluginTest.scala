@@ -17,7 +17,15 @@ import scala.collection.JavaConverters._
  */
 class FlareDriverPluginTest extends FunSuite {
 
+  // Flare's driver state is a JVM-wide singleton that other suites initialise; one they leave
+  // behind would make this SparkContext skip Flare's initialisation.
+  override def beforeEach(context: BeforeEach): Unit = {
+    FlareDriverState.reset()
+    super.beforeEach(context)
+  }
+
   override def afterEach(context: AfterEach): Unit = {
+    FlareDriverState.reset()
     GlobalOpenTelemetry.resetForTest()
     super.afterEach(context)
   }

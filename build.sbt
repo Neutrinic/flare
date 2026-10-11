@@ -169,6 +169,9 @@ lazy val root = (project in file("."))
     },
 
     Test / fork := true,
+    // Suites run one at a time in the fork (sbt's default, stated here): several share JVM-wide
+    // state, GlobalOpenTelemetry and Flare's driver state, and reset it around their tests.
+    Test / testForkedParallel := false,
     Test / javaOptions ++= Seq(
       s"-Dspark.version=$sparkBuildVersion",
       s"-Dflare.test.expected.version=${version.value}",
