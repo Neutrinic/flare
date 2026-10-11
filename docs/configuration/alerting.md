@@ -87,8 +87,12 @@ Tempo's documentation for your version.
 The plan-change search is a TraceQL metrics query, counting one query's executions by plan shape:
 
 ```text
-{ span.spark.sql.description = "load orders" } | count_over_time() by (span.spark.sql.plan.fingerprint)
+{ span.spark.sql.description = "load orders" } | count_over_time() by (span.spark.sql.plan.initial.fingerprint)
 ```
+
+It groups by the plan as Spark first planned it. The plan after AQE's re-planning can differ
+between two runs of the same query, so grouping by `spark.sql.plan.fingerprint` would report changes
+that did not happen; see [Plan fingerprints](index.md#plan-fingerprints).
 
 Skew is the task duration's p99 against its median, per stage. Stage ids restart in every
 application, so run it for one service over one run's time range; a range covering two runs mixes

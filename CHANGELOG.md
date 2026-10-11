@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2023). 1.4 still publishes and tests the `flare-spark-3-3` JARs; 2.0 will not ([#235])
 
 ### Fixed
+- **The plan fingerprint no longer changes with AQE's stage numbering.** AQE numbers its query
+  stages in the order it creates them, which differs between runs, and the post-AQE
+  `spark.sql.plan.fingerprint` included those numbers: over TPC-DS's queries run twice, 22 of 102
+  fingerprinted differently the second time. They are now removed. The alerting page's plan-change
+  search groups by `spark.sql.plan.initial.fingerprint`, which was stable for every query: the
+  post-AQE plan can still differ when AQE reuses a different copy of a repeated exchange ([#244])
 - **The `spark.application` span carries `spark.application.id`.** With Flare installed through
   `spark.plugins`, as documented, it never did: Spark starts plugins before it assigns the application
   id. The id is now added when the application starts ([#240])
@@ -747,3 +753,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#232]: https://github.com/Neutrinic/flare/issues/232
 [#235]: https://github.com/Neutrinic/flare/issues/235
 [#240]: https://github.com/Neutrinic/flare/issues/240
+[#244]: https://github.com/Neutrinic/flare/issues/244
