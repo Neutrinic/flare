@@ -26,10 +26,10 @@ import java.{util => ju}
  * This runs inside DriverPlugin.init(), which fires during SparkContext construction
  * after the LiveListenerBus is started but before any jobs are submitted.
  *
- * The traceparent injected here points to the application span. When ByteBuddy is active,
- * [[io.flare.spark.instrumentation.RunJobAdviceHelper]] temporarily overrides it at each
- * `runJob` call with a per-job traceparent, giving executor tasks the correct job span as
- * parent. Without ByteBuddy, all tasks fall back to being children of the application span.
+ * The traceparent injected here points to the application span. Under the agent,
+ * [[io.flare.spark.instrumentation.SubmitMissingTasksAdviceHelper]] then writes each stage's own
+ * context as the stage is submitted, so executor tasks run under their stage span. Without the
+ * agent's instrumentation, all tasks fall back to being children of the application span.
  */
 class FlareDriverPlugin extends DriverPlugin {
 
