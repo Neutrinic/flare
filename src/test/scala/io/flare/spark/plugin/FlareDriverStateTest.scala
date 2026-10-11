@@ -226,6 +226,10 @@ class FlareDriverStateTest extends FunSuite {
   test("a job cancelled by the stop still ends FAILED: Spark posts the application end first") {
     // SparkContext.stop posts ApplicationEnd before stopping the scheduler, which then cancels
     // running jobs, so their ends arrive after it (Codex, #234).
+    //
+    // Guard, not evidence: main passes this too, since it never released the state at application
+    // end. It fails against this PR's first version, which did, and keeps that design from
+    // returning; the fix itself is shown by the lazy-release and second-context tests.
     val listener = new TracingSparkListener(tracer, testConfig, throwOnError = true)
     val app = tracer.spanBuilder("spark.application").startSpan()
     listener.setApplicationSpan(app)
