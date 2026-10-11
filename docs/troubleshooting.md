@@ -77,10 +77,16 @@ the dead executors' task spans keep their parents, and the removal is recorded o
   Since 1.4 the driver counts them on `flare.task.lost`, labelled with the executor and why it was
   lost; add it to the failed tasks for a task error rate.
 
-A node that is shut down gracefully (a SIGTERM to the executor, a Kubernetes pod eviction, Spark's
-decommissioning) loses nothing: executors flush on shutdown. To narrow the loss on sudden failures,
-lower `otel.bsp.schedule.delay` and `otel.metric.export.interval` on the executors, at the cost of
-more, smaller exports.
+A graceful shutdown loses less, and how much depends on the kind:
+
+- **Spark's decommissioning** (`spark.decommission.enabled`) finishes the executor's running tasks
+  before it exits, then the executor flushes: nothing is lost.
+- **A SIGTERM** (`kill`, a Kubernetes pod eviction without decommissioning) flushes what the
+  executor had finished, but not the tasks it was still running. Spark does not wait for them, so
+  their spans and duration metrics are never recorded; the driver counts them on `flare.task.lost`.
+
+To narrow the loss on sudden failures, lower `otel.bsp.schedule.delay` and
+`otel.metric.export.interval` on the executors, at the cost of more, smaller exports.
 
 ## When the driver dies
 
@@ -109,8 +115,16 @@ Spark is unaffected: exports are asynchronous, and nothing waits on them.
 - **The root span arrives** if the collector is back before the application ends.
 
 The remedy is a collector close to Spark: an OpenTelemetry Collector on each node, or as a
-Kubernetes DaemonSet, that accepts locally and holds what it cannot forward in a persistent sending
-queue (the `file_storage` extension), so an outage of the central backend costs nothing.
+Kubernetes DaemonSet, that accepts locally and queues what it cannot forward to the central
+backend. Two settings on its exporter decide how long an outage it covers, and past either, data is
+still dropped:
+
+- `retry_on_failure.max_elapsed_time`: how long a batch is retried, five minutes by default. `0`
+  retries without limit.
+- `sending_queue.queue_size`: how much the queue holds. Size it for the longest outage to cover.
+
+With the `file_storage` extension the queue is kept on disk, so it also survives the collector
+restarting. See the Collector's [resiliency guide](https://opentelemetry.io/docs/collector/resiliency/).
 
 These measurements come from a TPC-H-derived workload on Spark 4.0.4 (data and queries generated
 with DuckDB's `tpch` extension). They describe Flare's behaviour, not TPC-H results.
