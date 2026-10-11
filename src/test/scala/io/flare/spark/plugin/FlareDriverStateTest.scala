@@ -46,6 +46,13 @@ class FlareDriverStateTest extends FunSuite {
     super.beforeEach(context)
   }
 
+  // The state is a JVM-wide singleton, and some tests leave an owner that never reports stopped:
+  // left in place, it makes a later suite's SparkContext skip Flare's initialisation (#240).
+  override def afterEach(context: AfterEach): Unit = {
+    FlareDriverState.reset()
+    super.afterEach(context)
+  }
+
   // ── Basic lifecycle ─────────────────────────────────────────────────────────
 
   test("starts uninitialized") {

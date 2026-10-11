@@ -128,6 +128,9 @@ class TracingSparkListener(
 
   override def onApplicationStart(event: SparkListenerApplicationStart): Unit = {
     applicationStartMs = event.time
+    // Spark initialises plugins before it assigns the application id, so a span the driver plugin
+    // created has none yet (#240).
+    for (span <- applicationSpan; id <- event.appId) span.setAttribute(Application.Id, id)
     logger.info(s"[Flare] Application started: ${event.appName}")
   }
 

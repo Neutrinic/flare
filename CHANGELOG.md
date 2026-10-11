@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2023). 1.4 still publishes and tests the `flare-spark-3-3` JARs; 2.0 will not ([#235])
 
 ### Fixed
+- **The `spark.application` span carries `spark.application.id`.** With Flare installed through
+  `spark.plugins`, as documented, it never did: Spark starts plugins before it assigns the application
+  id. The id is now added when the application starts ([#240])
 - **`FLARE_SLOW_TASK_MS` no longer orphans spans or log lines.** A task's span was current while it
   ran, so spans made inside the task (a JDBC query, an HTTP call) and its log lines pointed at it,
   and when the task finished under the threshold the span was dropped, leaving them pointing at
@@ -743,3 +746,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#227]: https://github.com/Neutrinic/flare/issues/227
 [#232]: https://github.com/Neutrinic/flare/issues/232
 [#235]: https://github.com/Neutrinic/flare/issues/235
+[#240]: https://github.com/Neutrinic/flare/issues/240

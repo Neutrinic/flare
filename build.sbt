@@ -169,10 +169,13 @@ lazy val root = (project in file("."))
     },
 
     Test / fork := true,
+    // Suites run one at a time in the fork (sbt's default, stated here): several share JVM-wide
+    // state, GlobalOpenTelemetry and Flare's driver state, and reset it around their tests.
+    Test / testForkedParallel := false,
     Test / javaOptions ++= Seq(
       s"-Dspark.version=$sparkBuildVersion",
       s"-Dflare.test.expected.version=${version.value}",
-    ),
+    ) ++ sparkModuleOptions,
 
     testFrameworks := Seq(new TestFramework("munit.Framework")),
 
@@ -236,15 +239,17 @@ lazy val root = (project in file("."))
         s"-Dflare.agent.test.expected.version=${version.value}",
         s"-Dflare.agent.test.extension.jar=${extensionJar.getAbsolutePath}",
         "--add-modules=jdk.httpserver",
-      ) ++ Seq(
-        // Spark's own JavaModuleOptions, which spark-submit adds and a plain JVM does not:
-        // FlareModuleAgentTest starts a local SparkContext.
-        "java.lang", "java.lang.invoke", "java.lang.reflect", "java.io", "java.net", "java.nio",
-        "java.util", "java.util.concurrent", "java.util.concurrent.atomic", "sun.nio.ch", "sun.nio.cs",
-        "sun.security.action", "sun.util.calendar",
-      ).map(pkg => s"--add-opens=java.base/$pkg=ALL-UNNAMED")
+      ) ++ sparkModuleOptions
     },
   )
+
+// Spark's own JavaModuleOptions, which spark-submit adds and a plain JVM does not, for the tests that
+// start a local SparkContext: FlareModuleAgentTest, and FlareDriverPluginTest (#240).
+lazy val sparkModuleOptions = Seq(
+  "java.lang", "java.lang.invoke", "java.lang.reflect", "java.io", "java.net", "java.nio",
+  "java.util", "java.util.concurrent", "java.util.concurrent.atomic", "sun.nio.ch", "sun.nio.cs",
+  "sun.security.action", "sun.util.calendar",
+).map(pkg => s"--add-opens=java.base/$pkg=ALL-UNNAMED")
 
 lazy val examples = (project in file("examples"))
   .settings(
