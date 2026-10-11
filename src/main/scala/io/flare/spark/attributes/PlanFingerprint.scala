@@ -69,26 +69,27 @@ object PlanFingerprint {
   private val LocationPattern = """Location: (\w+)(?:\(\d+ paths\))? ?\[[^\]]*\]""".r
 
   /**
-   * The start of a comparison with a column, in Catalyst's form, as in `Condition :` and
-   * `PartitionFilters:` (after expression ids are stripped): `(dt# = 2024-01-01)`, `(id# > 100)`,
-   * `(name# = abc)`. The operand after it is a literal unless it starts with a column reference, as a
-   * join key does; it runs to the comparison's closing parenthesis, so a string value printed with
-   * parentheses, `(s# = prefix(A))`, is one operand (#207). The space before the operand is matched
-   * possessively, or the engine backtracks over it and the column check sees a space.
+   * The end of a column and the operator after it, in Catalyst's form, as in `Condition :` and
+   * `PartitionFilters:`: `#19 = ` in `(dt#19 = 2024-01-01)`, `#16L > ` in `(id#16L > 100)`. The
+   * operand after it is a literal unless it mentions a column ([[ColumnMention]]), as a join key
+   * does; it runs to the comparison's closing parenthesis, so a string value printed with
+   * parentheses, `(s#9 = prefix(A))`, is one operand (#207). The space before the operand is
+   * matched possessively, so the check sees the operand, not a space.
    */
-  private val ColumnComparison = """[\w.]+#\s*(?:<=>|<=|>=|!=|=|<|>)\s*+""".r
+  private val ColumnComparison = """#\d+L?\s*(?:<=>|<=|>=|!=|=|<|>)\s*+""".r
 
   /**
-   * A column reference, once expression ids are stripped: a name and a `#` that nothing word-like
-   * follows, `b#` in `(a# = b#)` or `cast(b# as int)`. A literal can contain `#` too, but not like
-   * that: Spark prints `s = 'tag#east'` as `(s# = tag#east)` (#207).
+   * A column reference: Catalyst prints one as its name and expression id, `b#12` or `id#16L`. The
+   * literal patterns run before ids are stripped (#207), because only the id tells a column from a
+   * literal: after stripping, the column `b#` and the literal `C#` (`s = 'C#'`) look alike. Matching
+   * the id, not the name, also covers names `\w` would miss, such as `甲#7`.
    */
-  private val ColumnMention = """[\w.]+#(?!\w)""".r
+  private val ColumnMention = """#\d+L?(?!\w)""".r
 
   private def mentionsColumn(s: String): Boolean = ColumnMention.findFirstIn(s).isDefined
 
   /** `a# IN (b#,1,2)` in Catalyst's form: columns in the list stay, literals do not. */
-  private val ColumnIn = """[\w.]+#\s+IN\s+\(""".r
+  private val ColumnIn = """#\d+L?\s+IN\s+\(""".r
 
   /**
    * `a# INSET 1, 10, 11`: Spark's form for a literal list of more than ten values, all literals. Its
@@ -99,7 +100,7 @@ object PlanFingerprint {
    * `NOT b# INSET …` and `isnotnull(c#)` included, and a literal value does not, even one with a `#`
    * in it.
    */
-  private val ColumnInSet = """[\w.]+#\s+INSET\s+""".r
+  private val ColumnInSet = """#\d+L?\s+INSET\s+""".r
   private val InSetPattern = """\s+INSET\s+\?""".r
 
 
@@ -214,12 +215,8 @@ object PlanFingerprint {
 
   /** The normalised plan text. Exposed for tests; the fingerprint is what callers want. */
   private[attributes] def normalise(plan: String): String = {
-    val noExprIds = ExprIdPattern.replaceAllIn(plan, "#")
-    val noPlanIds = PlanIdPattern.replaceAllIn(noExprIds, "plan_id=")
-    val noCodegen = CodegenIdPattern.replaceAllIn(noPlanIds, "[codegen id]")
-    val noStats   = StatisticsPattern.replaceAllIn(noCodegen, "Statistics()")
-    // Literals and paths (#207): run after expression ids, which the column patterns rely on.
-    val noPaths   = LocationPattern.replaceAllIn(noStats, m => scala.util.matching.Regex.quoteReplacement(s"Location: ${m.group(1)}"))
+    // Literals and paths first (#207), while expression ids still mark which operands are columns.
+    val noPaths   = LocationPattern.replaceAllIn(plan, m => scala.util.matching.Regex.quoteReplacement(s"Location: ${m.group(1)}"))
     val noValues  = rewriteOperands(noPaths, ColumnComparison)(literal)
     val noInLists = rewriteOperands(noValues, ColumnIn)(inList)
     // An all-literal INSET normalises exactly as an all-literal IN, so a list's length does not
@@ -227,8 +224,13 @@ object PlanFingerprint {
     val noInSets  = InSetPattern.replaceAllIn(
       rewriteOperands(noInLists, ColumnInSet, atConnective = true)(_ => Some("?")), " IN (?)")
     val noPushed  = rewriteOperands(noInSets, PushedFilter)(_ => Some("?"))
-    PushedInPattern.replaceAllIn(noPushed, m => scala.util.matching.Regex.quoteReplacement(s"In(${m.group(1)}, [?])"))
+    val noLiterals = PushedInPattern.replaceAllIn(noPushed, m => scala.util.matching.Regex.quoteReplacement(s"In(${m.group(1)}, [?])"))
+    val noExprIds = ExprIdPattern.replaceAllIn(noLiterals, "#")
+    val noPlanIds = PlanIdPattern.replaceAllIn(noExprIds, "plan_id=")
+    val noCodegen = CodegenIdPattern.replaceAllIn(noPlanIds, "[codegen id]")
+    StatisticsPattern.replaceAllIn(noCodegen, "Statistics()")
   }
+
 
   /**
    * Fingerprint of a plan, or None when there is no plan to fingerprint.

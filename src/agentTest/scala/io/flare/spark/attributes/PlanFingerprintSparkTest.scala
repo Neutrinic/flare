@@ -102,4 +102,11 @@ class PlanFingerprintSparkTest extends FunSuite {
   test("a string value containing # is a literal: `s = 'tag#east'`") {
     assertEquals(PlanFingerprint.of(plan("s = 'tag#east'")), PlanFingerprint.of(plan("s = 'tag#west'")))
   }
+
+  test("a literal ending in # is a literal, and Unicode column names are columns") {
+    assertEquals(PlanFingerprint.of(plan("s = 'C#'")), PlanFingerprint.of(plan("s = 'F#'")))
+    val unicode = input.withColumnRenamed("b", "\u7532").withColumnRenamed("c", "\u4e59")
+    def uplan(cond: String) = unicode.filter(cond).queryExecution.explainString(ExplainMode.fromString("formatted"))
+    assertNotEquals(PlanFingerprint.of(uplan("a = `\u7532`")), PlanFingerprint.of(uplan("a = `\u4e59`")))
+  }
 }

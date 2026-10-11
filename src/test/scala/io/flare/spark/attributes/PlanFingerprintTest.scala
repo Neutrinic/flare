@@ -203,4 +203,12 @@ class PlanFingerprintTest extends FunSuite {
     assertEquals(PlanFingerprint.of("Condition : (s#9 = tag#east)"), PlanFingerprint.of("Condition : (s#9 = tag#west)"))
     assertEquals(PlanFingerprint.of("Condition : s#9 IN (tag#east,tag#north)"), PlanFingerprint.of("Condition : s#9 IN (tag#west)"))
   }
+
+  test("columns are told from literals by their expression id: Unicode names and literals ending in #") {
+    // Two different columns with names \w does not cover: a different comparison.
+    assertNotEquals(PlanFingerprint.of("Condition : (a#1 = \u7532#2)"), PlanFingerprint.of("Condition : (a#1 = \u4e59#3)"))
+    // Literals ending in #, which look like a column once ids are stripped: the same query.
+    assertEquals(PlanFingerprint.of("Condition : (s#9 = C#)"), PlanFingerprint.of("Condition : (s#9 = F#)"))
+    assertEquals(PlanFingerprint.normalise("Condition : (s#9 = C#)"), "Condition : (s# = ?)")
+  }
 }
