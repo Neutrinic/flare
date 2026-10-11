@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The plan fingerprint no longer changes with AQE's stage numbering.** AQE numbers its query
   stages in the order it creates them, which differs between runs, and the post-AQE
   `spark.sql.plan.fingerprint` included those numbers: over TPC-DS's queries run twice, 24 of 102
-  fingerprinted differently the second time. They are now removed, which leaves 7. The alerting page's plan-change
+  fingerprinted differently the second time. They are now removed, which leaves 7 to 10, varying by run. The alerting page's plan-change
   search groups by `spark.sql.plan.initial.fingerprint`, which was stable for every query: the
   post-AQE plan can still differ when AQE reuses a different copy of a repeated exchange ([#244])
 - **The `spark.application` span carries `spark.application.id`.** With Flare installed through

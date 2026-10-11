@@ -147,7 +147,7 @@ mean AQE changed anything. The initial fingerprint is the more stable grouping k
 fingerprint can still differ between two runs of the same query on the same data, when AQE reuses a
 different copy of an exchange the query computes twice. Over TPC-DS's queries, run twice in one
 application on the lab's three nodes, the initial fingerprint was the same for every query and the
-final one differed for 7 of 102. Group by the initial fingerprint to tell when a query changed, and use the
+final one differed for 7 to 10 of 102, varying from run to run. Group by the initial fingerprint to tell when a query changed, and use the
 final one to see what AQE made of it.
 
 ## Resource attributes
