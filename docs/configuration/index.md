@@ -10,7 +10,7 @@ agent's own `otel.*` keys, see [Exporting](exporting.md).
 | `FLARE_SAMPLING_RATIO` | | **Removed** in 1.3.0: it never had an effect ([#130](https://github.com/Neutrinic/flare/issues/130)). Ignored with a warning. See [Sampling](#sampling) |
 | `FLARE_SLOW_TASK_MS` | `0` (off) | Only emit task spans that took longer than this. Spans and log lines from inside tasks then sit under the stage span; see [Spans](../reference/spans.md) |
 | `FLARE_RETRY_TASKS_ONLY` | `false` | Only emit task spans for retries and speculative tasks |
-| `FLARE_TASK_STAGE_PATTERN` | none | Only emit task spans for stages whose name matches this regex, such as `.*Etl\.scala.*`. The regex must match the whole name, which is the call site, `collect at Etl.scala:42`. Set it on the **driver**: the driver decides as each stage is submitted, and the executors follow. See [Choosing stages](#choosing-stages-for-task-spans) |
+| `FLARE_TASK_STAGE_PATTERN` | none | Only emit task spans for stages whose name matches this regex, such as `.*Etl\.scala.*`, or `.*/etl[.]py:.*` for a PySpark script. The regex must match the whole name, which is the call site, `collect at Etl.scala:42`. Set it on the **driver**: the driver decides as each stage is submitted, and the executors follow. See [Choosing stages](#choosing-stages-for-task-spans) |
 | `FLARE_TASK_STAGES` | none | Only emit task spans for these stage ids, comma-separated, such as `7,12`. Read by the executors. Ids restart in every application and move when the code changes, so prefer the pattern |
 | `FLARE_MAX_SPANS_PER_TRACE` | `10000` | Circuit breaker for task spans, counted **per executor**, not per trace ([#101](https://github.com/Neutrinic/flare/issues/101)): each executor stops creating task spans once it has made this many in a trace, so a trace can hold up to this many per executor. Job and stage spans continue. On an application that runs for hours task spans stop partway; see [Telemetry volume](volume.md#flares-own-spans) |
 | `FLARE_METRICS_ENABLED` | `true` | Flare's metrics: task duration, shuffle bytes, stage aggregates |
@@ -42,6 +42,54 @@ some stages that adaptive execution adds are named after Spark's own call sites 
 
 With both set, a task needs both. Tasks the filters leave out still count in the task metrics; only
 their spans are dropped.
+
+Find the name in the Spark UI's Stages tab. The regex must match all of it, so start it with `.*`.
+Writing `[.]` for a dot, rather than `\.`, saves escaping the backslash inside
+`extraJavaOptions` and the shell.
+
+#### PySpark
+
+A stage carries your Python line when the action brings rows back to Python: DataFrame actions
+such as `collect`, `take`, `head`, `first`, `tail`, `toLocalIterator` and `toPandas`, and RDD
+actions. Actions that do not, such as writes, `count()` and `show()`, are named after the JVM side
+of the call, and a pattern on your script's name cannot select their stages:
+
+| Action | Stage name |
+|---|---|
+| `df.collect()`, `df.toPandas()`, `rdd.sum()` | The action and your line: `collect at /opt/jobs/etl.py:42` |
+| `df.write.parquet(...)` | `parquet at NativeMethodAccessorImpl.java:0` |
+| `df.count()`, `df.show()` | Spark's own frames, such as `$anonfun$withThreadLocalCaptured$2 at CompletableFuture.java:1768` |
+
+Match the script's file name, not its path: `.*/etl[.]py:.*`. The path is wherever the driver
+runs the script from, which changes between client and cluster mode and between schedulers. Add a
+line, `.*/etl[.]py:42`, to select one action; editing the script moves it.
+
+Selecting by job description, which covers these stages, is planned
+([#237](https://github.com/Neutrinic/flare/issues/237)).
+
+#### Jupyter
+
+In a Jupyter notebook, the name is the cell's: `collect at /tmp/ipykernel_141779/2448266874.py:1`.
+The directory changes with every kernel. The file name is a hash of the cell's code: it is the same
+in a new kernel, and changes when the cell is edited. `.*/2448266874[.]py:.*` selects that cell's
+stages until then. Set the pattern in `spark.driver.extraJavaOptions` on the session builder,
+before the first `getOrCreate()`, since the driver reads it at start-up.
+
+#### Databricks
+
+Databricks wraps PySpark's actions, so every Python stage is named `wrapper`, with your file and
+line after it. As [elsewhere](#pyspark), actions that bring rows back to Python carry them;
+`count()` and writes are named after Databricks' frames, such as
+`$anonfun$withThreadLocalCaptured$10 at LexicalThreadLocal.scala:63`.
+
+| Task | Stage name | Pattern |
+|---|---|---|
+| Python script | `wrapper at /Workspace/Users/me/etl.py:16` | `.*/etl[.]py:.*` |
+| Notebook | `wrapper at /root/.ipykernel/2188/command-8170623636178775-1586284934:1` | `.*/command-8170623636178775-.*` |
+
+In a notebook, the number after `command-` identifies the cell. It was the same on every cluster
+and runtime the cell ran on (DBR 15.4 and 17.3), while the directory changes with each cluster.
+Set the pattern in the cluster's `spark.driver.extraJavaOptions`.
 
 ## Sampling
 

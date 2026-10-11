@@ -60,6 +60,80 @@ ends when the cluster stops, so it is not there yet while the cluster is running
 
 Upgrade to 1.3.0, which drops them by default; see [Noise](configuration/noise.md).
 
+## When an executor's node dies
+
+When a node fails without warning (a hardware fault, an OOM kill of the machine, a spot reclaim
+with no notice), Spark recovers by rerunning the lost work elsewhere, and the trace stays whole:
+the dead executors' task spans keep their parents, and the removal is recorded on
+`flare.executor.removed` with reason `lost`. What the dead JVMs had not yet sent is lost:
+
+- **Task spans of the last few seconds.** Spans leave in batches, every 5 seconds by default
+  (`otel.bsp.schedule.delay`).
+- **Task metrics since the last export.** Executors flush a second after their last task, but a
+  busy executor never goes quiet, so a node dying mid-stage loses everything since its last export,
+  up to the 60-second interval (`otel.metric.export.interval`). In the lab, two killed executors
+  lost about half of their task metrics.
+- **The tasks it was running.** They end with `ExecutorLostFailure`, which only the driver sees.
+  Since 1.4 the driver counts them on `flare.task.lost`, labelled with the executor and why it was
+  lost; add it to the failed tasks for a task error rate.
+
+A graceful shutdown loses less, and how much depends on the kind:
+
+- **Spark's decommissioning** (`spark.decommission.enabled`) finishes the executor's running tasks
+  before it exits, then the executor flushes: nothing is lost. If
+  `spark.executor.decommission.forceKillTimeout` is set and runs out first, the executor is killed
+  with tasks still running, and loses what a SIGTERM does.
+- **A SIGTERM** (`kill`, a Kubernetes pod eviction without decommissioning) flushes what the
+  executor had finished, but not the tasks it was still running. Spark does not wait for them, so
+  their spans and duration metrics are never recorded; the driver counts them on `flare.task.lost`.
+
+To narrow the loss on sudden failures, lower `otel.bsp.schedule.delay` and
+`otel.metric.export.interval` on the executors, at the cost of more, smaller exports.
+
+## When the driver dies
+
+- **Killed outright** (`kill -9`, an OOM kill of the driver, a lost node): the root span and the
+  open job and stage spans are lost, so the trace has no root. Driver metrics since the last export
+  are lost too. Since 1.4 the driver flushes a second after its last job ends (three seconds if it
+  flushed in the previous 30), so a driver killed between jobs loses little; one killed mid-job loses
+  up to the export interval, and one killed in its first minute may have exported nothing. The
+  missed-run rule on the [Alerting](configuration/alerting.md#a-run-that-did-not-happen) page is
+  what notices a run that never reported.
+- **Stopped with SIGTERM** (an orchestrator's timeout, `yarn application -kill`, a deleted driver
+  pod, a Databricks job cluster's teardown): the root span and everything else arrive. Since 1.4 a
+  run killed while a job was still running records `application.result` as `FAILED`.
+
+## When the collector is unreachable
+
+Spark is unaffected: exports are asynchronous, and nothing waits on them.
+
+- **Metrics arrive complete,** with the agent's default cumulative temporality: the first export
+  after the collector comes back carries the totals. With delta temporality
+  (`otel.exporter.otlp.metrics.temporality.preference=DELTA`, or `LOWMEMORY`, which uses it for
+  synchronous counters and histograms), each export carries only its own interval, so what failed to
+  export is lost.
+- **Spans and logs sent while it is down are dropped.** The agent's exporters retry briefly, then
+  drop. In the lab, a collector that accepted connections but never answered kept 8% of spans and
+  18% of logs over 45 seconds; one that refused connections kept 33% and 27% over 30 seconds. A
+  hanging collector is worse, because each export waits for its timeout. Some loss continues for
+  about 15 seconds after the collector recovers.
+- **The root span arrives** if the collector is back before the application ends.
+
+The remedy is a collector close to Spark: an OpenTelemetry Collector on each node, or as a
+Kubernetes DaemonSet, that accepts locally and queues what it cannot forward to the central
+backend. Two settings on its exporter decide how long an outage it covers, and past either, data is
+still dropped:
+
+- `retry_on_failure.max_elapsed_time`: how long a batch is retried, five minutes by default. `0`
+  retries without limit.
+- `sending_queue.queue_size`: how much the queue holds. Size it for the longest outage to cover.
+
+With the `file_storage` extension the queue is kept on disk, so it also survives the collector
+restarting. See the Collector's [resiliency guide](https://opentelemetry.io/docs/collector/resiliency/).
+
+These measurements come from a TPC-H-derived workload on Spark 4.0.4 (data and queries generated
+with DuckDB's `tpch` extension). They describe Flare's behaviour, not TPC-H results.
+
 ## Checking logs on managed platforms
 
 Some platforms make logs unreliable for checking spans: Databricks cluster log delivery to a volume

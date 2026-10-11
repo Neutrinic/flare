@@ -4,7 +4,9 @@
     This recipe has not been run on HDInsight. The smallest HDInsight Spark cluster (two head nodes,
     three ZooKeeper nodes and workers) needs about 20 vCPUs, more than a new subscription's quota.
 
-HDInsight 5.1 is Spark 3.3 on YARN with Java 8, so it follows the [EMR](emr.md) recipe:
+HDInsight 5.1 is Spark 3.3 on YARN with Java 8. Spark 3.3 is deprecated in Flare 1.4 and its JARs
+end with 2.0; see [Upgrading](../upgrading.md#spark-33-is-deprecated). It follows the
+[EMR](emr.md) recipe:
 
 - a **script action** in place of EMR's bootstrap action puts both JARs at a fixed path on every
   node, such as `/opt/flare`;
