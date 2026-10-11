@@ -27,9 +27,6 @@ class StagePatternAgentTest extends FunSuite {
     val props = Map("FLARE_TRACE_GRANULARITY" -> granularity, "FLARE_TASK_STAGE_PATTERN" -> pattern) ++
       stageIds.map("FLARE_TASK_STAGES" -> _)
     props.foreach { case (k, v) => sys.props(k) = v }
-    // A SparkContext started earlier in this JVM without spark.plugins leaves Flare's driver state
-    // initialised after it stops, and this context would inherit its listener and config (#232).
-    io.flare.spark.plugin.FlareDriverState.shutdown()
     StagePatternAgentTest.seen.clear()
     try StubCollector.during {
       val conf = new SparkConf()
