@@ -7,6 +7,145 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-11
+
+### Added
+- **Job and application outcome metrics:** `flare.job.duration` (one point per job, labelled
+  `job.result` and the query's `sql.description`) and `flare.application.duration` (one point when
+  the application ends, labelled `application.result`), with `flare.application.end_time`, when it
+  ended, to put runs in order. A scheduled pipeline can be alerted on from metrics: whether a run
+  happened, failed, or ran longer than usual. `application.result` is `FAILED` when any job failed
+  or was still running when the application ended, as in a run killed by a timeout, since Spark
+  reports no result for an application ([#168], [#197], [#202])
+- **`flare.task.lost` counts tasks lost with their executor.** Task metrics are recorded on the
+  executor, so a task whose executor died (killed, out of memory, preempted) was counted nowhere,
+  and the task error rate missed exactly those failures. The driver now counts them, labelled with
+  the executor and the bucketed reason, as `flare.executor.removed` is ([#200])
+- **Job spans name the Databricks job run and task run that submitted them.**
+  `databricks.job.id`, `databricks.job.run_id` and `databricks.task.run_id`, from the properties
+  Databricks sets on every job. On a shared job cluster every task and retry runs in one Spark
+  application; these tell their work apart, and a failed try from its retry. The Databricks and
+  Alerting pages explain what the application-level outcome means there ([#203])
+- **`FLARE_ERROR_MESSAGE_MAX_CHARS` and `FLARE_STACKTRACE_MAX_CHARS`** cap a failure's message
+  (default 500) and stack trace (default 8000), the sizes Flare used before. `0` stops Flare
+  emitting the field; omitting the message omits the stack trace too, since it quotes the message. The Privacy page now separates size limiting, field omission and content
+  redaction: only `0` keeps a value inside the process ([#90])
+- **Troubleshooting for failures:** what Flare's telemetry loses when an executor's node dies,
+  when the driver dies (killed, or stopped with SIGTERM) and when the collector is unreachable, as
+  measured on the lab, and the settings and collector set-up that narrow the loss ([#235])
+- **Choosing stages for task spans in PySpark, Jupyter and Databricks:** what their stage names
+  look like, which actions carry your line, and a pattern for each, as measured on the lab and on
+  Databricks ([#235])
+- **Example alert rules and an Alerting page.** `alerting/flare-rules.yml` holds Prometheus rules
+  for scheduled pipelines (a failed run, resolved by a retry that succeeds; a failed query; a query
+  twice as slow as last week; a query reading under half of yesterday's input) and executors lost
+  for reasons other than a scale-down, with promtool unit tests that CI runs. The page explains
+  each threshold, gives the missed-run rule as a per-pipeline template, and lists TraceQL searches
+  for what only spans carry: spill, GC, scheduler delay, retries, failed stages, changed query plans
+  ([#92], [#168], [#202])
+
+### Changed
+- **OpenTelemetry Java agent 2.31.1**, with the bundled API at 1.65.0, the version the agent is
+  built on, rather than the newer 1.66.0, which no agent bridges yet. Use agent 2.31.1 with this
+  release ([#169])
+- **Duration histograms resolve long tasks and stages.** They used the SDK's default buckets,
+  which stop at 10 s, so longer tasks and stages all landed in the overflow bucket and percentiles
+  stopped at 10 s. New boundaries reach an hour per task and a day of summed stage time; records
+  throughput reaches 100 million records a second. Queries naming an `le` value that is no longer
+  a boundary need changing; the upgrading notes list them ([#180])
+
+### Deprecated
+- **Spark 3.3.** It is no longer maintained upstream (its last release, 3.3.4, was in December
+  2023). 1.4 still publishes and tests the `flare-spark-3-3` JARs; 2.0 will not ([#235])
+
+### Fixed
+- **`FLARE_SLOW_TASK_MS` no longer orphans spans or log lines.** A task's span was current while it
+  ran, so spans made inside the task (a JDBC query, an HTTP call) and its log lines pointed at it,
+  and when the task finished under the threshold the span was dropped, leaving them pointing at
+  nothing. Under the filter the task span is no longer current: they sit under the stage span,
+  which is always exported. Without the filter nothing changes ([#100])
+- **The shipped dashboard works in any Grafana**, not only the local stack. It hard-coded the
+  local stack's data sources, and read metric names without units, which only Mimir stores;
+  Prometheus and the `grafana/otel-lgtm` image store `flare_task_duration_milliseconds_bucket`,
+  so every panel was empty. It now asks for its metrics, logs and traces data sources, reads either
+  naming, and filters every panel, the logs and the trace list by the services picked at the top,
+  so other applications in the same backend no longer count ([#164])
+- **Tasks run inside their stage's trace context again at the default granularity.** Under the
+  real agent the context restoration around each task failed silently, so at `stages` (the
+  default) and `jobs`, spans made inside a task started their own traces and were dropped, and
+  executor log lines carried no trace or span id. Log correlation therefore only worked with task
+  spans on (`tasks` or `all`), where the executor plugin opens its own scope. The advice passed an
+  OpenTelemetry `Scope` to its helper, and the agent's relocation of OpenTelemetry types in the
+  advice no longer matched the helper on the application classpath ([#173])
+- **`FLARE_TRACE_GRANULARITY=jobs` works as described.** Flare still created a span for every
+  stage, which was never ended or exported and was kept for the life of the driver, and sent its id
+  to the tasks, so executor log lines pointed at a span no backend received. Tasks now run in their
+  job's context. Turning stage spans off also turned the stage metrics off; they are recorded at
+  every granularity now, labelled with the query's description ([#174], [#177])
+- **A failed SQL execution's span is marked failed**, with the exception's type, message and stack
+  trace, as failed jobs are. It was always `OK`, and a query that failed before any job started
+  left no failed span at all ([#175])
+- **`FLARE_ENABLED=false` turns off the executors' task metrics too.** Spans honoured the kill
+  switch, but executors still recorded `flare.task.*` ([#176])
+- **Jobs stay under their SQL execution when Spark's listener bus is busy.** The SQL span was
+  created only when the execution's start event reached Flare's listener; a job scheduled before
+  that was parented to the application for good, so the query and its jobs became siblings. The
+  span is now created by whichever side sees the execution first ([#178])
+- **Cached-storage totals no longer drift** (`FLARE_TRACK_BLOCK_UPDATES=true`). Spark reports a
+  block's state each time it changes, and Flare added every report, so a block reported twice
+  counted twice and a dropped block left its size behind. Each block's last sizes are kept and only
+  the change is recorded, and a removed block manager's blocks leave the totals ([#179])
+- **A decommissioned executor is counted once.** Spark removes it twice, as decommissioned and then
+  as exited when its process ends, and both were counted: `flare.executor.count` drifted down by one
+  per decommissioned executor, and the `exited` removals fed `FlareExecutorsLost`, so a scale-down
+  of three or more by decommissioning (Kubernetes, spot reclaims) fired it. Only the first removal
+  of an executor counts now ([#196])
+- **Tasks Spark killed are `KILLED`, not failures.** Under speculation Spark kills the slower copy
+  of a task once another succeeds, and it kills the tasks of a cancelled job or stage. They were
+  recorded as `task.result=FAILED` with error spans, so healthy runs showed task errors. They now
+  record `KILLED`, with no error status and why in `spark.task.kill_reason`
+  (`another_attempt_succeeded`, `stage_finished`, `cancelled` or `other`); see
+  [Upgrading](https://neutrinic.github.io/flare/latest/upgrading/) ([#198], [#227])
+- **The driver flushes its metrics once its jobs stop.** It exported only every 60 seconds or at
+  shutdown, so a driver that died lost up to a minute of job, stage and executor metrics, and all
+  of them in its first minute. Like executors after their last task, the driver now flushes a second
+  after its last job ends, or three seconds if it flushed in the previous 30 ([#199])
+- **Tasks run under their own stage when a job runs two stages at once.** An RDD `join` or
+  `cogroup`, or SQL with adaptive execution off, submits several stages together, and Spark gives
+  all of them one set of task properties. Each stage's trace context overwrote the last, so one
+  stage's tasks, the spans made inside them and their log lines landed under another stage. Each
+  stage's context now also travels under its own key, `flare.stage.<id>.traceparent`, which PySpark
+  code reading the context should prefer ([#204])
+- **The `sql.description` metric label is capped.** `FLARE_SQL_DESCRIPTION_MAX_CHARS` capped only
+  the span attribute, so under the Thrift server and the `spark-sql` CLI, where the description is
+  the SQL statement, the label carried the whole statement: past the 2,048 characters Mimir and
+  similar backends accept, and literals included. The cap now applies to the label too, which is
+  also kept under 2,048 bytes in UTF-8 whatever the cap, and `0` drops it ([#205])
+- **`FLARE_ENABLED=false` no longer turns the agent's full instrumentation back on.** Disabling
+  Flare also dropped the defaults it gives the agent, so the agent traced every S3 or GCS request
+  and the platform's HTTP calls, unfiltered: more telemetry than with Flare on. The agent defaults
+  and the non-Spark root filter now stay; only Flare's own telemetry stops ([#206])
+- **A query's plan fingerprint no longer changes with its literal values or input paths.** A daily
+  job filtering on the day's date got a new `spark.sql.plan.fingerprint` every run, which broke
+  grouping across runs and made the Alerting page's plan-change search flag every such job daily.
+  Filter values, the literals in `IN` lists, pushed-down filter values and scan paths are now
+  removed before hashing; columns, operators, join keys and columns in `IN` lists still count. Fingerprints change once on upgrade; see
+  [Upgrading](https://neutrinic.github.io/flare/latest/upgrading/) ([#207])
+- **`FLARE_TASK_STAGE_PATTERN` works.** It was matched on the executors, which never see a stage's
+  name, so it had no effect. The driver now decides as each stage is submitted, from its name (the
+  call site, such as `collect at Etl.scala:42`), and the stage's tasks follow; set it on the driver.
+  With `FLARE_TASK_STAGES` too, a task needs both. Both settings are now documented ([#208])
+- **Executors that registered before Flare are counted.** Installed through the agent alone,
+  Flare's listener starts as the SparkContext finishes starting, after Spark has waited for most
+  executors to register on YARN and Kubernetes, and local mode's executor is always among them.
+  `flare.executor.count` missed all of them, and went negative as they were removed. Flare now
+  counts the executors already registered when it starts ([#224])
+- **A second SparkContext in one JVM gets driver telemetry.** Installed through the agent alone,
+  stopping a SparkContext left Flare's driver state initialised, so the next SparkContext in the
+  same JVM, as after `spark.stop()` and `getOrCreate()` in a notebook, inherited the stopped one's
+  listener and got no job, stage, SQL or application spans and no driver metrics. The next
+  SparkContext now releases state whose SparkContext has stopped, and initialises its own ([#232])
+
 ## [1.3.0] - 2026-09-29
 
 ### Added
@@ -512,7 +651,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SkewedJob` example with intentional data skew for visual trace inspection
 - 8 unit/integration tests (listener, propagator, config, end-to-end)
 
-[Unreleased]: https://github.com/Neutrinic/flare/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Neutrinic/flare/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/Neutrinic/flare/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Neutrinic/flare/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Neutrinic/flare/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Neutrinic/flare/compare/v1.0.0...v1.1.0
@@ -527,41 +667,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#7]: https://github.com/Neutrinic/flare/issues/7
 [#8]: https://github.com/Neutrinic/flare/issues/8
 [#9]: https://github.com/Neutrinic/flare/issues/9
-[#14]: https://github.com/Neutrinic/flare/issues/14
-[#15]: https://github.com/Neutrinic/flare/issues/15
 [#10]: https://github.com/Neutrinic/flare/issues/10
 [#11]: https://github.com/Neutrinic/flare/issues/11
+[#14]: https://github.com/Neutrinic/flare/issues/14
+[#15]: https://github.com/Neutrinic/flare/issues/15
 [#26]: https://github.com/Neutrinic/flare/issues/26
 [#42]: https://github.com/Neutrinic/flare/issues/42
 [#44]: https://github.com/Neutrinic/flare/issues/44
 [#45]: https://github.com/Neutrinic/flare/issues/45
+[#46]: https://github.com/Neutrinic/flare/issues/46
+[#47]: https://github.com/Neutrinic/flare/issues/47
 [#48]: https://github.com/Neutrinic/flare/issues/48
 [#49]: https://github.com/Neutrinic/flare/issues/49
 [#50]: https://github.com/Neutrinic/flare/issues/50
-[#75]: https://github.com/Neutrinic/flare/issues/75
-[#79]: https://github.com/Neutrinic/flare/issues/79
-[#55]: https://github.com/Neutrinic/flare/issues/55
-[#46]: https://github.com/Neutrinic/flare/issues/46
-[#47]: https://github.com/Neutrinic/flare/issues/47
 [#52]: https://github.com/Neutrinic/flare/issues/52
 [#53]: https://github.com/Neutrinic/flare/issues/53
 [#54]: https://github.com/Neutrinic/flare/issues/54
+[#55]: https://github.com/Neutrinic/flare/issues/55
 [#57]: https://github.com/Neutrinic/flare/issues/57
 [#58]: https://github.com/Neutrinic/flare/issues/58
 [#61]: https://github.com/Neutrinic/flare/issues/61
 [#65]: https://github.com/Neutrinic/flare/issues/65
 [#67]: https://github.com/Neutrinic/flare/issues/67
 [#70]: https://github.com/Neutrinic/flare/issues/70
-[#103]: https://github.com/Neutrinic/flare/issues/103
-[#107]: https://github.com/Neutrinic/flare/issues/107
+[#75]: https://github.com/Neutrinic/flare/issues/75
+[#79]: https://github.com/Neutrinic/flare/issues/79
 [#83]: https://github.com/Neutrinic/flare/issues/83
+[#89]: https://github.com/Neutrinic/flare/issues/89
+[#90]: https://github.com/Neutrinic/flare/issues/90
+[#92]: https://github.com/Neutrinic/flare/issues/92
 [#100]: https://github.com/Neutrinic/flare/issues/100
+[#101]: https://github.com/Neutrinic/flare/issues/101
+[#103]: https://github.com/Neutrinic/flare/issues/103
 [#104]: https://github.com/Neutrinic/flare/issues/104
+[#107]: https://github.com/Neutrinic/flare/issues/107
 [#109]: https://github.com/Neutrinic/flare/issues/109
 [#111]: https://github.com/Neutrinic/flare/issues/111
 [#114]: https://github.com/Neutrinic/flare/issues/114
-[#89]: https://github.com/Neutrinic/flare/issues/89
-[#101]: https://github.com/Neutrinic/flare/issues/101
 [#120]: https://github.com/Neutrinic/flare/issues/120
 [#122]: https://github.com/Neutrinic/flare/issues/122
 [#123]: https://github.com/Neutrinic/flare/issues/123
@@ -575,4 +717,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#145]: https://github.com/Neutrinic/flare/issues/145
 [#148]: https://github.com/Neutrinic/flare/issues/148
 [#164]: https://github.com/Neutrinic/flare/issues/164
+[#168]: https://github.com/Neutrinic/flare/issues/168
+[#169]: https://github.com/Neutrinic/flare/issues/169
 [#173]: https://github.com/Neutrinic/flare/issues/173
+[#174]: https://github.com/Neutrinic/flare/issues/174
+[#175]: https://github.com/Neutrinic/flare/issues/175
+[#176]: https://github.com/Neutrinic/flare/issues/176
+[#177]: https://github.com/Neutrinic/flare/issues/177
+[#178]: https://github.com/Neutrinic/flare/issues/178
+[#179]: https://github.com/Neutrinic/flare/issues/179
+[#180]: https://github.com/Neutrinic/flare/issues/180
+[#196]: https://github.com/Neutrinic/flare/issues/196
+[#197]: https://github.com/Neutrinic/flare/issues/197
+[#198]: https://github.com/Neutrinic/flare/issues/198
+[#199]: https://github.com/Neutrinic/flare/issues/199
+[#200]: https://github.com/Neutrinic/flare/issues/200
+[#202]: https://github.com/Neutrinic/flare/issues/202
+[#203]: https://github.com/Neutrinic/flare/issues/203
+[#204]: https://github.com/Neutrinic/flare/issues/204
+[#205]: https://github.com/Neutrinic/flare/issues/205
+[#206]: https://github.com/Neutrinic/flare/issues/206
+[#207]: https://github.com/Neutrinic/flare/issues/207
+[#208]: https://github.com/Neutrinic/flare/issues/208
+[#224]: https://github.com/Neutrinic/flare/issues/224
+[#227]: https://github.com/Neutrinic/flare/issues/227
+[#232]: https://github.com/Neutrinic/flare/issues/232
+[#235]: https://github.com/Neutrinic/flare/issues/235
