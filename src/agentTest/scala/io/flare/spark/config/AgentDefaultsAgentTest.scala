@@ -11,7 +11,8 @@ import java.util.concurrent.{Executors, LinkedBlockingQueue, TimeUnit}
 /**
  * Flare turns the agent's own instrumentations off by default, keeping only what Flare and the
  * user's code need (#145). These run under the real agent with Flare as its extension, and none of
- * the build's options touch the instrumentation switches, so what they see is Flare's defaults.
+ * the build's options touch the instrumentation switches, so what they see is Flare's defaults. The
+ * build runs them a second time with FLARE_ENABLED=false, which must keep the defaults (#206).
  */
 class AgentDefaultsAgentTest extends FunSuite {
 

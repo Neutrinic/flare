@@ -7,7 +7,8 @@ import munit.FunSuite
 /**
  * Proves the real agent picks up Flare's sampler on the driver (#123). This test JVM has no
  * executor id, so the agent sees a driver. The unit test covers the sampler's decisions; this
- * covers that `FlareAutoConfig` actually installs it.
+ * covers that `FlareAutoConfig` actually installs it. The build runs it a second time with
+ * FLARE_ENABLED=false, which must keep the sampler (#206).
  */
 class SparkRootSamplerAgentTest extends FunSuite {
 
