@@ -141,6 +141,8 @@ class PlanFingerprintTest extends FunSuite {
     assertEquals(PlanFingerprint.of(today), PlanFingerprint.of(yesterday))
   }
 
+  // Guard, not evidence: the old normalisation passed this too, since it kept every literal. It
+  // checks the fix did not over-normalise, erasing what tells two queries apart.
   test("filtering a different column, or with a different operator, still fingerprints differently") {
     val base      = ordersPlan("2024-01-01", "100", "abc", "9.99")
     val otherCol  = base.replace("(id#16L > 100)", "(name#17 > 100)").replace("GreaterThan(id,100)", "GreaterThan(name,100)")
@@ -149,6 +151,8 @@ class PlanFingerprintTest extends FunSuite {
     assertNotEquals(PlanFingerprint.of(otherOp), PlanFingerprint.of(base))
   }
 
+  // Guard, not evidence: the old normalisation passed this too, since it kept every literal. It
+  // checks the fix did not over-normalise, erasing what tells two queries apart.
   test("a comparison between two columns, such as a join key, is kept") {
     val byCustomer = "SortMergeJoin [o_custkey#1L], [c_custkey#2L], Inner, ((o_custkey#1L = c_custkey#2L))"
     val byNation   = "SortMergeJoin [o_custkey#1L], [c_custkey#2L], Inner, ((o_custkey#1L = c_nationkey#2L))"
@@ -167,6 +171,8 @@ class PlanFingerprintTest extends FunSuite {
     assertEquals(PlanFingerprint.of(a), PlanFingerprint.of(b))
   }
 
+  // Guard, not evidence: the old normalisation passed this too, since it kept every literal. It
+  // checks the fix did not over-normalise, erasing what tells two queries apart.
   test("an operand that mentions a column is kept, however it is wrapped") {
     val cast  = "Condition : (a#1 = cast(b#2 as int))"
     val other = "Condition : (a#1 = cast(c#3 as int))"
