@@ -80,7 +80,9 @@ the dead executors' task spans keep their parents, and the removal is recorded o
 A graceful shutdown loses less, and how much depends on the kind:
 
 - **Spark's decommissioning** (`spark.decommission.enabled`) finishes the executor's running tasks
-  before it exits, then the executor flushes: nothing is lost.
+  before it exits, then the executor flushes: nothing is lost. If
+  `spark.executor.decommission.forceKillTimeout` is set and runs out first, the executor is killed
+  with tasks still running, and loses what a SIGTERM does.
 - **A SIGTERM** (`kill`, a Kubernetes pod eviction without decommissioning) flushes what the
   executor had finished, but not the tasks it was still running. Spark does not wait for them, so
   their spans and duration metrics are never recorded; the driver counts them on `flare.task.lost`.
@@ -105,8 +107,11 @@ To narrow the loss on sudden failures, lower `otel.bsp.schedule.delay` and
 
 Spark is unaffected: exports are asynchronous, and nothing waits on them.
 
-- **Metrics arrive complete.** They are cumulative, so the first export after the collector comes
-  back carries the totals.
+- **Metrics arrive complete,** with the agent's default cumulative temporality: the first export
+  after the collector comes back carries the totals. With delta temporality
+  (`otel.exporter.otlp.metrics.temporality.preference=DELTA`, or `LOWMEMORY`, which uses it for
+  synchronous counters and histograms), each export carries only its own interval, so what failed to
+  export is lost.
 - **Spans and logs sent while it is down are dropped.** The agent's exporters retry briefly, then
   drop. In the lab, a collector that accepted connections but never answered kept 8% of spans and
   18% of logs over 45 seconds; one that refused connections kept 33% and 27% over 30 seconds. A
