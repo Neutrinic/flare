@@ -179,8 +179,9 @@ class TracingSparkListener(
       span.setLong(Job.StageCount, event.stageIds.size.toLong)
       Option(event.properties.getProperty("spark.job.description"))
         .foreach(span.setAttribute(Job.Description, _))
-      Databricks.FromProperties.foreach { case (key, property) =>
-        Option(event.properties.getProperty(property)).filter(_.nonEmpty).foreach(span.setAttribute(key, _))
+      Databricks.FromProperties.foreach { case (key, properties) =>
+        properties.flatMap(p => Option(event.properties.getProperty(p)).filter(_.nonEmpty)).headOption
+          .foreach(span.setAttribute(key, _))
       }
 
       activeJobSpans.put(event.jobId, span)

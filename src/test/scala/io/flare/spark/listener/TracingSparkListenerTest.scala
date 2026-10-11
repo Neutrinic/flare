@@ -395,6 +395,24 @@ class TracingSparkListenerTest extends FunSuite {
     }
   }
 
+  test("on DBR 17.3 the task run is read from taskRunId, since runId there holds the job run (#241)") {
+    withListener { (listener, exporter) =>
+      // As DBR 17.3 sets them: runId repeats the job run, and taskRunId is the task's own run.
+      val start = makeJobStart(0, Seq(0))
+      start.properties.setProperty("spark.databricks.job.id", "122773013520786")
+      start.properties.setProperty("spark.databricks.job.parentRunId", "396922081313054")
+      start.properties.setProperty("spark.databricks.job.runId", "396922081313054")
+      start.properties.setProperty("spark.databricks.job.taskRunId", "662467790653028")
+      listener.onJobStart(start)
+      listener.onJobEnd(makeJobEnd(0, succeeded = true))
+      listener.shutdown()
+
+      val job = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.job.0").get.getAttributes
+      assertEquals(job.get(Databricks.JobRunId), "396922081313054")
+      assertEquals(job.get(Databricks.TaskRunId), "662467790653028")
+    }
+  }
+
   test("stage span uses correct job parent via reverse index") {
     withListener { (listener, exporter) =>
       // Two concurrent jobs, each with its own stage
