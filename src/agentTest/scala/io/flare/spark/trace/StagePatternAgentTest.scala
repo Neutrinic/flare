@@ -22,9 +22,9 @@ import munit.FunSuite
 class StagePatternAgentTest extends FunSuite {
 
   /** Per task attempt: (operation the stage ends in, attempt number, traced, the stage's marker). */
-  private def run(pattern: String, plugins: Boolean, stageIds: Option[String] = None,
+  private def run(pattern: String, plugins: Boolean, stageIds: Option[String] = None, granularity: String = "all",
                   failFirstAttempt: Boolean = false, slowListener: Boolean = false): Seq[(String, Int, Boolean, String)] = {
-    val props = Map("FLARE_TRACE_GRANULARITY" -> "all", "FLARE_TASK_STAGE_PATTERN" -> pattern) ++
+    val props = Map("FLARE_TRACE_GRANULARITY" -> granularity, "FLARE_TASK_STAGE_PATTERN" -> pattern) ++
       stageIds.map("FLARE_TASK_STAGES" -> _)
     props.foreach { case (k, v) => sys.props(k) = v }
     // A SparkContext started earlier in this JVM without spark.plugins leaves Flare's driver state
@@ -93,6 +93,13 @@ class StagePatternAgentTest extends FunSuite {
   test("a lagging listener bus does not change the decisions") {
     assertEquals(tracedBy(run("map at .*", plugins = true, slowListener = true)),
       Map("map" -> Set(true), "keyBy" -> Set(false)))
+  }
+
+  test("a driver at jobs granularity still decides, for executors that trace tasks") {
+    // Driver and executors read their granularity separately; this JVM is both, so the driver's
+    // decision is checked as the marker the tasks receive.
+    assertEquals(markersBy(run("map at .*", plugins = true, granularity = "jobs")),
+      Map("map" -> Set[String](null), "keyBy" -> Set("false")))
   }
 }
 
