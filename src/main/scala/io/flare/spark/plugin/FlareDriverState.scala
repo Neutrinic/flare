@@ -47,6 +47,10 @@ object FlareDriverState {
    */
   private[spark] def tracesStages: Boolean = listener.forall(_.tracesStages)
 
+  /** `FLARE_TASK_STAGE_PATTERN`'s verdict on a stage, from the driver's config (#208). */
+  private[spark] def tracesTasksOfStage(stageName: String): Boolean =
+    listener.forall(_.tracesTasksOfStage(stageName))
+
   /**
    * Attempt to initialize. Returns true if this call performed the initialization,
    * false if it was already done by another path.

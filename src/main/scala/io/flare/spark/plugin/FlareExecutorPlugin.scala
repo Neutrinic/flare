@@ -89,15 +89,6 @@ class FlareExecutorPlugin extends ExecutorPlugin {
     logger.info(s"[Flare] Executor plugin initialized (executorId=$executorId, granularity=${config.granularity}, " +
       s"maxSpans=${config.maxSpansPerTrace}, " +
       s"taskTracing=${config.tracesTasks}, metrics=${config.enabled && config.metricsEnabled})")
-
-    // Stage name is not available on the executor in Phase 1 (ExecutorPlugin has no access to
-    // stage metadata — only stageId from TaskContext). Warn if someone configures the pattern
-    // filter so they don't silently get no matches.
-    if (config.taskStagePattern.isDefined) {
-      logger.warn("[Flare] FLARE_TASK_STAGE_PATTERN is configured but stage names are not " +
-        "available on executor in Phase 1. The pattern filter will have no effect — use " +
-        "FLARE_TASK_STAGES (stage IDs) instead, or wait for Phase 2 ByteBuddy instrumentation.")
-    }
   }
 
   override def onTaskStart(): Unit = {
@@ -128,8 +119,13 @@ class FlareExecutorPlugin extends ExecutorPlugin {
                              // Speculative tasks have attemptNumber > 0, so the retry filter
                              // handles them. True speculative detection needs Phase 2 ByteBuddy.
       stageId       = taskContext.stageId(),
-      stageName     = "",    // stage name not available on executor until Phase 2
+      stageName     = "",    // the executor has no stage name; the driver decides, below
     )) return
+
+    // FLARE_TASK_STAGE_PATTERN, decided by the driver from the stage's name as it was submitted
+    // (#208), and AND-ed with the filters above. Only this task's own stage key is read. The task
+    // is still measured: its metric state was armed above.
+    if (taskContext.getLocalProperty(LocalPropertyPropagator.stageTasksKey(taskContext.stageId())) == "false") return
 
     val parentContext = LocalPropertyPropagator.extract(taskContext)
 

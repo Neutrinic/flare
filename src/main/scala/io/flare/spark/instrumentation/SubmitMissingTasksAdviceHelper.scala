@@ -68,6 +68,7 @@ object SubmitMissingTasksAdviceHelper {
   private var jobIdToActiveJobField: java.lang.reflect.Field = _
   private var stageIdMethod: java.lang.reflect.Method = _
   private var stageParentsMethod: java.lang.reflect.Method = _
+  private var stageNameMethod: java.lang.reflect.Method = _
   private var propertiesMethod: java.lang.reflect.Method = _
 
   private def ensureReflection(dagScheduler: Any): Boolean = {
@@ -90,6 +91,9 @@ object SubmitMissingTasksAdviceHelper {
         // Stage.parents: the stages this one reads from, finished before it is submitted
         stageParentsMethod = Class.forName("org.apache.spark.scheduler.Stage")
           .getMethod("parents")
+        // Stage.name: the call site, `collect at Etl.scala:42`, as StageInfo.name has it
+        stageNameMethod = Class.forName("org.apache.spark.scheduler.Stage")
+          .getMethod("name")
 
         // ActiveJob.properties — public getter on package-private class
         propertiesMethod = Class.forName("org.apache.spark.scheduler.ActiveJob")
@@ -178,6 +182,23 @@ object SubmitMissingTasksAdviceHelper {
           .startSpan()
       }
 
+      // FLARE_TASK_STAGE_PATTERN (#208): decided here, where the stage's name is known and before
+      // its tasks are created, and recorded under the stage's own key for its tasks to read.
+      // Recomputed on every submission, so a resubmitted stage gets a current decision; a stage
+      // the pattern admits carries no key. Not in onStageSubmitted: that runs later, on the
+      // listener bus, and Spark gives it a copy of the properties, not the ones the tasks get.
+      // At every granularity: the driver's and the executors' are set separately, so a driver at
+      // `jobs` can have executors tracing tasks, which still need the decision.
+      val tasksKey = LocalPropertyPropagator.stageTasksKey(stageId)
+      if (FlareDriverState.tracesTasksOfStage(stageNameMethod.invoke(stage).asInstanceOf[String]))
+        props.remove(tasksKey)
+      else props.setProperty(tasksKey, "false")
+      // This stage's parents have finished, so all their tasks have launched: drop their keys, or
+      // every later task of the job would carry them.
+      stageParentsMethod.invoke(stage).asInstanceOf[scala.collection.Iterable[AnyRef]].foreach { parent =>
+        LocalPropertyPropagator.removeStage(props, stageIdMethod.invoke(parent).asInstanceOf[java.lang.Integer].intValue())
+      }
+
       // At `jobs` granularity there are no stage spans: the listener would never adopt one, so it
       // would never be ended, and the tasks would carry the id of a span no backend ever sees
       // (#174). The tasks run in the job's context instead.
@@ -207,11 +228,6 @@ object SubmitMissingTasksAdviceHelper {
       // would launch its tasks under this stage (#204).
       val stageCtx = Context.root().`with`(stageSpan)
       LocalPropertyPropagator.injectForStage(stageCtx, props, stageId)
-      // This stage's parents have finished, so all their tasks have launched: drop their keys, or
-      // every later task of the job would carry them.
-      stageParentsMethod.invoke(stage).asInstanceOf[scala.collection.Iterable[AnyRef]].foreach { parent =>
-        LocalPropertyPropagator.removeStage(props, stageIdMethod.invoke(parent).asInstanceOf[java.lang.Integer].intValue())
-      }
 
       logger.fine(s"[Flare] submitMissingTasks: jobId=$jobId stageId=$stageId traceparent injected")
     } catch {
