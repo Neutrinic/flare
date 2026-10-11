@@ -126,6 +126,21 @@ object FlareDriverState {
     if (endOpenSpans()) TelemetryFlush.flush("driver shutdown", verbose = true)
 
   /**
+   * Called by a listener when its application ends: if that listener owns the driver state, the
+   * state is ended, flushed and cleared (#232). Installed through the agent alone nothing else
+   * clears it when a SparkContext stops (the plugin's shutdown does, on the other path), and the
+   * next SparkContext in the JVM would find Flare already initialised with the stopped context's
+   * listener, and get no driver telemetry. A listener that does not own the state changes nothing.
+   */
+  private[spark] def applicationEnded(by: TracingSparkListener): Unit = {
+    val ended = synchronized { listener.exists(_ eq by) && endOpenSpans() }
+    if (ended) TelemetryFlush.flush("application end", verbose = true)
+  }
+
+  /** The listener that owns the driver state, if any. For tests. */
+  private[spark] def currentListener: Option[TracingSparkListener] = listener
+
+  /**
    * Ends Flare's open spans, including the root, and clears state. Returns true if this call did
    * it, false if there was nothing to end.
    *

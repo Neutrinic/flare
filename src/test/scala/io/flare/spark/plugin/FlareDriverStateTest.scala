@@ -191,4 +191,17 @@ class FlareDriverStateTest extends FunSuite {
       assertEquals(flushes.get(), 0, "a flush ran after shutdown")
     } finally FlareDriverState.idleFlushAction = () => TelemetryFlush.flush("driver idle")
   }
+
+  // ── Application end (#232) ──────────────────────────────────────────────────
+
+  test("the owning listener's application end clears the state; another listener's does not") {
+    val owner  = new TracingSparkListener(tracer, testConfig)
+    val other  = new TracingSparkListener(tracer, testConfig)
+    FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), owner)
+    FlareDriverState.applicationEnded(other)
+    assert(FlareDriverState.initialized, "a listener that does not own the state cleared it")
+    FlareDriverState.applicationEnded(owner)
+    assert(!FlareDriverState.initialized, "the owner's application end left the state initialised")
+    assertEquals(FlareDriverState.currentListener, None)
+  }
 }
