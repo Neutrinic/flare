@@ -16,7 +16,9 @@ class PlanFingerprintSparkTest extends FunSuite {
   private var spark: SparkSession = _
   private var input: DataFrame = _
 
-  override def beforeAll(): Unit = {
+  // Under the stub collector: starting a SparkContext can flush (#232), and an export with no
+  // collector backs the agent's exporter off, which delays AgentFlushTest later in this JVM.
+  override def beforeAll(): Unit = StubCollector.during {
     spark = SparkSession.builder().master("local[1]").appName("flare-plan-fingerprint")
       .config("spark.ui.enabled", "false")
       .config("spark.driver.host", "127.0.0.1")

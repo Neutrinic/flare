@@ -55,13 +55,21 @@ object FlareDriverState {
    * Attempt to initialize. Returns true if this call performed the initialization,
    * false if it was already done by another path.
    */
-  def initialize(span: Span, tracingListener: TracingSparkListener): Boolean = synchronized {
+  def initialize(span: Span, tracingListener: TracingSparkListener,
+                 ownerStopped: () => Boolean = () => false): Boolean = {
+    releaseStoppedOwner() // outside the lock: it may flush
+    initializeLocked(span, tracingListener, ownerStopped)
+  }
+
+  private def initializeLocked(span: Span, tracingListener: TracingSparkListener,
+                               ownerStopped: () => Boolean): Boolean = synchronized {
     if (_initialized) {
       logger.info("[Flare] Already initialized, skipping duplicate init")
       false
     } else {
       applicationSpan = Some(span)
       listener = Some(tracingListener)
+      this.ownerStopped = ownerStopped
       idleFlush = Some(new QuietPeriodAction(
         1000L, () => idleFlushAction(), "flare-driver-idle-flush",
         minIntervalMs = FlareExecutorPlugin.IdleFlushIntervalMs,
@@ -129,6 +137,52 @@ object FlareDriverState {
   def shutdown(): Unit =
     if (endOpenSpans()) TelemetryFlush.flush("driver shutdown", verbose = true)
 
+  // Whether the SparkContext that owns the state has stopped (#232). Installed through the agent
+  // alone, nothing releases the state when a SparkContext stops (the plugin's shutdown does, on the
+  // other path), so the next SparkContext in the JVM found Flare already initialised with the
+  // stopped one's listener and got no driver telemetry. The state is released lazily, by the next
+  // initialisation, not at the owner's application end: Spark posts that before it stops the
+  // scheduler, so the end events of jobs the stop cancels arrive after it and still need their spans.
+  @volatile private var ownerStopped: () => Boolean = () => false
+
+  /** A check that `sc` has stopped, holding it weakly so the driver state does not keep it alive. */
+  def stoppedCheck(sc: org.apache.spark.SparkContext): () => Boolean = {
+    val ref = new java.lang.ref.WeakReference(sc)
+    () => Option(ref.get).forall(_.isStopped)
+  }
+
+  /**
+   * Whether Flare is initialised for a SparkContext that is still running, releasing state left by
+   * one that stopped (#232). Each initialisation path asks this before initialising.
+   */
+  def initializedForLiveContext: Boolean = {
+    releaseStoppedOwner()
+    _initialized
+  }
+
+  /**
+   * Ends and flushes the state of a SparkContext that has stopped, as [[shutdown]] does. The flush
+   * matters: ending the state drops its pending idle flush, so the stopped context's last job
+   * metrics would otherwise wait for the next periodic export, or be lost with the driver. It runs
+   * outside the lock, since it can block for seconds.
+   */
+  private def releaseStoppedOwner(): Unit = {
+    val released = synchronized {
+      _initialized && ownerStopped() && {
+        logger.info("[Flare] The SparkContext that initialised Flare has stopped; releasing its state")
+        endOpenSpans()
+      }
+    }
+    if (released) releaseFlushAction()
+  }
+
+  /** What a release runs after ending a stopped context's state. Replaced in tests. */
+  @volatile private[plugin] var releaseFlushAction: () => Unit =
+    () => TelemetryFlush.flush("stopped SparkContext released", verbose = true)
+
+  /** The listener that owns the driver state, if any. For tests. */
+  private[spark] def currentListener: Option[TracingSparkListener] = listener
+
   /**
    * Ends Flare's open spans, including the root, and clears state. Returns true if this call did
    * it, false if there was nothing to end.
@@ -147,6 +201,7 @@ object FlareDriverState {
       closeIdleFlush()
       applicationSpan = None
       listener = None
+      ownerStopped = () => false
       _initialized = false
       logger.info("[Flare] Driver state shut down")
       true
@@ -156,6 +211,7 @@ object FlareDriverState {
   /** Visible for testing — reset all state. */
   private[plugin] def reset(): Unit = synchronized {
     closeIdleFlush()
+    ownerStopped = () => false
     applicationSpan = None
     listener = None
     _initialized = false

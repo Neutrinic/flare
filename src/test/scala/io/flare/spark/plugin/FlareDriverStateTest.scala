@@ -191,4 +191,56 @@ class FlareDriverStateTest extends FunSuite {
       assertEquals(flushes.get(), 0, "a flush ran after shutdown")
     } finally FlareDriverState.idleFlushAction = () => TelemetryFlush.flush("driver idle")
   }
+
+  // ── Application end (#232) ──────────────────────────────────────────────────
+
+  test("state left by a stopped SparkContext is released by the next initialisation") {
+    var firstStopped = false
+    val first  = new TracingSparkListener(tracer, testConfig)
+    val second = new TracingSparkListener(tracer, testConfig)
+    assert(FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), first, () => firstStopped))
+    // While the owner runs, a second context is a duplicate, as before.
+    assert(!FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), second))
+    firstStopped = true
+    assert(!FlareDriverState.initializedForLiveContext, "a stopped owner's state still counts as live")
+    assert(FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), second))
+    assertEquals(FlareDriverState.currentListener, Some(second))
+  }
+
+  test("releasing a stopped context's state flushes it, since its pending idle flush is dropped") {
+    val flushes = new AtomicInteger()
+    FlareDriverState.releaseFlushAction = () => flushes.incrementAndGet()
+    try {
+      var stopped = false
+      val first = new TracingSparkListener(tracer, testConfig)
+      FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), first, () => stopped)
+      assert(FlareDriverState.initializedForLiveContext)
+      assertEquals(flushes.get(), 0, "flushed while the owner was running")
+      stopped = true
+      FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(),
+        new TracingSparkListener(tracer, testConfig))
+      assertEquals(flushes.get(), 1, "the stopped context's state was released without a flush")
+    } finally FlareDriverState.releaseFlushAction = () => TelemetryFlush.flush("stopped SparkContext released", verbose = true)
+  }
+
+  test("a job cancelled by the stop still ends FAILED: Spark posts the application end first") {
+    // SparkContext.stop posts ApplicationEnd before stopping the scheduler, which then cancels
+    // running jobs, so their ends arrive after it (Codex, #234).
+    //
+    // Guard, not evidence: main passes this too, since it never released the state at application
+    // end. It fails against this PR's first version, which did, and keeps that design from
+    // returning; the fix itself is shown by the lazy-release and second-context tests.
+    val listener = new TracingSparkListener(tracer, testConfig, throwOnError = true)
+    val app = tracer.spanBuilder("spark.application").startSpan()
+    listener.setApplicationSpan(app)
+    FlareDriverState.initialize(app, listener)
+    listener.onJobStart(SparkListenerJobStart(0, System.currentTimeMillis(), Seq.empty, new ju.Properties()))
+    listener.onApplicationEnd(org.apache.spark.scheduler.SparkListenerApplicationEnd(System.currentTimeMillis()))
+    listener.onJobEnd(SparkListenerJobEnd(0, System.currentTimeMillis(),
+      org.apache.spark.FlareTestHelpers.jobFailed(new RuntimeException("Job 0 cancelled because SparkContext was shut down"))))
+    val job = exporter.getFinishedSpanItems.asScala.find(_.getName == "spark.job.0").getOrElse(fail("no job span was exported"))
+    assertEquals(job.getStatus.getStatusCode, io.opentelemetry.api.trace.StatusCode.ERROR)
+    assertEquals(job.getAttributes.get(io.opentelemetry.api.common.AttributeKey.stringKey("spark.job.result")), "FAILED")
+  }
+
 }
