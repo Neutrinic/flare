@@ -56,8 +56,14 @@ object FlareDriverState {
    * false if it was already done by another path.
    */
   def initialize(span: Span, tracingListener: TracingSparkListener,
-                 ownerStopped: () => Boolean = () => false): Boolean = synchronized {
-    if (initializedForLiveContext) {
+                 ownerStopped: () => Boolean = () => false): Boolean = {
+    releaseStoppedOwner() // outside the lock: it may flush
+    initializeLocked(span, tracingListener, ownerStopped)
+  }
+
+  private def initializeLocked(span: Span, tracingListener: TracingSparkListener,
+                               ownerStopped: () => Boolean): Boolean = synchronized {
+    if (_initialized) {
       logger.info("[Flare] Already initialized, skipping duplicate init")
       false
     } else {
@@ -149,13 +155,30 @@ object FlareDriverState {
    * Whether Flare is initialised for a SparkContext that is still running, releasing state left by
    * one that stopped (#232). Each initialisation path asks this before initialising.
    */
-  def initializedForLiveContext: Boolean = synchronized {
-    if (_initialized && ownerStopped()) {
-      logger.info("[Flare] The SparkContext that initialised Flare has stopped; releasing its state")
-      endOpenSpans()
-    }
+  def initializedForLiveContext: Boolean = {
+    releaseStoppedOwner()
     _initialized
   }
+
+  /**
+   * Ends and flushes the state of a SparkContext that has stopped, as [[shutdown]] does. The flush
+   * matters: ending the state drops its pending idle flush, so the stopped context's last job
+   * metrics would otherwise wait for the next periodic export, or be lost with the driver. It runs
+   * outside the lock, since it can block for seconds.
+   */
+  private def releaseStoppedOwner(): Unit = {
+    val released = synchronized {
+      _initialized && ownerStopped() && {
+        logger.info("[Flare] The SparkContext that initialised Flare has stopped; releasing its state")
+        endOpenSpans()
+      }
+    }
+    if (released) releaseFlushAction()
+  }
+
+  /** What a release runs after ending a stopped context's state. Replaced in tests. */
+  @volatile private[plugin] var releaseFlushAction: () => Unit =
+    () => TelemetryFlush.flush("stopped SparkContext released", verbose = true)
 
   /** The listener that owns the driver state, if any. For tests. */
   private[spark] def currentListener: Option[TracingSparkListener] = listener

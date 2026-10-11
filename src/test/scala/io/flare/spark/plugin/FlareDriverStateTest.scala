@@ -207,6 +207,22 @@ class FlareDriverStateTest extends FunSuite {
     assertEquals(FlareDriverState.currentListener, Some(second))
   }
 
+  test("releasing a stopped context's state flushes it, since its pending idle flush is dropped") {
+    val flushes = new AtomicInteger()
+    FlareDriverState.releaseFlushAction = () => flushes.incrementAndGet()
+    try {
+      var stopped = false
+      val first = new TracingSparkListener(tracer, testConfig)
+      FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(), first, () => stopped)
+      assert(FlareDriverState.initializedForLiveContext)
+      assertEquals(flushes.get(), 0, "flushed while the owner was running")
+      stopped = true
+      FlareDriverState.initialize(tracer.spanBuilder("spark.application").startSpan(),
+        new TracingSparkListener(tracer, testConfig))
+      assertEquals(flushes.get(), 1, "the stopped context's state was released without a flush")
+    } finally FlareDriverState.releaseFlushAction = () => TelemetryFlush.flush("stopped SparkContext released", verbose = true)
+  }
+
   test("a job cancelled by the stop still ends FAILED: Spark posts the application end first") {
     // SparkContext.stop posts ApplicationEnd before stopping the scheduler, which then cancels
     // running jobs, so their ends arrive after it (Codex, #234).
