@@ -28,11 +28,15 @@ object SparkAttributes {
     val JobRunId  = AttributeKey.stringKey("databricks.job.run_id")
     val TaskRunId = AttributeKey.stringKey("databricks.task.run_id")
 
-    /** Each attribute and the Databricks local property it is read from. */
-    val FromProperties: Seq[(AttributeKey[String], String)] = Seq(
-      JobId     -> "spark.databricks.job.id",
-      JobRunId  -> "spark.databricks.job.parentRunId",
-      TaskRunId -> "spark.databricks.job.runId",
+    /**
+     * Each attribute and the Databricks local properties it is read from, the first one set winning.
+     * The task run moved between runtimes (#241): DBR 15.4 sets it as `runId`; DBR 17.3 sets it as
+     * `taskRunId`, and `runId` there repeats the job run.
+     */
+    val FromProperties: Seq[(AttributeKey[String], Seq[String])] = Seq(
+      JobId     -> Seq("spark.databricks.job.id"),
+      JobRunId  -> Seq("spark.databricks.job.parentRunId"),
+      TaskRunId -> Seq("spark.databricks.job.taskRunId", "spark.databricks.job.runId"),
     )
   }
 
