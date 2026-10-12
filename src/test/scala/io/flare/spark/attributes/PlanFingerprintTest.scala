@@ -248,6 +248,15 @@ class PlanFingerprintTest extends FunSuite {
       PlanFingerprint.of("(5) TableCacheQueryStage\nOutput: []\nArguments: 3\n"))
   }
 
+  test("a pushed filter's name inside a longer word is not a pushed filter (#246)") {
+    // Pushed filters are found by their names, then matched from there: the word boundary before the
+    // name must still see the character before it.
+    assertEquals(PlanFingerprint.normalise("PushedFilters: [IsEqualTo(a,1)]"), "PushedFilters: [IsEqualTo(a,1)]")
+    assertEquals(PlanFingerprint.normalise("PushedFilters: [EqualTo(a,1)]"), "PushedFilters: [EqualTo(a,?)]")
+    assertEquals(PlanFingerprint.normalise("PushedFilters: [MyIn(a, [1,2])]"), "PushedFilters: [MyIn(a, [1,2])]")
+    assertEquals(PlanFingerprint.normalise("PushedFilters: [In(a, [1,2])]"), "PushedFilters: [In(a, [?])]")
+  }
+
   test("the arguments of other operators are kept: only a query stage's id is dropped (#244)") {
     def exchange(partitions: Int) =
       s"(19) Exchange\nInput [2]: [k#1L, v#2L]\nArguments: hashpartitioning(k#1L, $partitions), ENSURE_REQUIREMENTS, [plan_id=7]\n"
