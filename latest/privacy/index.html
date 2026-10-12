@@ -860,6 +860,8 @@
       
         
       
+        
+      
     
     
     
@@ -982,6 +984,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1319,6 +1348,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#limiting-what-flare-sends" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Limiting what Flare sends
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#this-site-counts-page-views" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1437,6 +1477,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#limiting-what-flare-sends" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Limiting what Flare sends
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#this-site-counts-page-views" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1503,18 +1554,18 @@ nothing to opt out of.</p>
 <tbody>
 <tr>
 <td>SQL physical plans, descriptions and call sites</td>
-<td><code>spark.sql.*</code> span attributes</td>
-<td><code>FLARE_SQL_PLAN_MAX_CHARS</code>, <code>FLARE_SQL_DETAILS_MAX_CHARS</code>, <code>FLARE_SQL_DESCRIPTION_MAX_CHARS</code>; <code>0</code> drops the attribute. See <a href="../configuration/">Configuration</a></td>
+<td><code>spark.sql.*</code> span attributes; the description also as the <code>sql.description</code> metric label</td>
+<td><code>FLARE_SQL_PLAN_MAX_CHARS</code>, <code>FLARE_SQL_DETAILS_MAX_CHARS</code>, <code>FLARE_SQL_DESCRIPTION_MAX_CHARS</code> set to <code>0</code>. Under the Thrift server or <code>spark-sql</code>, the description is the SQL statement itself, literals included</td>
 </tr>
 <tr>
 <td>Exception messages and stack traces</td>
 <td>failed job, stage and task spans</td>
-<td>Spark messages can quote the data being processed, in parse errors or type mismatches for example</td>
+<td><code>FLARE_ERROR_MESSAGE_MAX_CHARS=0</code> omits the message and the stack trace, which quotes it; <code>FLARE_STACKTRACE_MAX_CHARS=0</code> omits only the stack trace. Spark messages can quote the data being processed, in parse errors or type mismatches for example, and a connector's can quote a credential</td>
 </tr>
 <tr>
 <td>The JVM command line, including the classpath</td>
-<td>resource attributes on every span, metric and log record</td>
-<td>The agent's resource detectors; see the <a href="https://opentelemetry.io/docs/zero-code/java/agent/configuration/">agent configuration</a></td>
+<td><code>process.command_args</code> and related resource attributes on every span, metric and log record</td>
+<td>Set by the agent, not Flare. <code>-Dotel.java.disabled.resource.providers=io.opentelemetry.instrumentation.resources.ProcessResourceProvider</code> removes them, on the driver and the executors. It is where a credential passed as a system property ends up</td>
 </tr>
 <tr>
 <td>Spark's full configuration, logged at start-up</td>
@@ -1534,6 +1585,40 @@ nothing to opt out of.</p>
 </tbody>
 </table>
 <p>Secure your backend as you would the data the jobs process.</p>
+<p>If Flare exports something sensitive that this table does not list, report it privately as a
+vulnerability: see the <a href="https://github.com/Neutrinic/flare/blob/main/SECURITY.md">security policy</a>.</p>
+<h2 id="limiting-what-flare-sends">Limiting what Flare sends<a class="headerlink" href="#limiting-what-flare-sends" title="Permanent link">&para;</a></h2>
+<p>Flare can limit the size of a field or stop emitting it. It does not look inside a field for
+sensitive values.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>How</th>
+<th>What it guarantees</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Size limiting</td>
+<td>A <code>*_MAX_CHARS</code> cap above <code>0</code></td>
+<td>The field is at most that long. It keeps the first characters, whatever they contain, so a credential at the start of a message survives it. Not a privacy control</td>
+</tr>
+<tr>
+<td>Field omission</td>
+<td>A <code>*_MAX_CHARS</code> cap of <code>0</code></td>
+<td>Flare does not emit the field at all. The only setting that keeps a value inside the process</td>
+</tr>
+<tr>
+<td>Content redaction</td>
+<td>An OpenTelemetry Collector <code>transform</code> or <code>redaction</code> processor</td>
+<td>Masks sensitive values and keeps the rest, for Flare's telemetry and the agent's alike. It runs after the data has left the process, so it does not meet a requirement that the data never leave the host</td>
+</tr>
+</tbody>
+</table>
+<p>A capped <code>sql.description</code> is still one series per distinct statement on the metrics: a cap limits
+length, not cardinality. Where descriptions carry changing literals, give queries a stable name with
+<code>setJobDescription</code>, or set <code>FLARE_SQL_DESCRIPTION_MAX_CHARS=0</code>.</p>
 <h2 id="this-site-counts-page-views">This site counts page views<a class="headerlink" href="#this-site-counts-page-views" title="Permanent link">&para;</a></h2>
 <p>Each page of this site loads a one-pixel image from <a href="https://about.scarf.sh/">Scarf</a>, which
 counts page views for the maintainers. It sets no cookies. Scarf uses the request's IP address to

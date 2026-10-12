@@ -860,6 +860,8 @@
       
         
       
+        
+      
     
     
     
@@ -982,6 +984,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1660,7 +1689,9 @@ cost and nothing measurable once warm.</p>
 <h2 id="what-was-measured">What was measured<a class="headerlink" href="#what-was-measured" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Workloads:</strong> TPC-H (22 queries, one pass and 20-minute loops), one stage of up to 100,000 tasks,
-  2,000 small jobs, and two Scala RDD applications.</li>
+  2,000 small jobs, and two Scala RDD applications. The TPC-H workload is derived from TPC-H (data
+  and queries generated with DuckDB's <code>tpch</code> extension). These figures measure Flare's overhead;
+  they aren't TPC-H benchmark results and aren't comparable with published TPC-H results.</li>
 <li><strong>Platforms:</strong> a three-node lab, Dataproc 2.2, and Databricks 15.4 on AWS with and without Photon.</li>
 <li><strong>Configurations:</strong> no agent, the agent alone, Flare at its default granularity, Flare with every
   task traced, and every task traced with the agent's own instrumentation off.</li>

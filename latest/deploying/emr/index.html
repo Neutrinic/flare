@@ -964,6 +964,8 @@
       
         
       
+        
+      
     
     
     
@@ -1086,6 +1088,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1595,8 +1624,8 @@ Nothing is installed on the nodes. You still need to <a href="#append-to-the-cla
 every node before YARN starts:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="ch">#!/bin/bash</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">set</span><span class="w"> </span>-euo<span class="w"> </span>pipefail
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.30.0/opentelemetry-javaagent-2.30.0.jar
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.3.0/flare-spark-3-5_2.12-1.3.0.jar
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.31.1/opentelemetry-javaagent-2.31.1.jar
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.4.0/flare-spark-3-5_2.12-1.4.0.jar
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/opt/flare

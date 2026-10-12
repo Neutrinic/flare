@@ -997,6 +997,8 @@
       
         
       
+        
+      
     
     
     
@@ -1119,6 +1121,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1638,15 +1667,15 @@ and Scala version (<a href="../choosing-a-jar/">Choosing a JAR</a>). Both are on
 <h2 id="urls">URLs<a class="headerlink" href="#urls" title="Permanent link">&para;</a></h2>
 <p>The examples below use Spark 3.5 on Scala 2.12, <code>flare-spark-3-5_2.12</code>. For another coordinate,
 replace <code>3-5_2.12</code> in both places it appears in the Flare URL.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.30.0/opentelemetry-javaagent-2.30.0.jar
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.3.0/flare-spark-3-5_2.12-1.3.0.jar
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.31.1/opentelemetry-javaagent-2.31.1.jar
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.4.0/flare-spark-3-5_2.12-1.4.0.jar
 </code></pre></div>
 <p>The agent is pinned to the version Flare is built and tested against. Use that version rather than
 the newest agent: the agent's extension API can change between releases.</p>
 <h2 id="linux">Linux<a class="headerlink" href="#linux" title="Permanent link">&para;</a></h2>
 <p>On cluster nodes, as root, which is how init scripts, bootstrap actions and image builds run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.30.0/opentelemetry-javaagent-2.30.0.jar
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.3.0/flare-spark-3-5_2.12-1.3.0.jar
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.31.1/opentelemetry-javaagent-2.31.1.jar
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.4.0/flare-spark-3-5_2.12-1.4.0.jar
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>/opt/flare
@@ -1656,8 +1685,8 @@ the newest agent: the agent's extension API can change between releases.</p>
 <p><code>wget -q -O &lt;file&gt; &lt;url&gt;</code> works the same way where <code>curl</code> is not installed.</p>
 <h2 id="macos">macOS<a class="headerlink" href="#macos" title="Permanent link">&para;</a></h2>
 <p>For a local Spark, in a directory you can write to without <code>sudo</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.30.0/opentelemetry-javaagent-2.30.0.jar
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.3.0/flare-spark-3-5_2.12-1.3.0.jar
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.31.1/opentelemetry-javaagent-2.31.1.jar
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.4.0/flare-spark-3-5_2.12-1.4.0.jar
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/flare
@@ -1667,8 +1696,8 @@ the newest agent: the agent's extension API can change between releases.</p>
 <p>Use <code>~/flare</code> in place of <code>/opt/flare</code> in the other examples.</p>
 <h2 id="windows">Windows<a class="headerlink" href="#windows" title="Permanent link">&para;</a></h2>
 <p>For a local Spark on Windows, in PowerShell:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">$agent</span> <span class="p">=</span> <span class="s2">"https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.30.0/opentelemetry-javaagent-2.30.0.jar"</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">$flare</span> <span class="p">=</span> <span class="s2">"https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.3.0/flare-spark-3-5_2.12-1.3.0.jar"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">$agent</span> <span class="p">=</span> <span class="s2">"https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.31.1/opentelemetry-javaagent-2.31.1.jar"</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">$flare</span> <span class="p">=</span> <span class="s2">"https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.4.0/flare-spark-3-5_2.12-1.4.0.jar"</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nb">New-Item</span> <span class="n">-ItemType</span> <span class="n">Directory</span> <span class="n">-Force</span> <span class="n">C</span><span class="p">:\</span><span class="n">flare</span> <span class="p">|</span> <span class="nb">Out-Null</span>
@@ -1678,7 +1707,7 @@ the newest agent: the agent's extension API can change between releases.</p>
 <h2 id="from-github">From GitHub<a class="headerlink" href="#from-github" title="Permanent link">&para;</a></h2>
 <p>Every release also attaches each Flare JAR:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>-o<span class="w"> </span>/opt/flare/flare-spark.jar<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>https://github.com/Neutrinic/flare/releases/download/v1.3.0/flare-spark-3-5_2.12-1.3.0.jar
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>https://github.com/Neutrinic/flare/releases/download/v1.4.0/flare-spark-3-5_2.12-1.4.0.jar
 </code></pre></div>
 <h2 id="checking-the-download">Checking the download<a class="headerlink" href="#checking-the-download" title="Permanent link">&para;</a></h2>
 <p>Maven Central serves a SHA-1 checksum next to every file, and a PGP signature (<code>.asc</code>) next to

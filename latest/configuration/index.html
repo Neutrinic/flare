@@ -862,6 +862,8 @@
       
         
       
+        
+      
     
     
     
@@ -984,6 +986,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1326,6 +1355,56 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#choosing-stages-for-task-spans" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Choosing stages for task spans
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing stages for task spans">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pyspark" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        PySpark
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jupyter" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Jupyter
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#databricks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Databricks
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sampling" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1429,6 +1508,8 @@
       
         
       
+        
+      
     
     
     
@@ -1485,12 +1566,22 @@ agent's own <code>otel.*</code> keys, see <a href="exporting/">Exporting</a>.</p
 <tr>
 <td><code>FLARE_SLOW_TASK_MS</code></td>
 <td><code>0</code> (off)</td>
-<td>Only emit task spans that took longer than this</td>
+<td>Only emit task spans that took longer than this. Spans and log lines from inside tasks then sit under the stage span; see <a href="../reference/spans/">Spans</a></td>
 </tr>
 <tr>
 <td><code>FLARE_RETRY_TASKS_ONLY</code></td>
 <td><code>false</code></td>
 <td>Only emit task spans for retries and speculative tasks</td>
+</tr>
+<tr>
+<td><code>FLARE_TASK_STAGE_PATTERN</code></td>
+<td>none</td>
+<td>Only emit task spans for stages whose name matches this regex, such as <code>.*Etl\.scala.*</code>, or <code>.*/etl[.]py:.*</code> for a PySpark script. The regex must match the whole name, which is the call site, <code>collect at Etl.scala:42</code>. Set it on the <strong>driver</strong>: the driver decides as each stage is submitted, and the executors follow. See <a href="#choosing-stages-for-task-spans">Choosing stages</a></td>
+</tr>
+<tr>
+<td><code>FLARE_TASK_STAGES</code></td>
+<td>none</td>
+<td>Only emit task spans for these stage ids, comma-separated, such as <code>7,12</code>. Read by the executors. Ids restart in every application and move when the code changes, so prefer the pattern</td>
 </tr>
 <tr>
 <td><code>FLARE_MAX_SPANS_PER_TRACE</code></td>
@@ -1520,12 +1611,22 @@ agent's own <code>otel.*</code> keys, see <a href="exporting/">Exporting</a>.</p
 <tr>
 <td><code>FLARE_SQL_DESCRIPTION_MAX_CHARS</code></td>
 <td><code>1024</code></td>
-<td>Cap on <code>spark.sql.description</code>; <code>0</code> drops the attribute</td>
+<td>Cap on <code>spark.sql.description</code> and the <code>sql.description</code> metric label; <code>0</code> drops both</td>
 </tr>
 <tr>
 <td><code>FLARE_SQL_PLAN_INITIAL_MAX_CHARS</code></td>
 <td><code>0</code> (dropped)</td>
 <td>Cap on <code>spark.sql.plan.initial</code>, the plan before Adaptive Query Execution</td>
+</tr>
+<tr>
+<td><code>FLARE_ERROR_MESSAGE_MAX_CHARS</code></td>
+<td><code>500</code></td>
+<td>Cap on a failure's message, wherever it goes: <code>error.message</code>, the span status, the <code>exception</code> event and <code>spark.stage.failure_reason</code>; <code>0</code> drops it everywhere, and the stack trace with it, since a printed stack trace opens with the message</td>
+</tr>
+<tr>
+<td><code>FLARE_STACKTRACE_MAX_CHARS</code></td>
+<td><code>8000</code></td>
+<td>Cap on a failure's stack trace, on the <code>exception</code> event; <code>0</code> drops it</td>
 </tr>
 <tr>
 <td><code>FLARE_DROP_NON_SPARK_ROOTS</code></td>
@@ -1535,12 +1636,94 @@ agent's own <code>otel.*</code> keys, see <a href="exporting/">Exporting</a>.</p
 <tr>
 <td><code>FLARE_ENABLED</code></td>
 <td><code>true</code></td>
-<td>Kill switch</td>
+<td>Kill switch: <code>false</code> stops Flare's spans, metrics and resource attributes. The agent stays as quiet as with Flare on: its own instrumentation stays off and non-Spark root spans are still dropped. To have the agent's full instrumentation back, set <code>otel.instrumentation.common.default-enabled=true</code> and <code>FLARE_DROP_NON_SPARK_ROOTS=false</code> as well</td>
 </tr>
 </tbody>
 </table>
 <p><code>FLARE_ENABLED</code> and <code>FLARE_DROP_NON_SPARK_ROOTS</code> turn off only for the literal value <code>false</code>, in any
 case. Any other value leaves them on.</p>
+<p>The <code>*_MAX_CHARS</code> caps limit size. A positive cap keeps the first characters, whatever they
+contain, so it is not a privacy control; <code>0</code> is, because it stops Flare emitting the field at all.
+See <a href="../privacy/#limiting-what-flare-sends">Privacy</a>.</p>
+<h3 id="choosing-stages-for-task-spans">Choosing stages for task spans<a class="headerlink" href="#choosing-stages-for-task-spans" title="Permanent link">&para;</a></h3>
+<p>Task spans are the most numerous Flare emits, so on a large job it can pay to keep them for the
+stages being investigated only. <code>FLARE_TASK_STAGE_PATTERN</code> selects stages by name, the call site that
+created them, as the Spark UI shows it: <code>collect at Etl.scala:42</code>, <code>map at Ingest.scala:17</code>. A name
+survives between runs unless its line of code moves, which makes it the setting to reach for;
+some stages that adaptive execution adds are named after Spark's own call sites instead.
+<code>FLARE_TASK_STAGES</code> selects by stage id, which is only good for one run.</p>
+<p>With both set, a task needs both. Tasks the filters leave out still count in the task metrics; only
+their spans are dropped.</p>
+<p>Find the name in the Spark UI's Stages tab. The regex must match all of it, so start it with <code>.*</code>.
+Writing <code>[.]</code> for a dot, rather than <code>\.</code>, saves escaping the backslash inside
+<code>extraJavaOptions</code> and the shell.</p>
+<h4 id="pyspark">PySpark<a class="headerlink" href="#pyspark" title="Permanent link">&para;</a></h4>
+<p>A stage carries your Python line when the action brings rows back to Python: DataFrame actions
+such as <code>collect</code>, <code>take</code>, <code>head</code>, <code>first</code>, <code>tail</code>, <code>toLocalIterator</code> and <code>toPandas</code>, and RDD
+actions. Actions that do not, such as writes, <code>count()</code> and <code>show()</code>, are named after the JVM side
+of the call, and a pattern on your script's name cannot select their stages:</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Stage name</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>df.collect()</code>, <code>df.toPandas()</code>, <code>rdd.sum()</code></td>
+<td>The action and your line: <code>collect at /opt/jobs/etl.py:42</code></td>
+</tr>
+<tr>
+<td><code>df.write.parquet(...)</code></td>
+<td><code>parquet at NativeMethodAccessorImpl.java:0</code></td>
+</tr>
+<tr>
+<td><code>df.count()</code>, <code>df.show()</code></td>
+<td>Spark's own frames, such as <code>$anonfun$withThreadLocalCaptured$2 at CompletableFuture.java:1768</code></td>
+</tr>
+</tbody>
+</table>
+<p>Match the script's file name, not its path: <code>.*/etl[.]py:.*</code>. The path is wherever the driver
+runs the script from, which changes between client and cluster mode and between schedulers. Add a
+line, <code>.*/etl[.]py:42</code>, to select one action; editing the script moves it.</p>
+<p>Selecting by job description, which covers these stages, is planned
+(<a href="https://github.com/Neutrinic/flare/issues/237">#237</a>).</p>
+<h4 id="jupyter">Jupyter<a class="headerlink" href="#jupyter" title="Permanent link">&para;</a></h4>
+<p>In a Jupyter notebook, the name is the cell's: <code>collect at /tmp/ipykernel_141779/2448266874.py:1</code>.
+The directory changes with every kernel. The file name is a hash of the cell's code: it is the same
+in a new kernel, and changes when the cell is edited. <code>.*/2448266874[.]py:.*</code> selects that cell's
+stages until then. Set the pattern in <code>spark.driver.extraJavaOptions</code> on the session builder,
+before the first <code>getOrCreate()</code>, since the driver reads it at start-up.</p>
+<h4 id="databricks">Databricks<a class="headerlink" href="#databricks" title="Permanent link">&para;</a></h4>
+<p>Databricks wraps PySpark's actions, so every Python stage is named <code>wrapper</code>, with your file and
+line after it. As <a href="#pyspark">elsewhere</a>, actions that bring rows back to Python carry them;
+<code>count()</code> and writes are named after Databricks' frames, such as
+<code>$anonfun$withThreadLocalCaptured$10 at LexicalThreadLocal.scala:63</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Stage name</th>
+<th>Pattern</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python script</td>
+<td><code>wrapper at /Workspace/Users/me/etl.py:16</code></td>
+<td><code>.*/etl[.]py:.*</code></td>
+</tr>
+<tr>
+<td>Notebook</td>
+<td><code>wrapper at /root/.ipykernel/2188/command-8170623636178775-1586284934:1</code></td>
+<td><code>.*/command-8170623636178775-.*</code></td>
+</tr>
+</tbody>
+</table>
+<p>In a notebook, the number after <code>command-</code> identifies the cell. It was the same on every cluster
+and runtime the cell ran on (DBR 15.4 and 17.3), while the directory changes with each cluster.
+Set the pattern in the cluster's <code>spark.driver.extraJavaOptions</code>.</p>
 <h2 id="sampling">Sampling<a class="headerlink" href="#sampling" title="Permanent link">&para;</a></h2>
 <p>The agent's sampler decides what is traced. Its default, <code>parentbased_always_on</code>, traces every
 application. To trace a fraction of applications, use the agent's ratio sampler:</p>
@@ -1565,16 +1748,28 @@ worst-case plan payload on every SQL span.</p>
 <h3 id="plan-fingerprints">Plan fingerprints<a class="headerlink" href="#plan-fingerprints" title="Permanent link">&para;</a></h3>
 <p><code>spark.sql.plan.fingerprint</code> hashes the plan's <strong>shape</strong> into 16 hex characters, so the same query
 groups across executions and across applications, which the Spark UI cannot do. Expression ids
-(<code>#133</code>), <code>plan_id=142</code>, codegen ids and AQE's runtime statistics are removed before hashing,
-because they change without the shape changing. The statistics track the data, not the query, and
+(<code>#133</code>), <code>plan_id=142</code>, codegen ids, AQE's query-stage ids and its runtime statistics are removed
+before hashing, because they change without the shape changing. AQE numbers its query stages in
+the order it creates them, which differs from run to run. The statistics track the data, not the query, and
 would fingerprint the same query differently on a busy day than a quiet one.</p>
+<p>Literal values and input paths are removed too: the value compared with a column in a filter
+(<code>dt = 2024-01-01</code>, <code>id &gt; 100</code>, a string value even when it contains parentheses), the literal values
+in an <code>IN</code> list, however many there are, the values of pushed-down filters, and the paths a scan
+reads from. A daily job filtering on the day's date is the same query every day. What still makes
+two plans different is their shape: the operators, the columns, which columns a filter compares and
+how, and any operand that names a column, such as a join key or a column in an <code>IN</code> list.</p>
 <p>The fingerprint is emitted even when the caps are <code>0</code> and no plan text is exported. That is the
 lever for backends with a per-trace size limit, such as Tempo's <code>max_bytes_per_trace</code>: a large plan
 on every SQL span fills a trace quickly, while 16 bytes of grouping does not.</p>
 <p><code>spark.sql.plan.initial.fingerprint</code> is taken from the pre-AQE tree and not changed by re-plans, so
 the pair is "shape as planned" against "shape as executed". Under AQE the two differ for almost
 every query, because the final tree always gains query-stage wrappers, so a difference does not
-mean AQE changed anything. The initial fingerprint is the more stable grouping key.</p>
+mean AQE changed anything. The initial fingerprint is the more stable grouping key: the final
+fingerprint can still differ between two runs of the same query on the same data, when AQE reuses a
+different copy of an exchange the query computes twice. Over TPC-DS's queries, run twice in one
+application on the lab's three nodes, the initial fingerprint was the same for every query and the
+final one differed for 7 to 10 of 102, varying from run to run. Group by the initial fingerprint to tell when a query changed, and use the
+final one to see what AQE made of it.</p>
 <h2 id="resource-attributes">Resource attributes<a class="headerlink" href="#resource-attributes" title="Permanent link">&para;</a></h2>
 <p>Flare adds two attributes to the OpenTelemetry resource, so they are on every span, metric point and
 log record the JVM exports:</p>

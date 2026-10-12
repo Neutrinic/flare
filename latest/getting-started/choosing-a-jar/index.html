@@ -942,6 +942,8 @@
       
         
       
+        
+      
     
     
     
@@ -1064,6 +1066,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1535,7 +1564,7 @@ often with an unhelpful error, so match it to what the cluster runs.</p>
 </thead>
 <tbody>
 <tr>
-<td>3.3</td>
+<td>3.3 (deprecated)</td>
 <td><code>flare-spark-3-3_2.12</code></td>
 <td><code>flare-spark-3-3_2.13</code></td>
 </tr>
@@ -1556,8 +1585,10 @@ often with an unhelpful error, so match it to what the cluster runs.</p>
 </tr>
 </tbody>
 </table>
+<p>Spark 3.3 is deprecated in 1.4 and its JARs end with 2.0; see
+<a href="../../upgrading/#spark-33-is-deprecated">Upgrading</a>.</p>
 <p>All are under the Maven group <code>io.github.neutrinic</code>, for example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>io.github.neutrinic:flare-spark-3-5_2.12:1.3.0
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>io.github.neutrinic:flare-spark-3-5_2.12:1.4.0
 </code></pre></div>
 <p>The JAR is self-contained: it bundles the OpenTelemetry API it needs and nothing else. See
 <a href="../download/">Downloading the JARs</a>.</p>

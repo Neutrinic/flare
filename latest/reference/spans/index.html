@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://neutrinic.github.io/flare/latest/reference/spans/">
       
       
-        <link rel="prev" href="../../configuration/volume/">
+        <link rel="prev" href="../../configuration/alerting/">
       
       
         <link rel="next" href="../metrics/">
@@ -860,6 +860,8 @@
       
         
       
+        
+      
     
     
     
@@ -982,6 +984,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1715,6 +1744,21 @@ which is different from a measured zero.</p>
 <td>Conditional: from <code>spark.job.description</code> local property</td>
 </tr>
 <tr>
+<td><code>databricks.job.id</code></td>
+<td>string</td>
+<td>Conditional: the Lakeflow job that submitted the Spark job, on Databricks</td>
+</tr>
+<tr>
+<td><code>databricks.job.run_id</code></td>
+<td>string</td>
+<td>Conditional: that job's run. Every task of one run shares it</td>
+</tr>
+<tr>
+<td><code>databricks.task.run_id</code></td>
+<td>string</td>
+<td>Conditional: the task run. A retried task gets a new one</td>
+</tr>
+<tr>
 <td><code>spark.job.result</code></td>
 <td>string</td>
 <td><code>SUCCESS</code> or <code>FAILED</code></td>
@@ -1882,6 +1926,9 @@ no task ends were observed, because a <code>0</code> there would read as "no que
 <p>Subject to <code>FLARE_TRACE_GRANULARITY</code>, <code>FLARE_SLOW_TASK_MS</code>, <code>FLARE_RETRY_TASKS_ONLY</code> and
 <code>FLARE_MAX_SPANS_PER_TRACE</code>. This span is built from <code>TaskContext</code>, so driver-only <code>TaskInfo</code>
 fields (host, locality, speculative) are not available to it.</p>
+<p>Under <code>FLARE_SLOW_TASK_MS</code>, spans made inside a task, such as a JDBC query, and the task's log
+lines are children of the stage span, not the task span. Whether a task span is kept is only known
+when the task ends, and anything pointing at a dropped one would point at nothing.</p>
 <table>
 <thead>
 <tr>
@@ -1914,7 +1961,12 @@ fields (host, locality, speculative) are not available to it.</p>
 <tr>
 <td><code>spark.task.result</code></td>
 <td>string</td>
-<td><code>SUCCESS</code>, <code>FAILED</code>, or <code>SHUTDOWN</code> if the JVM went down mid-task</td>
+<td><code>SUCCESS</code>, <code>FAILED</code>, <code>KILLED</code> if Spark killed the task (a losing speculative attempt, or a cancelled job or stage), or <code>SHUTDOWN</code> if the JVM went down mid-task. Only <code>FAILED</code> and <code>SHUTDOWN</code> set an error status</td>
+</tr>
+<tr>
+<td><code>spark.task.kill_reason</code></td>
+<td>string</td>
+<td>Conditional: why Spark killed a <code>KILLED</code> task: <code>another_attempt_succeeded</code> (the losing attempt under speculation), <code>stage_finished</code> (still running when its stage finished: under speculation, the original once its copy finished the stage, or a task no longer needed when its stage ends early), <code>cancelled</code> (its job, stage or job group was cancelled) or <code>other</code></td>
 </tr>
 <tr>
 <td><code>error.type</code></td>
@@ -2054,7 +2106,7 @@ when that happens.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../configuration/volume/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Telemetry volume">
+          <a href="../../configuration/alerting/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Alerting">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -2064,7 +2116,7 @@ when that happens.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Telemetry volume
+                Alerting
               </div>
             </div>
           </a>

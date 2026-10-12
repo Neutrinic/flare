@@ -862,6 +862,8 @@
       
         
       
+        
+      
     
     
     
@@ -1103,6 +1105,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1570,6 +1599,8 @@
       
         
       
+        
+      
     
     
     
@@ -1677,12 +1708,15 @@ lines this way.</p>
 <p>To turn logs off: <code>-Dotel.logs.exporter=none</code>.</p>
 <h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h2>
 <p>Metrics are exported every 60 seconds by default (<code>otel.metric.export.interval</code>). Flare also flushes
-at shutdown, and each executor flushes a second after its last task ends, or three seconds if it
-already flushed in the previous 30, so that pauses between stages do not flush every few seconds
-(<a href="https://github.com/Neutrinic/flare/issues/139">#139</a>). A short job, or an executor that is later
-killed without a shutdown call, still reports its final values: a Databricks job cluster starts
-tearing down about 8.6 seconds after its last job. An executor killed sooner than that after its
-last task, or while a task is still running, can lose the metrics it had not exported yet.</p>
+at shutdown, and when things go quiet: each executor a second after its last task ends, and the
+driver a second after its last job ends (<a href="https://github.com/Neutrinic/flare/issues/199">#199</a>).
+Either waits three seconds instead if it already flushed in the previous 30, so that pauses between
+stages and jobs do not flush every few seconds
+(<a href="https://github.com/Neutrinic/flare/issues/139">#139</a>). A short job, or a JVM that is later killed
+without a shutdown call, still reports its final values: a Databricks job cluster starts tearing
+down about 8.6 seconds after its last job. A JVM killed sooner than that, or while its tasks or jobs
+are still running, can lose the metrics it had not exported yet. To narrow that window, lower
+<code>otel.metric.export.interval</code>.</p>
 <h2 id="checking-what-is-exported">Checking what is exported<a class="headerlink" href="#checking-what-is-exported" title="Permanent link">&para;</a></h2>
 <p>To see the raw output without a backend, add the logging exporter:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>-Dotel.traces.exporter=otlp,logging-otlp

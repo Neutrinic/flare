@@ -872,6 +872,8 @@
       
         
       
+        
+      
     
     
     
@@ -994,6 +996,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1426,7 +1455,9 @@
 <p>This recipe has not been run on HDInsight. The smallest HDInsight Spark cluster (two head nodes,
 three ZooKeeper nodes and workers) needs about 20 vCPUs, more than a new subscription's quota.</p>
 </div>
-<p>HDInsight 5.1 is Spark 3.3 on YARN with Java 8, so it follows the <a href="../emr/">EMR</a> recipe:</p>
+<p>HDInsight 5.1 is Spark 3.3 on YARN with Java 8. Spark 3.3 is deprecated in Flare 1.4 and its JARs
+end with 2.0; see <a href="../../upgrading/#spark-33-is-deprecated">Upgrading</a>. It follows the
+<a href="../emr/">EMR</a> recipe:</p>
 <ul>
 <li>a <strong>script action</strong> in place of EMR's bootstrap action puts both JARs at a fixed path on every
   node, such as <code>/opt/flare</code>;</li>

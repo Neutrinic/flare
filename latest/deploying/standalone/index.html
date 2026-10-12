@@ -931,6 +931,8 @@
       
         
       
+        
+      
     
     
     
@@ -1053,6 +1055,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1521,8 +1550,8 @@ deploy mode.</p>
 <p>Standalone executors fetch <code>--files</code> and <code>--jars</code> after their JVM has started, too late for the
 agent. Copy both JARs onto every node at the same path instead, for example with your configuration
 management or a one-off loop:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.30.0/opentelemetry-javaagent-2.30.0.jar
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.3.0/flare-spark-3-5_2.12-1.3.0.jar
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.31.1/opentelemetry-javaagent-2.31.1.jar
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.4.0/flare-spark-3-5_2.12-1.4.0.jar
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">for</span><span class="w"> </span>host<span class="w"> </span><span class="k">in</span><span class="w"> </span>node1<span class="w"> </span>node2<span class="w"> </span>node3<span class="p">;</span><span class="w"> </span><span class="k">do</span>

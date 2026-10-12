@@ -1008,6 +1008,8 @@
       
         
       
+        
+      
     
     
     
@@ -1130,6 +1132,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1713,8 +1742,8 @@ differ. Serverless compute cannot run Flare; see <a href="#serverless">below</a>
 files or a Unity Catalog volume and add it to the cluster.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="ch">#!/bin/bash</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">set</span><span class="w"> </span>-euo<span class="w"> </span>pipefail
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.30.0/opentelemetry-javaagent-2.30.0.jar
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.3.0/flare-spark-3-5_2.12-1.3.0.jar
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nv">AGENT</span><span class="o">=</span>https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.31.1/opentelemetry-javaagent-2.31.1.jar
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nv">FLARE</span><span class="o">=</span>https://repo1.maven.org/maven2/io/github/neutrinic/flare-spark-3-5_2.12/1.4.0/flare-spark-3-5_2.12-1.4.0.jar
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>/opt/flare
@@ -1794,6 +1823,15 @@ and the JVM command line carries only the configuration file path.</p>
   SIGTERM, so Spark never stops the SparkContext, and executors get no shutdown call at all. Flare
   1.3.0 and later end the root span inside the agent's own shutdown and flush executors when they
   go idle, so nothing is lost. Earlier releases lost the root span on every run.</li>
+<li><strong>Shared job clusters</strong> (a <code>job_clusters</code> entry that several tasks name by <code>job_cluster_key</code>)
+  run every task of the job run, and every retry, in <strong>one</strong> Spark application. Flare's
+  application span, <code>flare.application.duration</code> and <code>application.result</code> then describe the
+  cluster, not a task: a task that failed and then succeeded on retry leaves the application
+  <code>FAILED</code>. Job spans carry <code>databricks.job.run_id</code> and <code>databricks.task.run_id</code>, so a trace can be
+  split by task run, and a failed try told from its retry. Alert on run outcomes from Lakeflow
+  itself, and on failed queries with <code>FlareJobFailed</code>; see
+  <a href="../../configuration/alerting/#outcomes">Alerting</a>. A task with its own <code>new_cluster</code> gets a new
+  cluster, and a new application, for each attempt, so none of this applies to it.</li>
 <li><strong>All-purpose clusters</strong> keep one SparkContext for their whole life, shared by every notebook and
   job attached. Flare's root span covers the cluster's lifetime, so everything lands in one trace.
   Tracked in <a href="https://github.com/Neutrinic/flare/issues/124">#124</a>.</li>

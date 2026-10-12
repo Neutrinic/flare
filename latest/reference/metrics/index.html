@@ -860,6 +860,8 @@
       
         
       
+        
+      
     
     
     
@@ -982,6 +984,33 @@
     
   
   Telemetry volume
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/alerting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Alerting
 
     
   </span>
@@ -1156,6 +1185,28 @@
       On this page
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#histogram-buckets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Histogram buckets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Outcomes
+      </span>
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#in-prometheus" class="md-nav__link">
@@ -1395,6 +1446,28 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#histogram-buckets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Histogram buckets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Outcomes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#in-prometheus" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1499,7 +1572,7 @@
 
 
 <h1 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h1>
-<p>Seventeen instruments, all under the <code>io.flare.spark</code> meter, all turned off by
+<p>Nineteen instruments, all under the <code>io.flare.spark</code> meter, all turned off by
 <code>FLARE_METRICS_ENABLED=false</code>.</p>
 <table>
 <thead>
@@ -1566,6 +1639,24 @@
 <td><code>stage.name</code>, <code>sql.description</code></td>
 </tr>
 <tr>
+<td><code>flare.job.duration</code></td>
+<td>histogram</td>
+<td><code>ms</code></td>
+<td><code>job.result</code>, <code>sql.description</code></td>
+</tr>
+<tr>
+<td><code>flare.application.duration</code></td>
+<td>histogram</td>
+<td><code>s</code></td>
+<td><code>application.result</code></td>
+</tr>
+<tr>
+<td><code>flare.application.end_time</code></td>
+<td>gauge</td>
+<td><code>s</code></td>
+<td><code>application.result</code></td>
+</tr>
+<tr>
 <td><code>flare.executor.count</code></td>
 <td>updowncounter</td>
 <td><code>{executor}</code></td>
@@ -1575,6 +1666,12 @@
 <td><code>flare.executor.removed</code></td>
 <td>counter</td>
 <td><code>{executor}</code></td>
+<td><code>executor.id</code>, <code>reason</code></td>
+</tr>
+<tr>
+<td><code>flare.task.lost</code></td>
+<td>counter</td>
+<td><code>{task}</code></td>
 <td><code>executor.id</code>, <code>reason</code></td>
 </tr>
 <tr>
@@ -1615,11 +1712,47 @@
 </tr>
 </tbody>
 </table>
+<p><code>task.result</code> is <code>SUCCESS</code>, <code>FAILED</code>, or <code>KILLED</code> for a task Spark killed itself: the losing
+attempt under speculation, or the tasks of a cancelled job or stage. A task error rate counts
+<code>FAILED</code> only.</p>
+<h2 id="histogram-buckets">Histogram buckets<a class="headerlink" href="#histogram-buckets" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Histogram</th>
+<th>Bucket boundaries</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>flare.task.duration</code></td>
+<td>5, 10, 25, 50, 100, 250, 500 ms; 1, 2.5, 5, 10, 30 s; 1, 2, 5, 10, 30, 60 min</td>
+</tr>
+<tr>
+<td><code>flare.stage.executor.run_time</code></td>
+<td>100 ms; 1, 5, 10, 30 s; 1, 5, 10, 30 min; 1, 3, 10, 24 h. Summed across the stage's tasks, so far longer than its wall-clock time</td>
+</tr>
+<tr>
+<td><code>flare.task.records_throughput</code></td>
+<td>10 to 100,000,000 records/s, one boundary per power of ten</td>
+</tr>
+</tbody>
+</table>
+<p>They are set as advice on each instrument, so a view configured in the SDK or the agent overrides them.</p>
 <p>No label is new for every stage. <code>stage.name</code> and <code>sql.description</code> are call sites, such as
 <code>collect at Job.scala:42</code>, so stages from the same line of code share a series, and the number of
 series depends on the code, not on how long the application runs. A single stage is on its
 <code>spark.stage</code> span. Up to 1.2.0 the task and stage metrics also carried <code>stage.id</code>, which made one
 series per stage (<a href="https://github.com/Neutrinic/flare/issues/136">#136</a>).</p>
+<p><code>executor.id</code> is the one label that grows with the application's lifetime. Spark never reuses an
+executor id, and with cumulative temporality, the default, the SDK keeps every series it has seen
+and re-sends it on each export, including those of executors long gone. Delta temporality
+(<code>OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta</code>) sends only what changed since the last
+export, though the backend still stores a series per id. On a fixed cluster that is a handful of series. Under dynamic
+allocation or autoscaling, an application that runs for days adds tens to hundreds of ids a day,
+and past 2,000 series per instrument the SDK folds new ones into a single overflow series, losing
+the per-executor breakdown. Restarting the application starts the count again
+(<a href="https://github.com/Neutrinic/flare/issues/144">#144</a>).</p>
 <p>The counters are only incremented for non-zero values, so a stage that read nothing produces no
 <code>flare.stage.input.bytes</code> series rather than a flat zero one.</p>
 <p><strong>Cluster lifecycle.</strong> The <code>flare.executor.*</code>, <code>flare.block_manager.*</code> and <code>flare.storage.*</code>
@@ -1628,24 +1761,67 @@ than spans: an executor's lifetime is a level over time, not an operation, and a
 for the whole application would otherwise be a span longer than every trace it overlaps.</p>
 <p>They are up-down counters because they go both ways. An increment-only counter would tell you
 how many executors were ever created, never how many exist now.</p>
+<p><code>flare.executor.count</code> includes the executors that registered before Flare did. Installed through
+the agent alone, Flare's listener starts as the SparkContext finishes starting, by which time
+Spark has waited for most executors to register on YARN and Kubernetes; Flare counts the ones
+already there at that point.</p>
 <p><code>flare.executor.removed</code> carries a <code>reason</code> tag, which is the point of it: on a dynamically
 allocated cluster a routine scale-down and a crash both reduce the executor count, and only the
 reason separates them. Spark's reason string is free text that sometimes embeds ids or hostnames,
 so it is bucketed into a fixed set (<code>idle_or_decommissioned</code>, <code>preempted</code>, <code>heartbeat_timeout</code>,
 <code>lost</code>, <code>killed</code>, <code>exited</code>, <code>other</code>, <code>unknown</code>) rather than passed through: an unbounded tag on
 a counter is the cardinality problem these instruments exist to avoid.</p>
+<p>Each executor is counted once on removal, with the reason Spark gave first. Spark removes a
+decommissioned executor twice, once as decommissioned and again when its process exits; the second
+is ignored, so a scale-down by decommissioning reads <code>idle_or_decommissioned</code>, not also <code>exited</code>.</p>
+<p><code>flare.task.lost</code> counts tasks that ended because their executor was lost: killed, out of memory,
+preempted or gone silent. The executor records every other task on the <code>flare.task.*</code> instruments,
+but not these, since it died with them; the driver records them, labelled like
+<code>flare.executor.removed</code>. A task error rate that should include them adds <code>flare_task_lost</code> to the
+failed tasks.</p>
 <p><code>flare.block_manager.count</code> includes the <strong>driver's</strong> block manager, not just executors', because
 Spark registers one there too. Expect it to sit one above the executor count.</p>
 <p>The <code>flare.storage.*</code> instruments require <code>FLARE_TRACK_BLOCK_UPDATES=true</code>. They track running
-totals per executor; block ids are never used as tags. Spark signals a block being dropped by
-sending an invalid <code>StorageLevel</code> carrying the sizes it had, so a drop is recorded as a negative
-delta rather than a separate event.</p>
+totals per executor; block ids are never used as tags. Spark reports each block's state, again
+whenever it changes, such as moving from memory to disk, so Flare keeps each block's last reported
+sizes on the driver and records only the difference. An invalid <code>StorageLevel</code> means the block is
+gone; when a block manager is removed, its blocks are taken out of the totals with it.</p>
 <p><code>flare.task.*</code> are recorded on the executor while the task span's scope is still open, so the SDK's
 default <code>trace_based</code> exemplar filter attaches an exemplar linking each measurement back to its
-trace. Under <code>FLARE_SLOW_TASK_MS</code> the metric is recorded <em>after</em> the suppressed span's scope closes,
-so a fast task still contributes to the histogram but carries no exemplar pointing at a trace that
-was never exported. Some backends drop exemplars by default: Mimir's
+trace. Under <code>FLARE_SLOW_TASK_MS</code> a fast task's span is dropped, so its measurement's exemplar
+names the task's stage instead, which is always exported, when the stage's context is current on
+the executor thread. A task that carries no trace context, such as one from an unsampled
+application, gets no exemplar. A slow task's exemplar names the task span. Some backends drop exemplars by default: Mimir's
 <code>max_global_exemplars_per_user</code> is <code>0</code> unless you set it.</p>
+<h2 id="outcomes">Outcomes<a class="headerlink" href="#outcomes" title="Permanent link">&para;</a></h2>
+<p><code>flare.job.duration</code> and <code>flare.application.duration</code> record one point per job and one per
+application, from the driver, so a scheduled pipeline can be alerted on from metrics: whether a
+run happened, whether it failed, and whether a query took longer than its last runs. The same
+facts are on the spans, which alert rules cannot read.</p>
+<ul>
+<li><strong><code>flare.job.duration</code></strong> runs from the job's submission to its end, by Spark's own clock.
+  <code>job.result</code> is <code>SUCCESS</code> or <code>FAILED</code>; <code>sql.description</code> is set when the job belongs to a query,
+  so one query's runs share a series.</li>
+<li><strong><code>flare.application.duration</code></strong> is recorded once, when the application ends: on a normal stop,
+  or at shutdown when the JVM goes down without one. Spark reports no result for an application,
+  so <code>application.result</code> is <code>FAILED</code> when <strong>any of its jobs failed</strong>, or when a job was still
+  running as it ended: an application killed mid-run, by an orchestrator's timeout or a SIGTERM,
+  reads <code>FAILED</code>. An application that catches a failed job and carries on still reads <code>FAILED</code>, and
+  one that fails outside any job, in driver code or before its first query runs, reads <code>SUCCESS</code>.</li>
+<li><strong><code>flare.application.end_time</code></strong> is set alongside it, to when the application ended in seconds
+  since the Unix epoch, with the same <code>application.result</code>. It puts runs in order, which the
+  example rule that alerts only on a service's latest run needs
+  (<a href="https://github.com/Neutrinic/flare/issues/202">#202</a>).</li>
+</ul>
+<p>Neither carries an application or run id, so successive runs of the same service can be compared.
+<code>sql.description</code>, here and on the stage metrics, is the query's call site, such as
+<code>collect at Job.scala:42</code>, or the job description when you set one with <code>setJobDescription</code>. Keep
+those descriptions stable: one that embeds a date, a batch id or any value that changes per run
+makes a new series every time. Under the Thrift server and the <code>spark-sql</code> CLI the description is
+the SQL statement itself. The label is capped by <code>FLARE_SQL_DESCRIPTION_MAX_CHARS</code> (1,024 characters
+by default) and is never longer than 2,048 bytes in UTF-8, the limit Mimir and similar backends
+apply, which a statement in Chinese reaches at about 680 characters. A cap limits length, not
+cardinality; <code>0</code> drops the label.</p>
 <h2 id="in-prometheus">In Prometheus<a class="headerlink" href="#in-prometheus" title="Permanent link">&para;</a></h2>
 <p>Prometheus-compatible backends rename the instruments: dots become underscores, and most add the
 unit, so <code>flare.task.duration</code> is stored as <code>flare_task_duration_milliseconds_bucket</code> and
